@@ -2,6 +2,7 @@ import {
 	ItemView,
 	WorkspaceLeaf,
 	TFile,
+	TFolder,
 	Notice,
 	Scope,
 	normalizePath,
@@ -75,6 +76,11 @@ export class ClaudePanelView extends ItemView {
 	private messages: ChatMessage[] = [];
 	private attachments: string[] = []; // Vault 相対パス
 	private includeActiveFile = true;
+	// 直近にファイルエクスプローラーでクリックされたフォルダ。
+	// 設定されている間はアクティブファイルの自動メンションを置き換え、
+	// 送信時にフォルダ配下のファイルを @メンションとして展開する。
+	// ファイル選択（file-open）が発生したらクリアされる。
+	private activeFolderPath: string | null = null;
 	private includeSelection = true;
 	private busy = false;
 	private currentRun: RunHandle | null = null;
@@ -132,10 +138,28 @@ export class ClaudePanelView extends ItemView {
 		);
 		this.registerEvent(
 			this.app.workspace.on("file-open", () => {
+				// ファイル選択でアクティブフォルダは解除（相互排他）
+				this.activeFolderPath = null;
 				this.renderActiveFile();
 				this.selection.poll();
 			})
 		);
+		// ファイルエクスプローラーでフォルダをクリックしたら
+		// activeFolderPath として記録し、アクティブファイル表示と入れ替える。
+		// `.nav-folder-title` は Obsidian のファイルツリーが各フォルダに
+		// 描画する要素で、`data-path` にフォルダの Vault 相対パスが入る。
+		this.registerDomEvent(document, "click", (e) => {
+			const titleEl = (e.target as HTMLElement | null)?.closest(
+				".nav-folder-title"
+			);
+			if (!titleEl) return;
+			const path = titleEl.getAttribute("data-path");
+			if (!path) return; // ルート（path="" / null）は無視
+			const f = this.app.vault.getAbstractFileByPath(path);
+			if (!(f instanceof TFolder)) return;
+			this.activeFolderPath = path;
+			this.renderActiveFile();
+		});
 		// Grace-period handoff（猶予期間の引き継ぎ）: パネル内クリックで
 		// キャプチャ済みの markdown 選択を失わないようにする。これがないと
 		// パネルがアクティブな leaf になった瞬間に選択が消える。
@@ -513,6 +537,41 @@ export class ClaudePanelView extends ItemView {
 
 	private renderActiveFile(): void {
 		this.activeFileEl.empty();
+
+		// アクティブフォルダが設定されているとアクティブファイルより優先
+		// （相互排他）。表示と挙動はファイルと対称。
+		if (this.activeFolderPath) {
+			const folder = this.app.vault.getAbstractFileByPath(
+				this.activeFolderPath
+			);
+			if (!(folder instanceof TFolder)) {
+				// 削除済み等で実体が無い場合は黙ってクリアしてフォールバック
+				this.activeFolderPath = null;
+			} else {
+				const fileCount = this.listFolderFiles(folder.path).length;
+				const label = this.activeFileEl.createSpan({
+					cls: "claude-panel-active-file-label",
+					text: "アクティブ:",
+				});
+				label.title =
+					"フォルダ内のファイルを @メンションとして Claude に送ります";
+				const pathEl = this.activeFileEl.createSpan({
+					cls: "claude-panel-active-file-path",
+					text: `${folder.path}/ ×${fileCount}`,
+				});
+				pathEl.title = `${folder.path} (${fileCount} ファイル)`;
+				const toggle = this.activeFileEl.createEl("button", {
+					cls: "claude-panel-active-file-toggle",
+					text: this.includeActiveFile ? "✓ 含める" : "○ 除外",
+				});
+				toggle.onclick = () => {
+					this.includeActiveFile = !this.includeActiveFile;
+					this.renderActiveFile();
+				};
+				return;
+			}
+		}
+
 		const file = this.getActiveFile();
 		if (!file) {
 			this.activeFileEl.createSpan({
@@ -583,16 +642,45 @@ export class ClaudePanelView extends ItemView {
 		preview.title = sel.text;
 	}
 
+	private isFolderPath(path: string): boolean {
+		return this.app.vault.getAbstractFileByPath(path) instanceof TFolder;
+	}
+
+	private listFolderFiles(folderPath: string): string[] {
+		const folder = this.app.vault.getAbstractFileByPath(folderPath);
+		if (!(folder instanceof TFolder)) return [];
+		const out: string[] = [];
+		const walk = (f: TFolder): void => {
+			for (const child of f.children) {
+				if (child instanceof TFolder) walk(child);
+				else if (child instanceof TFile) out.push(child.path);
+			}
+		};
+		walk(folder);
+		out.sort();
+		return out;
+	}
+
 	private renderAttachments(): void {
 		this.attachmentsEl.empty();
-		for (const filePath of this.attachments) {
+		for (const path of this.attachments) {
+			const isFolder = this.isFolderPath(path);
 			const chip = this.attachmentsEl.createDiv({
 				cls: "claude-panel-chip",
 			});
-			chip.createSpan({ text: `@${filePath}` });
+			chip.createSpan({
+				text: isFolder ? `@${path}/` : `@${path}`,
+			});
+			if (isFolder) {
+				const count = this.listFolderFiles(path).length;
+				chip.createSpan({
+					text: ` ×${count}`,
+					attr: { title: `${count} ファイル` },
+				});
+			}
 			const x = chip.createEl("button", { text: "×" });
 			x.onclick = () => {
-				this.attachments = this.attachments.filter((p) => p !== filePath);
+				this.attachments = this.attachments.filter((p) => p !== path);
 				this.renderAttachments();
 				void this.saveChat();
 			};
@@ -604,9 +692,9 @@ export class ClaudePanelView extends ItemView {
 	// ============================================================
 
 	private openAttachPicker(): void {
-		new FilePickerModal(this.app, (file) => {
-			if (!this.attachments.includes(file.path)) {
-				this.attachments.push(file.path);
+		new FilePickerModal(this.app, (item) => {
+			if (!this.attachments.includes(item.path)) {
+				this.attachments.push(item.path);
 				this.renderAttachments();
 				void this.saveChat();
 			}
@@ -1280,14 +1368,36 @@ export class ClaudePanelView extends ItemView {
 	} {
 		const isSlash = userText.startsWith("/");
 
-		const mentionPaths: string[] = [];
+		// 表示用ラベル（フォルダは末尾 `/` 付きで1チップ）と、CLI に渡す
+		// 展開済みファイルパスを別々に組み立てる。
+		const mentionLabels: string[] = [];
+		const promptPaths: string[] = [];
+		const addMention = (path: string, isFolder: boolean): void => {
+			const label = isFolder ? `${path}/` : path;
+			if (!mentionLabels.includes(label)) mentionLabels.push(label);
+			if (isFolder) {
+				for (const child of this.listFolderFiles(path)) {
+					if (!promptPaths.includes(child)) promptPaths.push(child);
+				}
+			} else if (!promptPaths.includes(path)) {
+				promptPaths.push(path);
+			}
+		};
 		if (!isSlash) {
-			const activeFile = this.getActiveFile();
-			if (this.includeActiveFile && activeFile) {
-				mentionPaths.push(activeFile.path);
+			// アクティブフォルダがあればフォルダを優先（相互排他）。
+			if (this.includeActiveFile && this.activeFolderPath) {
+				const folder = this.app.vault.getAbstractFileByPath(
+					this.activeFolderPath
+				);
+				if (folder instanceof TFolder) {
+					addMention(folder.path, true);
+				}
+			} else if (this.includeActiveFile) {
+				const activeFile = this.getActiveFile();
+				if (activeFile) addMention(activeFile.path, false);
 			}
 			for (const fp of this.attachments) {
-				if (!mentionPaths.includes(fp)) mentionPaths.push(fp);
+				addMention(fp, this.isFolderPath(fp));
 			}
 		}
 
@@ -1316,12 +1426,12 @@ export class ClaudePanelView extends ItemView {
 
 		// claude に送るフルプロンプト: メンション + 選択ブロックを含む。
 		const promptBody = `${selectionBlock}${thinkPrefix}${userText}`;
-		const mentionsStr = mentionPaths.map((p) => `@${p}`).join(" ");
+		const mentionsStr = promptPaths.map((p) => `@${p}`).join(" ");
 		const fullPrompt = mentionsStr
 			? `${mentionsStr}\n\n${promptBody}`
 			: promptBody;
 
-		return { mentions: mentionPaths, selectionRef, body, fullPrompt };
+		return { mentions: mentionLabels, selectionRef, body, fullPrompt };
 	}
 
 	private getVaultPath(): string | null {

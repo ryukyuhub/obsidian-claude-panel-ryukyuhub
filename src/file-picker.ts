@@ -1,20 +1,32 @@
-import { App, FuzzySuggestModal, TFile } from "obsidian";
+import { App, FuzzySuggestModal, TAbstractFile, TFolder } from "obsidian";
 
-export class FilePickerModal extends FuzzySuggestModal<TFile> {
-	constructor(app: App, private onPick: (f: TFile) => void) {
+export class FilePickerModal extends FuzzySuggestModal<TAbstractFile> {
+	constructor(app: App, private onPick: (item: TAbstractFile) => void) {
 		super(app);
-		this.setPlaceholder("添付するファイルを選択");
+		this.setPlaceholder("添付するファイル / フォルダを選択");
 	}
 
-	getItems(): TFile[] {
-		return this.app.vault.getFiles();
+	getItems(): TAbstractFile[] {
+		const items: TAbstractFile[] = [];
+		const walk = (folder: TFolder): void => {
+			for (const child of folder.children) {
+				if (child instanceof TFolder) {
+					items.push(child);
+					walk(child);
+				} else {
+					items.push(child);
+				}
+			}
+		};
+		walk(this.app.vault.getRoot());
+		return items;
 	}
 
-	getItemText(file: TFile): string {
-		return file.path;
+	getItemText(item: TAbstractFile): string {
+		return item instanceof TFolder ? `${item.path}/` : item.path;
 	}
 
-	onChooseItem(file: TFile): void {
-		this.onPick(file);
+	onChooseItem(item: TAbstractFile): void {
+		this.onPick(item);
 	}
 }
