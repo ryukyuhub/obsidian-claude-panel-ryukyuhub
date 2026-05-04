@@ -1,0 +1,40 @@
+{
+  "name": "claude-panel-ryukyuhub",
+  "version": "0.1.7",
+  "description": "Claude Panel for Obsidian — Obsidian の Vault に Claude を組み込む右サイドバーのチャットパネル。アクティブな Vault をワーキングディレクトリとして Claude Code を実行します。",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "claude",
+    "claude-code",
+    "anthropic",
+    "ai"
+  ],
+  "author": "Ryukyu HUB Inc.",
+  "license": "MIT",
+  "homepage": "https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "0.21.5",
+    "obsidian": "1.5.7-1",
+    "tslib": "2.6.2",
+    "typescript": "5.4.5"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0"
+  }
+}

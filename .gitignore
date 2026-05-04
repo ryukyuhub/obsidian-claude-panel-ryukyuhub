@@ -1,0 +1,24 @@
+node_modules/
+.DS_Store
+
+# Build artifacts — esbuild writes either into the dev vault or, as a CI/fresh-clone
+# fallback, into ./build. Neither belongs in the repo.
+main.js
+build/
+
+# Plugin runtime settings (per-user, written by Obsidian).
+data.json
+
+# Serena MCP local cache.
+.serena/
+
+# Per-developer vault paths consumed by esbuild.config.mjs.
+# Copy esbuild.config.local.example.mjs and edit for your machine.
+esbuild.config.local.mjs
+
+# Claude Code project instructions — kept local to the maintainer.
+CLAUDE.md
+
+# Per-developer Claude Code MCP servers used while working on this plugin.
+# Public users get MCP from ~/.claude.json or the vault's .mcp.json instead.
+.mcp.json

@@ -1,0 +1,10 @@
+{
+  "id": "claude-panel-ryukyuhub",
+  "name": "Claude Panel for Obsidian",
+  "version": "0.1.7",
+  "minAppVersion": "1.4.5",
+  "description": "Obsidian の Vault に Claude を組み込む右サイドバーのチャットパネル。アクティブな Vault をワーキングディレクトリとして Claude Code をサブプロセス起動します。",
+  "author": "Ryukyu HUB Inc.",
+  "authorUrl": "https://ryukyuhub.co.jp",
+  "isDesktopOnly": true
+}

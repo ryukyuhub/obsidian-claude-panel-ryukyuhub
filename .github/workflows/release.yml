@@ -1,0 +1,53 @@
+name: Release Obsidian plugin
+
+# Triggered by pushing a tag like `v0.1.1`. Use `npm version <semver>`
+# locally to bump + tag, then `git push --follow-tags`.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          # Override the dev-machine vault path so esbuild emits to ./build.
+          OUT_DIR: ./build
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: |
+          test -f ./build/main.js
+          test -f ./build/manifest.json
+          test -f ./build/styles.css
+
+      - name: Package zip
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          mkdir -p claude-panel-ryukyuhub
+          cp ./build/main.js ./build/manifest.json ./build/styles.css claude-panel-ryukyuhub/
+          zip -r "claude-panel-ryukyuhub-${tag}.zip" claude-panel-ryukyuhub/
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --title="$tag" \
+            --generate-notes \
+            "claude-panel-ryukyuhub-${tag}.zip"
