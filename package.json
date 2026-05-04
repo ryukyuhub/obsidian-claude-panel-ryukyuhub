@@ -18,13 +18,13 @@
   ],
   "author": "Ryukyu HUB Inc.",
   "license": "MIT",
-  "homepage": "https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub",
+  "homepage": "https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub.git"
+    "url": "git+https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub.git"
   },
   "bugs": {
-    "url": "https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub/issues"
+    "url": "https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/issues"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

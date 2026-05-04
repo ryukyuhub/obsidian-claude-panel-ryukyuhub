@@ -41,7 +41,7 @@ claude /login
 
 ### 2. Obsidian プラグインを導入
 
-1. [最新リリース](https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub/releases) から `claude-panel-ryukyuhub-<version>.zip` をダウンロード
+1. [最新リリース](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases) から `claude-panel-ryukyuhub-<version>.zip` をダウンロード
 2. zip を解凍し、`claude-panel-ryukyuhub/` フォルダを `<your-vault>/.obsidian/plugins/` 直下に配置
 3. Obsidian → 設定 → コミュニティプラグイン → **Claude Panel for Obsidian** を有効化
 4. プラグイン設定を開くと先頭にセットアップ状況が表示されます。`claude` CLI が自動検出されない場合は CLI バイナリの絶対パスを入力してください（例: macOS なら `/usr/local/bin/claude`、Windows なら `C:\Users\<you>\.local\bin\claude.exe`）
@@ -58,7 +58,7 @@ claude /login
 ## 開発
 
 ```bash
-git clone https://github.com/candypopbeat/obsidian-claude-panel-ryukyuhub.git
+git clone https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub.git
 cd obsidian-claude-panel-ryukyuhub
 npm install
 cp esbuild.config.local.example.mjs esbuild.config.local.mjs
