@@ -447,24 +447,43 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		});
 		const note = host.createDiv({ cls: "claude-panel-setup-guide-note" });
 		note.setText(
-			"いずれかの方法で Claude Code CLI をインストールしてください。" +
+			"OS に合わせて以下のコマンドをターミナルで実行してください。" +
 				"インストール後にこのタブの「再チェック」を押すと、自動検出されます。"
 		);
 
-		const npmBlock = this.makeCodeBlock(
+		// Windows: winget で前提（Node.js / Git / PowerShell 7）→ npm でインストール、まで提示。
+		// 標準同梱の PowerShell 5.1 ではブラウザ認証時の貼付に不具合があるため、
+		// PowerShell 7 への切替を最初から強く促している。
+		const winBlock = this.makeCodeBlock(
 			host,
-			"npm（macOS / Linux / Windows 共通）",
-			"npm install -g @anthropic-ai/claude-code"
+			"Windows（管理者権限の PowerShell で実行）",
+			[
+				"winget install --id OpenJS.NodeJS.LTS",
+				"winget install --id Microsoft.PowerShell",
+				"npm install -g @anthropic-ai/claude-code",
+			].join("\n")
 		);
-		npmBlock.setAttr(
+		winBlock.setAttr(
 			"title",
-			"Node.js が必要です。インストール後 `claude --version` で確認できます。"
+			"PowerShell 7 (pwsh) を入れてから新しいウィンドウで `claude /login` を実行してください。"
 		);
 
 		this.makeCodeBlock(
 			host,
-			"Homebrew（macOS）",
-			"brew install --cask claude-code"
+			"macOS（Terminal で実行 / Homebrew 必須）",
+			["brew install node", "npm install -g @anthropic-ai/claude-code"].join("\n")
+		);
+
+		this.makeCodeBlock(
+			host,
+			"npm が既に使える環境（Linux ほか共通）",
+			"npm install -g @anthropic-ai/claude-code"
+		);
+
+		const tip = host.createDiv({ cls: "claude-panel-setup-guide-note" });
+		tip.setText(
+			"ヒント: 「npm: command not found」と出たら、Node.js が未インストールです。" +
+				"上記の OS 別コマンドの 1 行目から順に実行してください。"
 		);
 
 		const linkRow = host.createDiv({ cls: "claude-panel-setup-guide-links" });
@@ -484,10 +503,22 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		});
 		const note = host.createDiv({ cls: "claude-panel-setup-guide-note" });
 		note.setText(
-			"ターミナル（macOS なら Terminal、Windows なら PowerShell など）で次のコマンドを実行し、" +
-				"画面の指示に従ってブラウザでログインしてください。サブスクリプション（Claude Pro / Max）でも API キーでも利用できます。"
+			"ターミナル（macOS は Terminal、Windows は PowerShell 7 / pwsh）で次のコマンドを実行し、" +
+				"画面の指示に従ってブラウザでログインしてください。Claude Pro / Max のサブスクリプションでも API キーでも利用できます。"
 		);
 		this.makeCodeBlock(host, "ログインコマンド", "claude /login");
+
+		// よくある失敗のリカバリ。Windows の PowerShell 5.1 ではコピペが崩れる
+		// ことが報告されているため、PowerShell 7 への切替を明示する。
+		const tips = host.createDiv({ cls: "claude-panel-setup-guide-note" });
+		tips.createEl("strong", { text: "うまくいかないとき:" });
+		const ul = tips.createEl("ul");
+		ul.createEl("li", {
+			text: "ブラウザが自動で開かない場合は、表示された URL を選択コピーしてブラウザのアドレスバーに貼り付け、戻ってきた認証コードをターミナルに貼り戻してください。",
+		});
+		ul.createEl("li", {
+			text: "Windows で認証コードの貼り付けが崩れる場合は、`winget install Microsoft.PowerShell` で PowerShell 7 (pwsh) を入れ、新しいウィンドウで `claude /login` をやり直してください。",
+		});
 	}
 
 	/**

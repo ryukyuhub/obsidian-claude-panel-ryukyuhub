@@ -19,34 +19,100 @@ Claude Panel for Obsidian は、Obsidian の右サイドバーに [Claude Code](
 
 ## インストール
 
-### 1. Claude Code CLI をインストール
+> **非エンジニアの方へ**: 途中でターミナル（コマンドラインツール）を使います。Windows なら **PowerShell**、macOS なら **Terminal** を起動して、各コードブロックをコピー＆ペーストで 1 行ずつ実行してください。「コマンドが見つからない」場合の対処は末尾の[トラブルシューティング](#トラブルシューティング)にまとめています。
 
-本プラグインは Anthropic 公式の `claude` CLI（[Claude Code](https://docs.claude.com/claude-code)）をサブプロセスとして起動して動作します。先に CLI 本体を導入してください:
+### 1. 前提ソフトウェアをインストール
 
-```bash
-# macOS / Linux / Windows 共通（Node.js が必要）
-npm install -g @anthropic-ai/claude-code
+`claude` CLI は Node.js 上で動作します。まず Node.js（と Git、Windows なら PowerShell 7）を入れてください。
 
-# あるいは macOS なら Homebrew
-brew install --cask claude-code
+#### Windows — `winget` で一括導入（推奨）
+
+PowerShell を**管理者として実行**で開き、次の 3 行を順番に実行します:
+
+```powershell
+winget install --id OpenJS.NodeJS.LTS         # Node.js + npm
+winget install --id Git.Git                   # Git
+winget install --id Microsoft.PowerShell      # PowerShell 7（古い 5.1 では認証コードの貼付が崩れるため必須）
 ```
 
-インストール後、ターミナルでログイン:
+インストール後は **PowerShell を一度閉じて、新しい PowerShell 7 (`pwsh`) を開き直して** 以降の作業を続けてください（PATH の再読み込みが必要です）。
+
+> `winget` が使えない古い Windows の場合は、各公式サイトから直接インストールしても同等です: [Node.js LTS](https://nodejs.org/) / [Git for Windows](https://git-scm.com/download/win) / [PowerShell 7](https://aka.ms/PSWindows)
+
+#### macOS — `brew` で一括導入（推奨）
+
+Terminal で実行:
+
+```bash
+# Homebrew 未導入の場合のみ最初に実行：
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Node.js（npm 同梱）と Git
+brew install node git
+```
+
+#### Linux
+
+ディストリビューションのパッケージマネージャで `nodejs` `npm` `git` をインストールしてください。例 (Ubuntu/Debian):
+
+```bash
+sudo apt update && sudo apt install -y nodejs npm git
+```
+
+### 2. Claude Code CLI をインストール
+
+OS 共通で 1 コマンドです:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+完了後 `claude --version` でバージョンが表示されれば OK です。
+
+> macOS のみ Homebrew Cask 経由でも導入できます: `brew install --cask claude-code`
+
+### 3. Claude にログイン
 
 ```bash
 claude /login
 ```
 
-ブラウザが開くので、Claude Pro / Max のサブスクリプション、もしくは Anthropic API キーで認証してください。
+ブラウザが自動で開き、Anthropic のログイン画面が表示されます。Claude Pro / Max のサブスクリプション、もしくは Anthropic API キーで認証してください。
 
-### 2. Obsidian プラグインを導入
+> **ブラウザが自動で開かない場合**: ターミナルに表示された `https://claude.ai/...` で始まる URL を選択コピーし、自分でブラウザのアドレスバーに貼り付けてください。ログイン後に画面に出る**認証コード**をコピーして、ターミナルに貼り戻せば完了です。
+>
+> **Windows で認証コードの貼り付けが崩れる場合**: Windows 標準の PowerShell 5.1 にコピペの不具合があります。前述の `winget install Microsoft.PowerShell` で **PowerShell 7（pwsh）に切り替えて** から再実行してください。
+
+### 4. Obsidian プラグインを導入
 
 1. [最新リリース](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases) から `claude-panel-ryukyuhub-<version>.zip` をダウンロード
 2. zip を解凍し、`claude-panel-ryukyuhub/` フォルダを `<your-vault>/.obsidian/plugins/` 直下に配置
 3. Obsidian → 設定 → コミュニティプラグイン → **Claude Panel for Obsidian** を有効化
-4. プラグイン設定を開くと先頭にセットアップ状況が表示されます。`claude` CLI が自動検出されない場合は CLI バイナリの絶対パスを入力してください（例: macOS なら `/usr/local/bin/claude`、Windows なら `C:\Users\<you>\.local\bin\claude.exe`）
+4. プラグイン設定を開くと先頭に「セットアップ状況」が表示されます。`claude` CLI が自動検出されない場合は CLI バイナリの絶対パスを入力してください（例: macOS なら `/usr/local/bin/claude`、Windows なら `C:\Users\<you>\AppData\Roaming\npm\claude.cmd`）
 
 > BRAT には対応していません — リリース成果物は zip 形式で配布しています。
+
+## トラブルシューティング
+
+### `claude: command not found` / `claude.exe' は内部または外部コマンドではありません`
+`npm install -g @anthropic-ai/claude-code` の直後はターミナルが PATH を再読み込みしていません。**ターミナルを一度閉じて開き直す** とほぼ解決します。それでも検出されない場合は、Obsidian の本プラグイン設定画面の「**claude CLI のパス**」に絶対パスを入力してください:
+
+- macOS (Intel): `/usr/local/bin/claude`
+- macOS (Apple Silicon, Homebrew): `/opt/homebrew/bin/claude`
+- macOS (npm global): `~/.nvm/versions/node/<ver>/bin/claude` など
+- Windows (npm global): `C:\Users\<you>\AppData\Roaming\npm\claude.cmd`
+
+### Windows で認証コードの貼付が崩れる / 入力が空欄になる
+標準同梱の PowerShell 5.1 ターミナルにコピペの不具合があります。`winget install Microsoft.PowerShell` で **PowerShell 7 (`pwsh`)** を入れ、新しいウィンドウで `claude /login` をやり直してください。
+
+### ブラウザが自動で開かない（Windows / WSL / リモートデスクトップなど）
+ターミナルに表示された URL を手動でコピーしてブラウザのアドレスバーに貼り付け、認証後に表示される認証コードをターミナルに貼り戻してください。
+
+### `npm: command not found` / `npm は内部コマンドではありません`
+Node.js が未インストールです。[1. 前提ソフトウェアをインストール](#1-前提ソフトウェアをインストール) に戻り、`winget install OpenJS.NodeJS.LTS`（Windows）または `brew install node`（macOS）から実行してください。
+
+### Obsidian でプラグインが起動しない / チャット送信時に失敗する
+プラグイン設定の「セットアップ状況」が **✓ 利用可能です** になっているか確認してください。 ✗ や ⚠ が出ているときは、その下に表示されるインストール／ログイン手順に従ってください。「再チェック」ボタンで状態を更新できます。
 
 ## 使い方
 
