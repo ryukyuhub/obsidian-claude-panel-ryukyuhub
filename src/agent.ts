@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import type { ClaudePanelSettings, PermissionMode } from "./settings";
+import type { ClaudePanelSettings } from "./settings";
 
 export interface UsageInfo {
 	inputTokens: number;
@@ -513,19 +513,6 @@ export function listMcpServers(
 	});
 }
 
-/**
- * インタラクティブな承認プロンプトが必要なパーミッションモード判定。
- * 該当モードでは `--permission-prompt-tool stdio` を渡し、CLI が
- * `control_request` メッセージを stdout に流すようにして、
- * このプロセス側で承認 UI を駆動する。
- *
- * `bypassPermissions` は全チェックをスキップ、`plan` はそもそもツールを
- * 実行しない。どちらも純粋な stream-json 出力なので prompt tool は不要。
- */
-function needsPromptTool(mode: PermissionMode): boolean {
-	return mode === "default" || mode === "acceptEdits";
-}
-
 export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 	const { prompt, cwd, settings } = args;
 	let canceled = false;
@@ -560,11 +547,12 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		];
 		// CLI に対して、can_use_tool リクエストをインラインの TTY プロンプト
 		// ではなく stdout（stream-json の制御プロトコル）で発行するよう指示する。
-		// これがないと `default` / `acceptEdits` モードはインタラクティブな
-		// 端末がないとみなして edit 系以外のツールを自動拒否してしまう。
-		if (needsPromptTool(settings.permissionMode)) {
-			cliArgs.push("--permission-prompt-tool", "stdio");
-		}
+		// 全モードで指定する: `default`/`acceptEdits` はインタラクティブな
+		// 端末がないとみなされて edit 系以外を自動拒否されないように、
+		// `bypassPermissions` でも CLI 側が稀に発行する can_use_tool（保護
+		// パスへの書き込み等）を取りこぼさないように、`plan` でも将来の
+		// 仕様変更で発行されたときに備えて、常に stdio で受け取る。
+		cliArgs.push("--permission-prompt-tool", "stdio");
 		if (args.sessionId) {
 			// 既存の claude セッションを継続する。これによりコンテキストが
 			// 蓄積され、ウィンドウが埋まったタイミングで CLI 側の自動
@@ -683,6 +671,19 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 				});
 			};
 
+			// `bypassPermissions` モードのときは UI を出さず自動承認する。
+			// CLI 側でも内部的に大半は auto-allow されるが、保護パスや一部の
+			// ケースでは can_use_tool が発行されるため、ここで止めずに通すと
+			// 「アシスタントが『承認してください』と言うのに承認ボタンが
+			// 出ない」状態になる。bypass を選択しているユーザーは介入を
+			// 望まないので、即時 allow して透過にする。
+			if (settings.permissionMode === "bypassPermissions") {
+				decide({
+					allow: true,
+					updatedInput: msg.request.input ?? {},
+				});
+				return;
+			}
 			if (!events.onPermissionRequest) {
 				// UI が未配線 — 落としたプロンプトで CLI が永続ハングしない
 				// よう自動 deny する。
