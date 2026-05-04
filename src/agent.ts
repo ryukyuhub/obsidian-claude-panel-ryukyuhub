@@ -571,6 +571,13 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 			// コンパクションが動作するようになる。
 			cliArgs.push("--resume", args.sessionId);
 		}
+		// `auto` のときはフラグを送らず、CLI 既定 / ~/.claude/settings.json の
+		// `effortLevel` をそのまま尊重する。明示値が選ばれているときだけ
+		// `--effort` で上書きする。Haiku など非対応モデルでは CLI が黙って
+		// 無視するため、フラグ送信自体は安全。
+		if (settings.effortLevel && settings.effortLevel !== "auto") {
+			cliArgs.push("--effort", settings.effortLevel);
+		}
 		if (settings.disableMcpServers) {
 			cliArgs.push("--strict-mcp-config", "--mcp-config", getEmptyMcpConfigPath());
 		}

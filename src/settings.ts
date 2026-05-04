@@ -17,6 +17,23 @@ export const THINKING_MODES: ThinkingMode[] = [
 	"ultrathink",
 ];
 
+/**
+ * Claude Code の `--effort` フラグに渡す値。`auto` は「フラグを渡さない」を
+ * 意味し、CLI 側のデフォルト（あるいは `~/.claude/settings.json` の
+ * `effortLevel`）に処理を委ねる。`low`/`medium`/`high`/`max` は新しめの
+ * モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度を制御する。Haiku など
+ * 非対応モデルでは指定しても CLI が黙って無視する。
+ */
+export type EffortLevel = "auto" | "low" | "medium" | "high" | "max";
+
+export const EFFORT_LEVELS: EffortLevel[] = [
+	"auto",
+	"low",
+	"medium",
+	"high",
+	"max",
+];
+
 export const MODEL_PRESETS: string[] = [
 	"claude-sonnet-4-5",
 	"claude-opus-4-5",
@@ -97,6 +114,7 @@ export interface ClaudePanelSettings {
 	claudePath: string;
 	model: string;
 	thinkingMode: ThinkingMode;
+	effortLevel: EffortLevel;
 	disableMcpServers: boolean;
 	permissionMode: PermissionMode;
 	/** チャットパネルの基準フォントサイズ（px）。パネルルート要素の
@@ -113,6 +131,7 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	claudePath: "",
 	model: "claude-sonnet-4-5",
 	thinkingMode: "off",
+	effortLevel: "auto",
 	disableMcpServers: false,
 	// 既定は明示的なプロンプト（"default"）。0.1.8 以前は
 	// `bypassPermissions` をハードコードしており、agent が ~/.claude.json
@@ -246,6 +265,23 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				dropdown.setValue(current);
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.model = value;
+					await this.plugin.saveSettings();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Effort（推論密度）")
+			.setDesc(
+				"対応モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度。`auto` は CLI/`~/.claude/settings.json` の既定値に委譲します。" +
+					"Haiku は Effort 非対応のため、指定しても無視されます。"
+			)
+			.addDropdown((dropdown) => {
+				for (const e of EFFORT_LEVELS) {
+					dropdown.addOption(e, e);
+				}
+				dropdown.setValue(this.plugin.settings.effortLevel);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.effortLevel = value as EffortLevel;
 					await this.plugin.saveSettings();
 				});
 			});

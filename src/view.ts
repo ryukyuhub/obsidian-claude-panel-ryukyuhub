@@ -17,12 +17,14 @@ import {
 	type RunHandle,
 } from "./agent";
 import {
+	EFFORT_LEVELS,
 	MODEL_PRESETS,
 	PERMISSION_MODES,
 	THINKING_MODES,
 	formatModelLabel,
 	permissionModeLabel,
 	permissionModeTooltip,
+	type EffortLevel,
 	type PermissionMode,
 	type ThinkingMode,
 } from "./settings";
@@ -62,6 +64,7 @@ export class ClaudePanelView extends ItemView {
 	private selectionEl!: HTMLDivElement;
 	private modelSelect: HTMLSelectElement | null = null;
 	private thinkSelect: HTMLSelectElement | null = null;
+	private effortSelect: HTMLSelectElement | null = null;
 	private permSelect: HTMLSelectElement | null = null;
 	private sendBtn!: HTMLButtonElement;
 	// CLI からの未解決パーミッションリクエスト（key: tool_use_id）。
@@ -472,6 +475,27 @@ export class ClaudePanelView extends ItemView {
 			await this.plugin.saveSettings();
 		};
 		this.thinkSelect = thinkSelect;
+
+		row.createSpan({
+			cls: "claude-panel-control-label",
+			text: "Effort",
+		});
+		const effortSelect = row.createEl("select", {
+			cls: "claude-panel-control-select",
+			attr: {
+				title:
+					"対応モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度。auto は CLI / ~/.claude/settings.json の既定値に委譲。Haiku は非対応のため指定は無視されます。",
+			},
+		});
+		for (const e of EFFORT_LEVELS) {
+			effortSelect.createEl("option", { value: e, text: e });
+		}
+		effortSelect.value = this.plugin.settings.effortLevel;
+		effortSelect.onchange = async () => {
+			this.plugin.settings.effortLevel = effortSelect.value as EffortLevel;
+			await this.plugin.saveSettings();
+		};
+		this.effortSelect = effortSelect;
 
 		row.createSpan({
 			cls: "claude-panel-control-label",
