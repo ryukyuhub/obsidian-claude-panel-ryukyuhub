@@ -26,13 +26,14 @@ import {
 	type PermissionMode,
 	type ThinkingMode,
 } from "./settings";
-import { FilePickerModal } from "./file-picker";
 import {
 	SelectionCapture,
 	type CapturedSelection,
 } from "./selection-capture";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
 import { openAccountUsageModal } from "./account-usage";
+import * as nodePath from "path";
+import * as nodeFs from "fs";
 import {
 	type ChatMessage,
 	type MessageUsage,
@@ -665,12 +666,17 @@ export class ClaudePanelView extends ItemView {
 		this.attachmentsEl.empty();
 		for (const path of this.attachments) {
 			const isFolder = this.isFolderPath(path);
+			const isAbs = nodePath.isAbsolute(path);
 			const chip = this.attachmentsEl.createDiv({
 				cls: "claude-panel-chip",
 			});
-			chip.createSpan({
-				text: isFolder ? `@${path}/` : `@${path}`,
-			});
+			// 絶対パス（OS ピッカーで添付された Vault 外ファイル）は
+			// パスが長くなりがちなのでファイル名だけ表示し、フルパスは
+			// ツールチップに格納する。Vault 相対パスは従来通り全文表示。
+			const displayPath = isAbs ? nodePath.basename(path) : path;
+			const labelText = isFolder ? `@${displayPath}/` : `@${displayPath}`;
+			const labelEl = chip.createSpan({ text: labelText });
+			labelEl.title = path;
 			if (isFolder) {
 				const count = this.listFolderFiles(path).length;
 				chip.createSpan({
@@ -692,13 +698,71 @@ export class ClaudePanelView extends ItemView {
 	// ============================================================
 
 	private openAttachPicker(): void {
-		new FilePickerModal(this.app, (item) => {
-			if (!this.attachments.includes(item.path)) {
-				this.attachments.push(item.path);
+		// Electron 環境では `<input type="file">` がネイティブの OS ファイル
+		// 選択ダイアログを開く。File オブジェクトから絶対パスを取り出すには
+		// 旧 Electron では `File.path`、Electron 32+ では
+		// `electron.webUtils.getPathForFile(file)` を使う。両方試して
+		// 最初に成功したパスを採用する。
+		const electron = (
+			window as unknown as {
+				require?: (id: string) => { webUtils?: { getPathForFile?: (f: File) => string } };
+			}
+		).require?.("electron");
+		const getPathForFile = electron?.webUtils?.getPathForFile;
+		const resolvePath = (f: File): string | null => {
+			const fromProp = (f as File & { path?: string }).path;
+			if (fromProp) return fromProp;
+			if (getPathForFile) {
+				try {
+					const p = getPathForFile(f);
+					if (p) return p;
+				} catch {
+					/* fall through */
+				}
+			}
+			return null;
+		};
+
+		const input = document.createElement("input");
+		input.type = "file";
+		input.multiple = true;
+		input.style.display = "none";
+		const cleanup = (): void => {
+			input.remove();
+		};
+		input.addEventListener("change", () => {
+			const files = Array.from(input.files ?? []);
+			let added = 0;
+			let unresolved = 0;
+			for (const f of files) {
+				const p = resolvePath(f);
+				if (!p) {
+					unresolved++;
+					continue;
+				}
+				if (!this.attachments.includes(p)) {
+					this.attachments.push(p);
+					added++;
+				}
+			}
+			if (added > 0) {
 				this.renderAttachments();
 				void this.saveChat();
 			}
-		}).open();
+			if (unresolved > 0) {
+				new Notice(
+					`${unresolved} 件のファイルパスを取得できませんでした（Electron 環境制約）。`
+				);
+			} else if (files.length > 0 && added === 0) {
+				new Notice("選択されたファイルはすでに添付済みです。");
+			}
+			cleanup();
+		});
+		// Chromium 113+ で発火する `cancel` イベント。キャンセル時のみ
+		// change が来ないので、ここで input を片付ける。
+		input.addEventListener("cancel", cleanup);
+		document.body.appendChild(input);
+		input.click();
 	}
 
 	private async handlePaste(e: ClipboardEvent): Promise<void> {
@@ -1336,10 +1400,14 @@ export class ClaudePanelView extends ItemView {
 			}
 			if (Array.isArray(data.attachments)) {
 				// 既に存在しないパスは除去する（前回 unload 時にクリップボード
-				// 画像が削除されているケース等）。
+				// 画像が削除されているケース等）。Vault 相対パスは Obsidian の
+				// adapter で、OS の絶対パスは Node の fs で存在確認する。
 				const live: string[] = [];
 				for (const p of data.attachments) {
-					if (await adapter.exists(p)) live.push(p);
+					const exists = nodePath.isAbsolute(p)
+						? nodeFs.existsSync(p)
+						: await adapter.exists(p);
+					if (exists) live.push(p);
 				}
 				this.attachments = live;
 			}
@@ -1424,9 +1492,30 @@ export class ClaudePanelView extends ItemView {
 		// 引用ブロックが UI を埋め尽くさないようにする。
 		const body = `${thinkPrefix}${userText}`;
 
-		// claude に送るフルプロンプト: メンション + 選択ブロックを含む。
-		const promptBody = `${selectionBlock}${thinkPrefix}${userText}`;
-		const mentionsStr = promptPaths.map((p) => `@${p}`).join(" ");
+		// claude へ送るパスを2つに分ける:
+		// - Vault 相対パス（拡張子付きの普通のパス）は従来どおり @-mention
+		// - OS の絶対パス（Vault 外）は Claude Code の @-mention パーサが
+		//   ドライブレター・スペース・バックスラッシュを正しく扱えない
+		//   ことがあるため、専用の「添付」ブロックに列挙して Read ツール
+		//   での読み込みを Claude に任せる。フォワードスラッシュへ正規化
+		//   して可読性も上げる。
+		const vaultPaths: string[] = [];
+		const externalPaths: string[] = [];
+		for (const p of promptPaths) {
+			if (nodePath.isAbsolute(p)) {
+				externalPaths.push(p.replace(/\\/g, "/"));
+			} else {
+				vaultPaths.push(p);
+			}
+		}
+		const mentionsStr = vaultPaths.map((p) => `@${p}`).join(" ");
+		const externalBlock = externalPaths.length
+			? `[添付ファイル — Read ツールで読み込んでください]\n${externalPaths
+					.map((p) => `- ${p}`)
+					.join("\n")}\n\n`
+			: "";
+
+		const promptBody = `${externalBlock}${selectionBlock}${thinkPrefix}${userText}`;
 		const fullPrompt = mentionsStr
 			? `${mentionsStr}\n\n${promptBody}`
 			: promptBody;

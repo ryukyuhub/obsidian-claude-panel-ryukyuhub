@@ -135,6 +135,11 @@ function buildEnv(claudePath: string): NodeJS.ProcessEnv {
 			? [
 				expandPath("%USERPROFILE%\\.local\\bin"),
 				expandPath("%APPDATA%\\npm"),
+				// Node.js のインストール先。Obsidian の起動時 PATH に
+				// 含まれていなくても、Claude CLI とそのフックスクリプト
+				// （`node ...`）が確実に動くようにここで明示的に通す。
+				expandPath("%ProgramFiles%\\nodejs"),
+				expandPath("%ProgramFiles(x86)%\\nodejs"),
 			]
 			: [
 				expandPath("~/.local/bin"),
@@ -229,10 +234,13 @@ interface AssistantStreamMessage {
 
 interface ResultStreamMessage {
 	type: "result";
+	subtype?: string;
 	duration_ms: number;
 	total_cost_usd?: number;
 	usage?: RawUsage;
 	session_id?: string;
+	is_error?: boolean;
+	errors?: string[];
 }
 
 interface ControlRequestMessage {
@@ -298,6 +306,17 @@ function handleStreamLine(line: string, cb: StreamCallbacks): void {
 		const r = parsed as ResultStreamMessage;
 		if (r.usage) {
 			events.onUsage?.(normalizeUsage(r.usage));
+		}
+		// CLI が is_error で終了するケース（例: stale な --resume セッション ID
+		// → "No conversation found with session ID: ..."）。エラーは stderr では
+		// なく stream-json の result メッセージで返ってくるため、ここで取り出して
+		// onError へ転送し、view 側のリトライロジックを起動できるようにする。
+		if (r.is_error) {
+			const detail =
+				(r.errors && r.errors.length > 0
+					? r.errors.join("; ")
+					: r.subtype) || "error_during_execution";
+			events.onError(new Error(detail));
 		}
 		events.onResult({
 			durationMs: r.duration_ms,
