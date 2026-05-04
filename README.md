@@ -19,11 +19,11 @@ Claude Panel for Obsidian は、Obsidian の右サイドバーに [Claude Code](
 
 ## インストール
 
-> **非エンジニアの方へ**: 途中でターミナル（コマンドラインツール）を使います。Windows なら **PowerShell**、macOS なら **Terminal** を起動して、各コードブロックをコピー＆ペーストで 1 行ずつ実行してください。「コマンドが見つからない」場合の対処は末尾の[トラブルシューティング](#トラブルシューティング)にまとめています。
+> **Claude CLI を使っていない方へ**: 途中でターミナル（コマンドラインツール）を使います。Windows なら **PowerShell**、macOS なら **Terminal** を起動して、各コードブロックをコピー＆ペーストで 1 行ずつ実行してください。「コマンドが見つからない」場合の対処は末尾の[トラブルシューティング](#トラブルシューティング)にまとめています。
 
 ### 1. 前提ソフトウェアをインストール
 
-`claude` CLI は Node.js 上で動作します。まず Node.js（と Git、Windows なら PowerShell 7）を入れてください。
+`claude CLI` は Node.js 上で動作します。まず Node.js（と Git、Windows なら PowerShell 7）を入れてください。
 
 #### Windows — `winget` で一括導入（推奨）
 
@@ -49,14 +49,6 @@ Terminal で実行:
 
 # Node.js（npm 同梱）と Git
 brew install node git
-```
-
-#### Linux
-
-ディストリビューションのパッケージマネージャで `nodejs` `npm` `git` をインストールしてください。例 (Ubuntu/Debian):
-
-```bash
-sudo apt update && sudo apt install -y nodejs npm git
 ```
 
 ### 2. Claude Code CLI をインストール
