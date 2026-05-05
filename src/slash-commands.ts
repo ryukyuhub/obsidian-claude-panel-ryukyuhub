@@ -10,6 +10,72 @@ import {
 } from "./settings";
 import { listMcpServers } from "./agent";
 
+/**
+ * 入力欄に表示する候補のカテゴリ。バッジの色分けにも使う。
+ *   local         — このプラグイン内で完結（モーダル/設定操作など）
+ *   repl-only     — TTY 必須なのでターミナル案内を出すだけ
+ *   passthrough   — そのまま CLI に渡るが、よく使うので候補に出す
+ */
+export type SlashCategory = "local" | "repl-only" | "passthrough";
+
+export interface SlashCommandSpec {
+	name: string;
+	desc: string;
+	category: SlashCategory;
+}
+
+/**
+ * 入力サジェスト用のスラッシュコマンドカタログ。`handleLocalSlashCommand`
+ * の switch とこちらは独立しているので、ローカルハンドラを増やしたら
+ * ここにも 1 行足す必要がある（CI で照合する仕組みは入れていない）。
+ */
+export const SLASH_COMMANDS: SlashCommandSpec[] = [
+	{ name: "/clear", desc: "会話をクリア", category: "local" },
+	{ name: "/help", desc: "コマンド一覧を表示", category: "local" },
+	{ name: "/model", desc: "モデルの表示 / 変更", category: "local" },
+	{ name: "/think", desc: "思考深度の表示 / 変更", category: "local" },
+	{ name: "/mcp", desc: "MCP サーバの状態を表示", category: "local" },
+	{ name: "/usage", desc: "アカウント・使用状況モーダル", category: "local" },
+	{ name: "/cost", desc: "/usage と同じ", category: "local" },
+	{ name: "/account", desc: "/usage と同じ", category: "local" },
+	{ name: "/config", desc: "プラグインの設定タブを開く", category: "local" },
+	{ name: "/compact", desc: "（自動圧縮の説明）", category: "local" },
+	{ name: "/exit", desc: "サイドバーパネルを閉じる", category: "local" },
+	{ name: "/quit", desc: "サイドバーパネルを閉じる", category: "local" },
+
+	{ name: "/login", desc: "Claude Code にログイン", category: "repl-only" },
+	{ name: "/logout", desc: "ログアウト", category: "repl-only" },
+	{ name: "/agents", desc: "サブエージェント設定", category: "repl-only" },
+	{ name: "/permissions", desc: "ツール許可ルール", category: "repl-only" },
+	{ name: "/doctor", desc: "ヘルスチェック", category: "repl-only" },
+	{ name: "/upgrade", desc: "Claude Code を更新", category: "repl-only" },
+	{
+		name: "/migrate-installer",
+		desc: "インストール方式を移行",
+		category: "repl-only",
+	},
+	{ name: "/release-notes", desc: "リリースノート", category: "repl-only" },
+	{ name: "/bug", desc: "バグ報告", category: "repl-only" },
+	{
+		name: "/terminal-setup",
+		desc: "ターミナル統合を設定",
+		category: "repl-only",
+	},
+	{ name: "/vim", desc: "Vim 風キーバインドを切替", category: "repl-only" },
+
+	{ name: "/init", desc: "CLAUDE.md を生成（CLI に転送）", category: "passthrough" },
+	{
+		name: "/review",
+		desc: "コードレビュー（CLI に転送）",
+		category: "passthrough",
+	},
+	{
+		name: "/pr-comments",
+		desc: "PR コメント取得（CLI に転送）",
+		category: "passthrough",
+	},
+];
+
 export interface SlashContext {
 	plugin: ClaudePanelPlugin;
 	getVaultPath: () => string | null;
@@ -18,6 +84,8 @@ export interface SlashContext {
 	appendSystemMessage: (text: string) => void;
 	appendInteractive: (render: (c: HTMLElement) => void) => void;
 	openAccountUsage: () => void;
+	openPluginSettings: () => void;
+	closeView: () => void;
 }
 
 /**
@@ -49,31 +117,108 @@ export function handleLocalSlashCommand(
 			return true;
 		case "/usage":
 		case "/account":
+		case "/cost":
 			ctx.openAccountUsage();
 			return true;
+		case "/config":
+			ctx.openPluginSettings();
+			ctx.appendSystemMessage(
+				"プラグインの設定タブを開きました。モデル、Vault パス、CLI 引数などはこちらから変更できます。"
+			);
+			return true;
+		case "/exit":
+		case "/quit":
+			ctx.closeView();
+			return true;
 		case "/login":
+			showTerminalOnlyNote(ctx, "/login", "Claude Code にログインする");
+			return true;
+		case "/logout":
+			showTerminalOnlyNote(ctx, "/logout", "Claude Code からログアウトする");
+			return true;
+		case "/compact":
 			ctx.appendSystemMessage(
 				[
-					"**`/login` はインタラクティブモード専用です。**",
+					"**`/compact` はこのプラグインでは不要です。**",
 					"",
-					"ターミナルを開いて以下を実行してください:",
-					"",
-					"```",
-					"claude /login",
-					"```",
+					"このプラグインは `claude --print --resume` でセッションを継続しており、",
+					"コンテキストウィンドウが埋まると Claude Code 側で自動的に圧縮されます。",
+					"会話を完全にリセットしたい場合は `/clear` を使ってください。",
 				].join("\n")
 			);
+			return true;
+		case "/agents":
+			showTerminalOnlyNote(ctx, "/agents", "サブエージェント設定を編集する");
+			return true;
+		case "/permissions":
+			showTerminalOnlyNote(
+				ctx,
+				"/permissions",
+				"ツール許可ルールを編集する"
+			);
+			return true;
+		case "/doctor":
+			showTerminalOnlyNote(ctx, "/doctor", "Claude Code のヘルスチェック");
+			return true;
+		case "/upgrade":
+			showTerminalOnlyNote(ctx, "/upgrade", "Claude Code を更新する");
+			return true;
+		case "/migrate-installer":
+			showTerminalOnlyNote(
+				ctx,
+				"/migrate-installer",
+				"インストール方式を移行する"
+			);
+			return true;
+		case "/release-notes":
+			showTerminalOnlyNote(ctx, "/release-notes", "リリースノートを表示");
+			return true;
+		case "/bug":
+			showTerminalOnlyNote(ctx, "/bug", "Anthropic にバグ報告する");
+			return true;
+		case "/terminal-setup":
+			showTerminalOnlyNote(
+				ctx,
+				"/terminal-setup",
+				"ターミナル統合を設定する"
+			);
+			return true;
+		case "/vim":
+			showTerminalOnlyNote(ctx, "/vim", "Vim 風キーバインドを切り替える");
 			return true;
 		default:
 			return false;
 	}
 }
 
+/**
+ * Claude Code REPL 専用のコマンドを叩かれたときに、ターミナルから
+ * `claude <cmd>` を実行するよう案内するシステムメッセージを表示する。
+ * `--print` 経由では動かない（あるいは TTY 必須の）コマンドに使う。
+ */
+function showTerminalOnlyNote(
+	ctx: SlashContext,
+	command: string,
+	purpose: string
+): void {
+	ctx.appendSystemMessage(
+		[
+			`**\`${command}\` はインタラクティブモード（REPL）専用です。**`,
+			"",
+			`${purpose}には、ターミナルを開いて以下を実行してください:`,
+			"",
+			"```",
+			`claude ${command}`,
+			"```",
+		].join("\n")
+	);
+}
+
 function showHelp(ctx: SlashContext): void {
 	ctx.appendInteractive((c) => {
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: "ローカルコマンド",
+			text: "ローカルコマンド（パネル内で完結）",
 		});
 		const list = c.createEl("ul", { cls: "claude-panel-sys-list" });
 		const items: [string, string][] = [
@@ -83,22 +228,49 @@ function showHelp(ctx: SlashContext): void {
 			["/think [mode]", "思考深度の表示 / 変更"],
 			["/mcp", "設定済みの MCP サーバを表示"],
 			["/usage", "アカウント情報とレート制限の使用状況を表示"],
-			["/login", "ターミナルからログインする方法を表示"],
+			["/cost", "/usage と同じ（セッションのコスト・トークンを表示）"],
+			["/config", "プラグインの設定タブを開く"],
+			["/compact", "自動圧縮の説明（このプラグインでは手動操作不要）"],
+			["/exit, /quit", "サイドバーパネルを閉じる"],
 		];
 		for (const [name, desc] of items) {
 			const li = list.createEl("li");
 			li.createEl("code", { text: name });
 			li.createSpan({ text: ` — ${desc}` });
 		}
+
+		c.createEl("div", {
+			cls: "claude-panel-sys-title",
+			text: "ターミナル案内のみ（REPL 専用コマンド）",
+		});
+		const replList = c.createEl("ul", { cls: "claude-panel-sys-list" });
+		const replItems: [string, string][] = [
+			["/login, /logout", "Claude Code の認証"],
+			["/agents", "サブエージェント設定"],
+			["/permissions", "ツール許可ルール"],
+			["/doctor", "ヘルスチェック"],
+			["/upgrade", "Claude Code 更新"],
+			["/migrate-installer", "インストール方式の移行"],
+			["/release-notes", "リリースノート"],
+			["/bug", "Anthropic にバグ報告"],
+			["/terminal-setup", "ターミナル統合設定"],
+			["/vim", "Vim 風キーバインド"],
+		];
+		for (const [name, desc] of replItems) {
+			const li = replList.createEl("li");
+			li.createEl("code", { text: name });
+			li.createSpan({ text: ` — ${desc}` });
+		}
+
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
 			text: "パススルー（Claude Code CLI に転送）",
 		});
 		const note = c.createEl("div", { cls: "claude-panel-sys-note" });
 		note.setText(
-			"上記以外の /コマンドはそのまま CLI に --print モードで渡されます。" +
+			"上記以外の /コマンド（例: /init, /review, /pr-comments など）はそのまま CLI に --print モードで渡されます。" +
 				".claude/commands/*.md で定義したユーザーコマンドも動作します。" +
-				"注意: REPL 専用のコマンド（/login, /init, /mcp wizard など）は print モードでは動かない場合があります。"
+				"注意: TTY を要求する REPL 専用コマンドは print モードでは動かない場合があります。"
 		);
 	});
 }

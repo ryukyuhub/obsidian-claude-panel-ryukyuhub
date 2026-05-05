@@ -186,7 +186,10 @@ export function renderPart(
 		} else {
 			span.addClass("claude-panel-md");
 			void MarkdownRenderer.render(app, part.text, span, "", owner)
-				.then(() => linkifyPaths(span, app));
+				.then(() => {
+					linkifyPaths(span, app);
+					highlightQuestions(span);
+				});
 		}
 	} else if (part.type === "tool") {
 		renderToolPill(body, part.name, part.input);
@@ -297,6 +300,64 @@ function linkifyPaths(host: HTMLElement, app: App): void {
 			}
 		};
 		code.replaceWith(link);
+	}
+}
+
+/**
+ * アシスタントメッセージ内で `?` / `？` で終わる文を見つけ、強調用の
+ * `<span>` で包む。サイドバーの隅で見ているとモデルからの問いかけを
+ * 見落としやすいので、応答待ちであることに気付けるよう色と太字で
+ * 浮かせる。ユーザー側のメッセージは Claude に向けた質問でしかない
+ * ので対象外。コードブロック内のテキストも対象外（誤検出が多いうえ
+ * モノスペースの装飾を壊すため）。
+ */
+function highlightQuestions(host: HTMLElement): void {
+	if (!host.closest(".claude-panel-msg-assistant")) return;
+
+	const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+	const targets: Text[] = [];
+	let node: Node | null;
+	while ((node = walker.nextNode())) {
+		const t = node as Text;
+		const parent = t.parentElement;
+		if (!parent) continue;
+		if (parent.closest("pre, code, .claude-panel-question")) continue;
+		if (!/[?？]/.test(t.data)) continue;
+		targets.push(t);
+	}
+
+	// 文の開始は前の文末記号（。！？.!?）または改行の直後。`?` / `？` で
+	// 終わるところまでを 1 つのマッチにする。lookbehind を使わずに非貪欲
+	// マッチで十分カバーできる。
+	const SENT = /[^。！？.!?\n]*[?？]/g;
+
+	for (const text of targets) {
+		const content = text.data;
+		const fragment = document.createDocumentFragment();
+		let lastIdx = 0;
+		let m: RegExpExecArray | null;
+		SENT.lastIndex = 0;
+		while ((m = SENT.exec(content))) {
+			const matchStart = m.index;
+			const matchEnd = matchStart + m[0].length;
+			let trimStart = matchStart;
+			while (trimStart < matchEnd && /\s/.test(content[trimStart])) trimStart++;
+			if (trimStart > lastIdx) {
+				fragment.appendChild(
+					document.createTextNode(content.slice(lastIdx, trimStart))
+				);
+			}
+			const span = document.createElement("span");
+			span.className = "claude-panel-question";
+			span.textContent = content.slice(trimStart, matchEnd);
+			fragment.appendChild(span);
+			lastIdx = matchEnd;
+		}
+		if (lastIdx === 0) continue;
+		if (lastIdx < content.length) {
+			fragment.appendChild(document.createTextNode(content.slice(lastIdx)));
+		}
+		text.replaceWith(fragment);
 	}
 }
 

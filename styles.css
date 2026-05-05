@@ -692,6 +692,28 @@
 .claude-panel-msg-text-part {
 	word-break: break-word;
 }
+
+/* 応答待ちに気付けるよう、アシスタントの問いかけ文（`?` / `？` で終わる文）
+   を強調する。サイドバーの隅で見ているとモデルからの確認や質問を
+   見落としやすいため、本文より一段大きく、警告色で塗りつぶす。
+   `box-decoration-break: clone` は折り返し時に各行へ padding/border-radius
+   を行ごとに付け直すため、複数行に渡る質問でもピル状の見た目が崩れない。 */
+.claude-panel-question {
+	display: inline;
+	color: var(--text-warning, #d29922);
+	font-weight: 700;
+	font-size: 1.18em;
+	line-height: 1.5;
+	background: color-mix(
+		in srgb,
+		var(--text-warning, #d29922) 14%,
+		transparent
+	);
+	padding: 1px 5px;
+	border-radius: 4px;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
+}
 /* アシスタント応答がストリーミング中の間は part を textContent で設定する
    （マークダウンレンダリングなし）。改行を保持し、複数行チャンクを自然に
    読めるようにする。ストリーミング完了後は MarkdownRenderer が
@@ -1620,7 +1642,108 @@
 	color: var(--text-error);
 }
 
-/* ---------- 4. プロンプト textarea ---------- */
+/* ---------- 4. プロンプト textarea ----------
+   `claude-panel-input-wrap` は textarea とサジェスト popup の relative
+   親。popup を `bottom: 100%` で textarea の真上にオーバレイする。 */
+
+.claude-panel-input-wrap {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+
+/* スラッシュコマンドのサジェスト popup。textarea の上に絶対配置で
+   浮かぶ。スクロール可能。`is-hidden` で非表示。 */
+.claude-panel-suggest {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: calc(100% + 4px);
+	max-height: 240px;
+	overflow-y: auto;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+	z-index: 20;
+}
+
+.claude-panel-suggest.is-hidden {
+	display: none;
+}
+
+.claude-panel-suggest-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	cursor: pointer;
+	font-size: 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claude-panel-suggest-item:last-child {
+	border-bottom: none;
+}
+
+.claude-panel-suggest-item.is-selected {
+	background: var(--background-modifier-hover);
+}
+
+.claude-panel-suggest-name {
+	font-family: var(--font-monospace);
+	color: var(--text-accent);
+	font-weight: 600;
+	flex-shrink: 0;
+}
+
+.claude-panel-suggest-desc {
+	color: var(--text-muted);
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.claude-panel-suggest-cat {
+	font-size: 9px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 1px 6px;
+	border-radius: 3px;
+	background: var(--background-modifier-border);
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+
+.claude-panel-suggest-item[data-cat="local"] .claude-panel-suggest-cat {
+	background: color-mix(
+		in srgb,
+		var(--interactive-accent) 22%,
+		transparent
+	);
+	color: var(--interactive-accent);
+}
+
+.claude-panel-suggest-item[data-cat="repl-only"] .claude-panel-suggest-cat {
+	background: color-mix(
+		in srgb,
+		var(--text-warning, #d29922) 20%,
+		transparent
+	);
+	color: var(--text-warning, #d29922);
+}
+
+.claude-panel-suggest-item[data-cat="passthrough"] .claude-panel-suggest-cat {
+	background: color-mix(
+		in srgb,
+		var(--text-success, #4caf50) 20%,
+		transparent
+	);
+	color: var(--text-success, #4caf50);
+}
+
 
 .claude-panel-input {
 	width: 100%;

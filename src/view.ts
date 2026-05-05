@@ -44,6 +44,7 @@ import {
 } from "./chat-persistence";
 import { PromptHistory } from "./prompt-history";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
+import { SlashSuggest } from "./slash-suggest";
 import { openAccountUsageModal } from "./account-usage";
 import * as nodePath from "path";
 import * as nodeFs from "fs";
@@ -103,6 +104,8 @@ export class ClaudePanelView extends ItemView {
 	// プロンプト履歴ナビゲーション（textarea 内の Up/Down キー）。
 	// state は PromptHistory に持たせている。inputEl 構築後に初期化。
 	private history!: PromptHistory;
+	// `/` で始まる入力に対するコマンド候補ポップアップ。inputEl 構築後に初期化。
+	private slashSuggest!: SlashSuggest;
 	// claude CLI から得た最新のトークン使用量。コンテキストメーター
 	// （ドーナツ）の表示ソース。
 	private lastUsage: MessageUsage | null = null;
@@ -336,7 +339,16 @@ export class ClaudePanelView extends ItemView {
 			cls: "claude-panel-attachments",
 		});
 
-		this.inputEl = composer.createEl("textarea", {
+		// textarea とサジェスト popup を同じ relative 親に入れて、popup を
+		// 入力欄の真上にオーバレイする。composer 全体を relative にすると
+		// 他の絶対配置要素（モデルセレクト等）に影響するため避ける。
+		const inputWrap = composer.createDiv({
+			cls: "claude-panel-input-wrap",
+		});
+		const suggestEl = inputWrap.createDiv({
+			cls: "claude-panel-suggest is-hidden",
+		});
+		this.inputEl = inputWrap.createEl("textarea", {
 			cls: "claude-panel-input",
 			attr: {
 				placeholder:
@@ -344,10 +356,14 @@ export class ClaudePanelView extends ItemView {
 			},
 		});
 		this.inputEl.rows = 4;
+		this.slashSuggest = new SlashSuggest(suggestEl, this.inputEl);
 		this.history = new PromptHistory(this.inputEl, () =>
 			this.collectInputHistory()
 		);
 		this.inputEl.addEventListener("keydown", (e) => {
+			// サジェスト popup が開いている場合は、popup のキーバインドを
+			// 優先させる（Enter で送信 / Up,Down で履歴より先に処理する）。
+			if (this.slashSuggest.handleKey(e)) return;
 			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
 				this.send();
@@ -1030,7 +1046,25 @@ export class ClaudePanelView extends ItemView {
 				this.appendInteractiveSystemMessage(render),
 			openAccountUsage: () =>
 				openAccountUsageModal(this.app, this.plugin.settings),
+			openPluginSettings: () => this.openPluginSettings(),
+			closeView: () => this.leaf.detach(),
 		};
+	}
+
+	/**
+	 * Obsidian の設定モーダルを開き、本プラグインの設定タブまでスクロール
+	 * させる。`app.setting` は公式型に出ていないので最小の cast で叩く。
+	 */
+	private openPluginSettings(): void {
+		const setting = (this.app as unknown as {
+			setting?: {
+				open: () => void;
+				openTabById: (id: string) => void;
+			};
+		}).setting;
+		if (!setting) return;
+		setting.open();
+		setting.openTabById(this.plugin.manifest.id);
 	}
 
 	private async send(): Promise<void> {
