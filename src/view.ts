@@ -102,6 +102,11 @@ export class ClaudePanelView extends ItemView {
 	// で `--resume` 付きで起動して会話コンテキストを継続する（コンテキスト
 	// が貯まり、CLI の自動コンパクションも動作する）。/clear でクリア。
 	private currentSessionId: string | null = null;
+	// 応答完了通知用。AudioContext は遅延初期化し、ビュー単位で使い回す
+	// （Obsidian のウィンドウは長寿命なので毎回作るより安い）。連続した
+	// 完了でフラッシュが途中キャンセルされないよう timeout id も保持する。
+	private audioCtx: AudioContext | null = null;
+	private flashTimeoutId: number | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudePanelPlugin) {
 		super(leaf);
@@ -198,6 +203,16 @@ export class ClaudePanelView extends ItemView {
 	async onClose(): Promise<void> {
 		// 未送信のドラフトを保存しておき、次回開いた時に復元できるようにする。
 		await this.saveChat();
+		if (this.flashTimeoutId !== null) {
+			window.clearTimeout(this.flashTimeoutId);
+			this.flashTimeoutId = null;
+		}
+		if (this.audioCtx) {
+			void this.audioCtx.close().catch(() => {
+				/* close は冪等ではないが失敗しても無害なので無視する。 */
+			});
+			this.audioCtx = null;
+		}
 	}
 
 	/**
@@ -1152,6 +1167,12 @@ export class ClaudePanelView extends ItemView {
 		const text = this.inputEl.value.trim();
 		if (!text) return;
 
+		// Chromium の autoplay policy はユーザージェスチャの最中に
+		// AudioContext を resume することを要求するので、送信ボタンを
+		// 押したこの瞬間に起こしておく。応答完了時はジェスチャの文脈外
+		// なので、そこで初めて resume すると suspended のまま無音になる。
+		this.warmupAudioContext();
+
 		if (text.startsWith("/")) {
 			if (handleLocalSlashCommand(this.slashContext(), text)) {
 				this.inputEl.value = "";
@@ -1259,6 +1280,7 @@ export class ClaudePanelView extends ItemView {
 		};
 
 		const first = await runOnce(this.currentSessionId ?? undefined);
+		let canceled = first.canceled;
 
 		// CLI 側でセッションが失われることがある（クリーンアップ、期限切れ、
 		// ~/.claude/sessions の手動編集など）。--resume が存在しない
@@ -1281,13 +1303,139 @@ export class ClaudePanelView extends ItemView {
 				msg.usage = undefined;
 				this.rerenderMessage(msg);
 			}
-			await runOnce(undefined);
+			const retry = await runOnce(undefined);
+			canceled = retry.canceled;
 		}
 
 		this.finalizeStreamingMessage(assistantMsgId);
 		this.setBusy(false);
 
+		// ユーザー自身がキャンセルしたランでは通知しない（自分で止めたので
+		// 不要）。エラー終了でも通知する — 失敗を見落とすほうがよくない。
+		if (!canceled) this.notifyOnComplete();
+
 		void this.saveChat();
+	}
+
+	// ============================================================
+	//   完了通知（フラッシュ・ビープ）
+	// ============================================================
+
+	private notifyOnComplete(): void {
+		const mode = this.plugin.settings.notifyOnComplete;
+		if (mode === "none") return;
+		if (mode === "sound" || mode === "both") void this.playCompletionBeep();
+		if (mode === "flash" || mode === "both") this.flashPanel();
+	}
+
+	/**
+	 * AudioContext をユーザージェスチャの最中に起こしておく。Chromium の
+	 * autoplay policy では、ユーザージェスチャの文脈外で resume を呼ぶと
+	 * suspended のままになり、completion beep が鳴らない。送信ボタンを
+	 * 押した瞬間に呼んで running 状態に持っていく。
+	 */
+	warmupAudioContext(): void {
+		const mode = this.plugin.settings.notifyOnComplete;
+		if (mode !== "sound" && mode !== "both") return;
+		try {
+			if (!this.audioCtx) {
+				const Ctx =
+					(window as unknown as { AudioContext?: typeof AudioContext })
+						.AudioContext ??
+					(
+						window as unknown as {
+							webkitAudioContext?: typeof AudioContext;
+						}
+					).webkitAudioContext;
+				if (!Ctx) return;
+				this.audioCtx = new Ctx();
+			}
+			if (this.audioCtx.state === "suspended") {
+				void this.audioCtx.resume().catch((e) => {
+					console.warn("[claude-panel] AudioContext resume failed", e);
+				});
+			}
+		} catch (e) {
+			console.warn("[claude-panel] AudioContext warmup failed", e);
+		}
+	}
+
+	private async playCompletionBeep(): Promise<void> {
+		try {
+			if (!this.audioCtx) {
+				const Ctx =
+					(window as unknown as { AudioContext?: typeof AudioContext })
+						.AudioContext ??
+					(
+						window as unknown as {
+							webkitAudioContext?: typeof AudioContext;
+						}
+					).webkitAudioContext;
+				if (!Ctx) {
+					console.warn("[claude-panel] AudioContext not available");
+					return;
+				}
+				this.audioCtx = new Ctx();
+			}
+			const ctx = this.audioCtx;
+			// resume を await してから時刻スケジュールする。await しないと
+			// 旧 currentTime 基準で start() を呼んでしまい、resume 完了時には
+			// 既にスケジュール時刻が過去になり「無音」になることがある。
+			// なお Chromium の autoplay policy はユーザージェスチャの最中に
+			// resume を呼ぶことを要求する場合があるため、send() 時の warmup
+			// が本命で、ここはフォールバック。
+			if (ctx.state === "suspended") await ctx.resume();
+			if (ctx.state !== "running") {
+				console.warn(
+					"[claude-panel] AudioContext not running:",
+					ctx.state
+				);
+				return;
+			}
+			// 2 音のチャイム（A5 → E6）。完了感のある上昇 2 音にする。
+			const baseTime = ctx.currentTime + 0.02;
+			const playTone = (
+				freq: number,
+				offset: number,
+				duration: number,
+				peak: number
+			): void => {
+				const t0 = baseTime + offset;
+				const osc = ctx.createOscillator();
+				const gain = ctx.createGain();
+				osc.type = "sine";
+				osc.frequency.value = freq;
+				// クリックノイズを避けるため立ち上がり/減衰をフェード。
+				gain.gain.setValueAtTime(0, t0);
+				gain.gain.linearRampToValueAtTime(peak, t0 + 0.012);
+				gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+				osc.connect(gain).connect(ctx.destination);
+				osc.start(t0);
+				osc.stop(t0 + duration + 0.05);
+			};
+			playTone(880, 0, 0.22, 0.5); // A5
+			playTone(1318.5, 0.11, 0.28, 0.4); // E6
+		} catch (e) {
+			console.warn("[claude-panel] playCompletionBeep failed", e);
+		}
+	}
+
+	private flashPanel(): void {
+		const root = this.containerEl.children[1] as HTMLElement | undefined;
+		if (!root) return;
+		// 連続発火に備えて既存タイマーをクリアし、クラスを外してから再付与
+		// することで CSS アニメーションを確実にリスタートさせる。
+		if (this.flashTimeoutId !== null) {
+			window.clearTimeout(this.flashTimeoutId);
+		}
+		root.removeClass("is-flash");
+		void root.offsetWidth; // リフロー強制でアニメーションを巻き戻す。
+		root.addClass("is-flash");
+		// CSS 側のアニメーション総時間（3.0s）+ 余裕でクラスを外す。
+		this.flashTimeoutId = window.setTimeout(() => {
+			root.removeClass("is-flash");
+			this.flashTimeoutId = null;
+		}, 3100);
 	}
 
 	// ============================================================

@@ -63,6 +63,33 @@ export const PERMISSION_MODES: PermissionMode[] = [
 	"plan",
 ];
 
+/**
+ * 応答完了時の通知方式。`flash` はパネル枠を一瞬 accent カラーで光らせる。
+ * `sound` は Web Audio で短いビープを鳴らす（音声ファイルは同梱しない）。
+ * ユーザーがキャンセルしたランでは通知しない（自分で止めたので不要）。
+ */
+export type NotifyOnComplete = "none" | "sound" | "flash" | "both";
+
+export const NOTIFY_ON_COMPLETE_OPTIONS: NotifyOnComplete[] = [
+	"none",
+	"sound",
+	"flash",
+	"both",
+];
+
+export function notifyOnCompleteLabel(n: NotifyOnComplete): string {
+	switch (n) {
+		case "none":
+			return "なし";
+		case "sound":
+			return "音のみ";
+		case "flash":
+			return "フラッシュのみ";
+		case "both":
+			return "音とフラッシュ";
+	}
+}
+
 export function permissionModeLabel(m: PermissionMode): string {
 	switch (m) {
 		case "default":
@@ -120,6 +147,8 @@ export interface ClaudePanelSettings {
 	/** チャットパネルの基準フォントサイズ（px）。パネルルート要素の
 	 *  `--claude-panel-font-size` CSS 変数を駆動する。 */
 	fontSize: number;
+	/** 応答完了時の通知方式。既定はフラッシュ（控えめに目立たせる）。 */
+	notifyOnComplete: NotifyOnComplete;
 }
 
 /** フォントサイズスライダーの上下限。10px 未満ではチャットパネルが
@@ -140,6 +169,7 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	// マージするため）。
 	permissionMode: "default",
 	fontSize: 13,
+	notifyOnComplete: "flash",
 };
 
 export class ClaudePanelSettingTab extends PluginSettingTab {
@@ -315,6 +345,25 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 						this.display();
 					})
 			);
+
+		new Setting(containerEl)
+			.setName("完了通知")
+			.setDesc(
+				"Claude の応答が完了したときの通知方式。" +
+					"フラッシュはパネル枠を一瞬光らせます。音は短いビープを鳴らします（音声ファイルは同梱しません）。" +
+					"ユーザー自身がキャンセルしたランでは通知しません。"
+			)
+			.addDropdown((dropdown) => {
+				for (const n of NOTIFY_ON_COMPLETE_OPTIONS) {
+					dropdown.addOption(n, notifyOnCompleteLabel(n));
+				}
+				dropdown.setValue(this.plugin.settings.notifyOnComplete);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.notifyOnComplete =
+						value as NotifyOnComplete;
+					await this.plugin.saveSettings();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("ホットキー")
