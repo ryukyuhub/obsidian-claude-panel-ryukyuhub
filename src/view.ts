@@ -33,6 +33,7 @@ import {
 	type CapturedSelection,
 } from "./selection-capture";
 import { CompletionNotifier } from "./completion-notifier";
+import { ContextMeter } from "./context-meter";
 import { PromptHistory } from "./prompt-history";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
 import { openAccountUsageModal } from "./account-usage";
@@ -97,7 +98,7 @@ export class ClaudePanelView extends ItemView {
 	// claude CLI から得た最新のトークン使用量。コンテキストメーター
 	// （ドーナツ）の表示ソース。
 	private lastUsage: MessageUsage | null = null;
-	private contextMeterEl: HTMLElement | null = null;
+	private contextMeter: ContextMeter | null = null;
 	// アクティブな claude セッション ID。設定されている場合、次のターン
 	// で `--resume` 付きで起動して会話コンテキストを継続する（コンテキスト
 	// が貯まり、CLI の自動コンパクションも動作する）。/clear でクリア。
@@ -204,7 +205,7 @@ export class ClaudePanelView extends ItemView {
 		this.renderMessages();
 		this.renderActiveFile();
 		this.renderAttachments();
-		this.renderContextMeter();
+		this.contextMeter?.update(this.lastUsage);
 		this.selection.poll();
 	}
 
@@ -281,14 +282,15 @@ export class ClaudePanelView extends ItemView {
 		const meterItem = header.createDiv({
 			cls: "claude-panel-meter-item",
 		});
-		this.contextMeterEl = meterItem.createDiv({
+		const meterHost = meterItem.createDiv({
 			cls: "claude-panel-meter-donut claude-panel-context-meter",
 		});
 		meterItem.createDiv({
 			cls: "claude-panel-meter-label",
 			text: "コンテキスト",
 		});
-		this.renderContextMeter();
+		this.contextMeter = new ContextMeter(meterHost);
+		this.contextMeter.update(this.lastUsage);
 
 		const accountBtn = header.createEl("button", {
 			cls: "claude-panel-icon-btn claude-panel-account-btn",
@@ -305,80 +307,10 @@ export class ClaudePanelView extends ItemView {
 		clearBtn.onclick = () => this.clearConversation();
 	}
 
-	/** 暫定でハードコード。現行 Claude 4.x モデルはすべて 200k がデフォルト。 */
-	private static CONTEXT_WINDOW_TOKENS = 200_000;
-
-	private contextTokensUsed(usage: MessageUsage | null): number {
-		if (!usage) return 0;
-		// モデルの入力ウィンドウを占めるトークン量。今ターン生成された
-		// 出力トークンは入力には含まれないが、次ターンの入力には乗るので、
-		// 「会話を続けた場合にコンテキストへ入る量」を近似するために
-		// 出力トークンも含めている。
-		return (
-			usage.inputTokens +
-			usage.cacheCreationTokens +
-			usage.cacheReadTokens +
-			usage.outputTokens
-		);
-	}
-
-	private renderDonut(host: HTMLElement, fraction: number): void {
-		host.empty();
-		const f = Math.max(0, Math.min(1, fraction));
-		const percent = f * 100;
-
-		const ns = "http://www.w3.org/2000/svg";
-		const svg = document.createElementNS(ns, "svg");
-		svg.setAttribute("viewBox", "0 0 36 36");
-		svg.classList.add("claude-panel-meter-svg");
-
-		const bg = document.createElementNS(ns, "circle");
-		bg.setAttribute("cx", "18");
-		bg.setAttribute("cy", "18");
-		bg.setAttribute("r", "15.9155");
-		bg.setAttribute("fill", "none");
-		bg.setAttribute("stroke-width", "3.5");
-		bg.classList.add("claude-panel-meter-bg");
-		svg.appendChild(bg);
-
-		const fg = document.createElementNS(ns, "circle");
-		fg.setAttribute("cx", "18");
-		fg.setAttribute("cy", "18");
-		fg.setAttribute("r", "15.9155");
-		fg.setAttribute("fill", "none");
-		fg.setAttribute("stroke-width", "3.5");
-		fg.setAttribute("stroke-linecap", "round");
-		// 円周は 2π·15.9155 ≈ 100 になるので、dasharray はそのまま % にマッピングできる。
-		fg.setAttribute("stroke-dasharray", `${percent.toFixed(2)} 100`);
-		fg.setAttribute("transform", "rotate(-90 18 18)");
-		fg.classList.add("claude-panel-meter-fg");
-		if (f >= 0.85) fg.classList.add("is-danger");
-		else if (f >= 0.6) fg.classList.add("is-warn");
-		svg.appendChild(fg);
-
-		host.appendChild(svg);
-	}
-
-	private renderContextMeter(): void {
-		const host = this.contextMeterEl;
-		if (!host) return;
-		const cap = ClaudePanelView.CONTEXT_WINDOW_TOKENS;
-		const used = this.contextTokensUsed(this.lastUsage);
-		this.renderDonut(host, used / cap);
-
-		const tooltip = this.lastUsage
-			? `コンテキスト: ${used.toLocaleString()} / ${cap.toLocaleString()} (${((used / cap) * 100).toFixed(0)}%)\n入力 ${this.lastUsage.inputTokens.toLocaleString()} · キャッシュ ${(this.lastUsage.cacheCreationTokens + this.lastUsage.cacheReadTokens).toLocaleString()} · 出力 ${this.lastUsage.outputTokens.toLocaleString()}`
-			: "コンテキスト — 使用データはまだありません";
-		// aria-label のみを使う（Obsidian がツールチップとしてレンダリングする）。
-		// 同時に `title` も設定すると、Obsidian のツールチップとブラウザ標準の
-		// title 吹き出しが二重に表示されてしまう。
-		host.setAttr("aria-label", tooltip);
-	}
-
 	/** コンテキストメーターを再描画する（関連する設定が変わった際に
 	 *  プラグイン側から呼ばれる）。 */
 	refreshMeters(): void {
-		this.renderContextMeter();
+		this.contextMeter?.update(this.lastUsage);
 	}
 
 	private renderComposer(root: HTMLElement): void {
@@ -1255,7 +1187,7 @@ export class ClaudePanelView extends ItemView {
 						);
 						if (msg) msg.usage = usage;
 						this.lastUsage = usage;
-						this.renderContextMeter();
+						this.contextMeter?.update(this.lastUsage);
 					},
 					onError: (err) => {
 						errorMessage = err.message;
