@@ -5,7 +5,6 @@ import {
 	TFolder,
 	Notice,
 	Scope,
-	normalizePath,
 	setIcon,
 } from "obsidian";
 import type ClaudePanelPlugin from "./main";
@@ -32,6 +31,11 @@ import {
 	SelectionCapture,
 	type CapturedSelection,
 } from "./selection-capture";
+import {
+	extractPastedImages,
+	pickFilesViaDialog,
+	savePastedImage,
+} from "./attachments";
 import { CompletionNotifier } from "./completion-notifier";
 import { ContextMeter } from "./context-meter";
 import {
@@ -370,7 +374,7 @@ export class ClaudePanelView extends ItemView {
 			text: "添付",
 			cls: "claude-panel-attach",
 		});
-		attachBtn.onclick = () => this.openAttachPicker();
+		attachBtn.onclick = () => void this.openAttachPicker();
 
 		this.sendBtn = actions.createEl("button", {
 			text: "送信",
@@ -677,90 +681,37 @@ export class ClaudePanelView extends ItemView {
 	//   添付アクション（ピッカー + クリップボードペースト）
 	// ============================================================
 
-	private openAttachPicker(): void {
-		// Electron 環境では `<input type="file">` がネイティブの OS ファイル
-		// 選択ダイアログを開く。File オブジェクトから絶対パスを取り出すには
-		// 旧 Electron では `File.path`、Electron 32+ では
-		// `electron.webUtils.getPathForFile(file)` を使う。両方試して
-		// 最初に成功したパスを採用する。
-		const electron = (
-			window as unknown as {
-				require?: (id: string) => { webUtils?: { getPathForFile?: (f: File) => string } };
+	private async openAttachPicker(): Promise<void> {
+		const { paths, unresolvedCount } = await pickFilesViaDialog();
+		let added = 0;
+		for (const p of paths) {
+			if (!this.attachments.includes(p)) {
+				this.attachments.push(p);
+				added++;
 			}
-		).require?.("electron");
-		const getPathForFile = electron?.webUtils?.getPathForFile;
-		const resolvePath = (f: File): string | null => {
-			const fromProp = (f as File & { path?: string }).path;
-			if (fromProp) return fromProp;
-			if (getPathForFile) {
-				try {
-					const p = getPathForFile(f);
-					if (p) return p;
-				} catch {
-					/* fall through */
-				}
-			}
-			return null;
-		};
-
-		const input = document.createElement("input");
-		input.type = "file";
-		input.multiple = true;
-		input.style.display = "none";
-		const cleanup = (): void => {
-			input.remove();
-		};
-		input.addEventListener("change", () => {
-			const files = Array.from(input.files ?? []);
-			let added = 0;
-			let unresolved = 0;
-			for (const f of files) {
-				const p = resolvePath(f);
-				if (!p) {
-					unresolved++;
-					continue;
-				}
-				if (!this.attachments.includes(p)) {
-					this.attachments.push(p);
-					added++;
-				}
-			}
-			if (added > 0) {
-				this.renderAttachments();
-				void this.saveChat();
-			}
-			if (unresolved > 0) {
-				new Notice(
-					`${unresolved} 件のファイルパスを取得できませんでした（Electron 環境制約）。`
-				);
-			} else if (files.length > 0 && added === 0) {
-				new Notice("選択されたファイルはすでに添付済みです。");
-			}
-			cleanup();
-		});
-		// Chromium 113+ で発火する `cancel` イベント。キャンセル時のみ
-		// change が来ないので、ここで input を片付ける。
-		input.addEventListener("cancel", cleanup);
-		document.body.appendChild(input);
-		input.click();
+		}
+		if (added > 0) {
+			this.renderAttachments();
+			void this.saveChat();
+		}
+		if (unresolvedCount > 0) {
+			new Notice(
+				`${unresolvedCount} 件のファイルパスを取得できませんでした（Electron 環境制約）。`
+			);
+		} else if (paths.length > 0 && added === 0) {
+			new Notice("選択されたファイルはすでに添付済みです。");
+		}
 	}
 
 	private async handlePaste(e: ClipboardEvent): Promise<void> {
-		const items = e.clipboardData?.items;
-		if (!items) return;
-		const images: File[] = [];
-		for (const item of Array.from(items)) {
-			if (item.kind === "file" && item.type.startsWith("image/")) {
-				const f = item.getAsFile();
-				if (f) images.push(f);
-			}
-		}
+		const images = extractPastedImages(e);
 		if (images.length === 0) return;
 		// バイナリ文字列が textarea に貼り付けられないよう抑止する。
 		e.preventDefault();
+		const folder = this.plugin.getAttachmentFolder();
 		for (const img of images) {
 			try {
-				const savedPath = await this.savePastedImage(img);
+				const savedPath = await savePastedImage(this.app, folder, img);
 				if (!this.attachments.includes(savedPath)) {
 					this.attachments.push(savedPath);
 				}
@@ -773,27 +724,6 @@ export class ClaudePanelView extends ItemView {
 			}
 		}
 		void this.saveChat();
-	}
-
-	// ペーストされた画像をプラグイン専用の添付フォルダ
-	// (.obsidian/plugins/<id>/attachments) に保存し、Vault 相対パスを返す。
-	private async savePastedImage(file: File): Promise<string> {
-		const subtype = (file.type.split("/")[1] || "png").toLowerCase();
-		const ext = subtype === "jpeg" ? "jpg" : subtype;
-		const folder = this.plugin.getAttachmentFolder();
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(folder))) {
-			await adapter.mkdir(folder);
-		}
-		const ts = new Date()
-			.toISOString()
-			.replace("T", "_")
-			.replace(/[:.]/g, "-")
-			.slice(0, 19);
-		const filePath = normalizePath(`${folder}/clipboard-${ts}.${ext}`);
-		const buf = await file.arrayBuffer();
-		await adapter.writeBinary(filePath, buf);
-		return filePath;
 	}
 
 	// ============================================================
