@@ -33,6 +33,7 @@ import {
 	type CapturedSelection,
 } from "./selection-capture";
 import { CompletionNotifier } from "./completion-notifier";
+import { PromptHistory } from "./prompt-history";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
 import { openAccountUsageModal } from "./account-usage";
 import * as nodePath from "path";
@@ -91,10 +92,8 @@ export class ClaudePanelView extends ItemView {
 	private currentRun: RunHandle | null = null;
 	private selection!: SelectionCapture;
 	// プロンプト履歴ナビゲーション（textarea 内の Up/Down キー）。
-	// null = ナビゲーション中ではない。それ以外はユーザー入力履歴リストの
-	// インデックスを保持。
-	private historyCursor: number | null = null;
-	private draftBeforeHistory = "";
+	// state は PromptHistory に持たせている。inputEl 構築後に初期化。
+	private history!: PromptHistory;
 	// claude CLI から得た最新のトークン使用量。コンテキストメーター
 	// （ドーナツ）の表示ソース。
 	private lastUsage: MessageUsage | null = null;
@@ -405,6 +404,9 @@ export class ClaudePanelView extends ItemView {
 			},
 		});
 		this.inputEl.rows = 4;
+		this.history = new PromptHistory(this.inputEl, () =>
+			this.collectInputHistory()
+		);
 		this.inputEl.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
@@ -412,12 +414,15 @@ export class ClaudePanelView extends ItemView {
 			} else if (e.key === "Escape" && this.busy) {
 				e.preventDefault();
 				this.cancelCurrentRun();
-			} else if (e.key === "ArrowUp" && this.cursorOnFirstLine()) {
+			} else if (e.key === "ArrowUp" && this.history.cursorOnFirstLine()) {
 				e.preventDefault();
-				this.historyPrev();
-			} else if (e.key === "ArrowDown" && this.cursorOnLastLine()) {
+				this.history.prev();
+			} else if (
+				e.key === "ArrowDown" &&
+				this.history.cursorOnLastLine()
+			) {
 				e.preventDefault();
-				this.historyNext();
+				this.history.next();
 			}
 		});
 		this.inputEl.addEventListener("paste", (e) => {
@@ -1206,7 +1211,7 @@ export class ClaudePanelView extends ItemView {
 				streaming: true,
 			}
 		);
-		this.historyCursor = null;
+		this.history.reset();
 		const assistantMsgId = this.messages[this.messages.length - 1].id;
 		this.renderMessages();
 
@@ -1317,23 +1322,8 @@ export class ClaudePanelView extends ItemView {
 		void this.saveChat();
 	}
 
-	// ============================================================
-	//   プロンプト履歴（textarea 内のシェル風 Up/Down ナビゲーション）
-	// ============================================================
-
-	private cursorOnFirstLine(): boolean {
-		const pos = this.inputEl.selectionStart;
-		if (pos === null) return false;
-		return this.inputEl.value.slice(0, pos).indexOf("\n") === -1;
-	}
-
-	private cursorOnLastLine(): boolean {
-		const pos = this.inputEl.selectionStart;
-		if (pos === null) return false;
-		return this.inputEl.value.slice(pos).indexOf("\n") === -1;
-	}
-
-	private getHistory(): string[] {
+	/** PromptHistory に渡す履歴ソース。messages から user 入力だけを抽出する。 */
+	private collectInputHistory(): string[] {
 		const out: string[] = [];
 		for (const m of this.messages) {
 			if (m.role === "user" && typeof m.inputText === "string") {
@@ -1341,37 +1331,6 @@ export class ClaudePanelView extends ItemView {
 			}
 		}
 		return out;
-	}
-
-	private setInputFromHistory(text: string): void {
-		this.inputEl.value = text;
-		const len = text.length;
-		this.inputEl.setSelectionRange(len, len);
-	}
-
-	private historyPrev(): void {
-		const history = this.getHistory();
-		if (history.length === 0) return;
-		if (this.historyCursor === null) {
-			this.draftBeforeHistory = this.inputEl.value;
-			this.historyCursor = history.length;
-		}
-		const next = Math.max(0, this.historyCursor - 1);
-		this.historyCursor = next;
-		this.setInputFromHistory(history[next]);
-	}
-
-	private historyNext(): void {
-		if (this.historyCursor === null) return;
-		const history = this.getHistory();
-		const next = this.historyCursor + 1;
-		if (next >= history.length) {
-			this.historyCursor = null;
-			this.setInputFromHistory(this.draftBeforeHistory);
-		} else {
-			this.historyCursor = next;
-			this.setInputFromHistory(history[next]);
-		}
 	}
 
 	// ============================================================
