@@ -154,10 +154,12 @@ export class ClaudePanelView extends ItemView {
 		this.selection = new SelectionCapture(this.app, this.containerEl, () =>
 			this.renderSelection()
 		);
-		this.notifier = new CompletionNotifier(
-			() => this.plugin.settings.notifyOnComplete,
-			root
-		);
+		this.notifier = new CompletionNotifier({
+			getMode: () => this.plugin.settings.notifyOnComplete,
+			getVolume: () => this.plugin.settings.notifySoundVolume,
+			getSoundPath: () => this.plugin.settings.notifySoundPath,
+			panelRoot: root,
+		});
 
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
@@ -237,6 +239,14 @@ export class ClaudePanelView extends ItemView {
 		this.selection?.poll();
 		this.selection?.markHandoff();
 		this.inputEl.focus();
+	}
+
+	/**
+	 * 設定タブの「テスト再生」ボタンから呼ばれる。現在の音量・音声ファイル
+	 * 設定で完了通知音を 1 回鳴らす。通知モードに依らず必ず再生する。
+	 */
+	testNotificationSound(): void {
+		this.notifier?.playTest();
 	}
 
 	/**
@@ -1103,6 +1113,15 @@ export class ClaudePanelView extends ItemView {
 				selectionRef: composed.selectionRef,
 				parts: [{ type: "text", text: composed.body }],
 				inputText: text,
+				thinkingMode:
+					composed.thinkingMode !== "off"
+						? composed.thinkingMode
+						: undefined,
+				effortLevel:
+					!text.startsWith("/") &&
+					this.plugin.settings.effortLevel !== "auto"
+						? this.plugin.settings.effortLevel
+						: undefined,
 			},
 			{
 				id: nextMsgId(),
@@ -1272,6 +1291,7 @@ export class ClaudePanelView extends ItemView {
 		selectionRef: SelectionRef | undefined;
 		body: string;
 		fullPrompt: string;
+		thinkingMode: ThinkingMode;
 	} {
 		const isSlash = userText.startsWith("/");
 
@@ -1326,10 +1346,13 @@ export class ClaudePanelView extends ItemView {
 				}
 			: undefined;
 
-		// バブルに表示する本文: ユーザーが入力したテキストのみ（必要なら
-		// thinking-mode プレフィックス付き）。選択範囲の本文は除外し、
-		// 引用ブロックが UI を埋め尽くさないようにする。
-		const body = `${thinkPrefix}${userText}`;
+		// バブルに表示する本文: ユーザーが入力した生テキストのみ。
+		// thinking-mode はバッジとして役割ラベル横に出すので本文には混ぜない。
+		// 選択範囲の本文も除外し、引用ブロックが UI を埋め尽くさないようにする。
+		const body = userText;
+		const thinkingMode = isSlash
+			? ("off" as ThinkingMode)
+			: this.plugin.settings.thinkingMode;
 
 		// claude へ送るパスを2つに分ける:
 		// - Vault 相対パス（拡張子付きの普通のパス）は従来どおり @-mention
@@ -1359,7 +1382,7 @@ export class ClaudePanelView extends ItemView {
 			? `${mentionsStr}\n\n${promptBody}`
 			: promptBody;
 
-		return { mentions: mentionLabels, selectionRef, body, fullPrompt };
+		return { mentions: mentionLabels, selectionRef, body, fullPrompt, thinkingMode };
 	}
 
 	private getVaultPath(): string | null {

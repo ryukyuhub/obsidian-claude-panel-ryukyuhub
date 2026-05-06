@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ClaudePanelPlugin from "./main";
 import { checkClaudeCli, resolveClaudePath, type CliStatus } from "./agent";
+import { pickFilesViaDialog } from "./attachments";
 
 export type ThinkingMode =
 	| "off"
@@ -149,7 +150,17 @@ export interface ClaudePanelSettings {
 	fontSize: number;
 	/** 応答完了時の通知方式。既定はフラッシュ（控えめに目立たせる）。 */
 	notifyOnComplete: NotifyOnComplete;
+	/** 完了通知音の音量（0-100）。既定値の中央を採用。 */
+	notifySoundVolume: number;
+	/** 完了通知に使う音声ファイルの絶対パス。空のときは内蔵チャイムを使う。
+	 *  対応形式は実行環境（Electron / Chromium）が decodeAudioData できる
+	 *  もの（mp3 / wav / ogg / m4a など）。 */
+	notifySoundPath: string;
 }
+
+/** 通知音量スライダーの上下限（パーセント）。 */
+export const NOTIFY_VOLUME_MIN = 0;
+export const NOTIFY_VOLUME_MAX = 100;
 
 /** フォントサイズスライダーの上下限。10px 未満ではチャットパネルが
  *  読めない大きさになり、20px を超えるとサイドパネルの横幅に収まらない。 */
@@ -170,6 +181,8 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	permissionMode: "default",
 	fontSize: 13,
 	notifyOnComplete: "flash",
+	notifySoundVolume: 70,
+	notifySoundPath: "",
 };
 
 export class ClaudePanelSettingTab extends PluginSettingTab {
@@ -350,7 +363,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.setName("完了通知")
 			.setDesc(
 				"Claude の応答が完了したときの通知方式。" +
-					"フラッシュはパネル枠を一瞬光らせます。音は短いビープを鳴らします（音声ファイルは同梱しません）。" +
+					"フラッシュはパネル枠を一瞬光らせます。音は内蔵チャイム、または下で指定した音声ファイルを再生します。" +
 					"ユーザー自身がキャンセルしたランでは通知しません。"
 			)
 			.addDropdown((dropdown) => {
@@ -364,6 +377,81 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 			});
+
+		new Setting(containerEl)
+			.setName("通知音の音量")
+			.setDesc(
+				`完了通知音の音量 (${NOTIFY_VOLUME_MIN}–${NOTIFY_VOLUME_MAX}%)。` +
+					"テストボタンで現在の設定（音量・ファイル）の組み合わせを試聴できます。"
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(NOTIFY_VOLUME_MIN, NOTIFY_VOLUME_MAX, 5)
+					.setValue(this.plugin.settings.notifySoundVolume)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.notifySoundVolume = value;
+						await this.plugin.saveSettings();
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
+					.setIcon("play")
+					.setTooltip("通知音をテスト再生")
+					.onClick(() => {
+						this.plugin.getView()?.testNotificationSound();
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
+					.setIcon("rotate-ccw")
+					.setTooltip("デフォルトに戻す")
+					.onClick(async () => {
+						this.plugin.settings.notifySoundVolume =
+							DEFAULT_SETTINGS.notifySoundVolume;
+						await this.plugin.saveSettings();
+						this.display();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("通知音ファイル")
+			.setDesc(
+				"通知に使う音声ファイル（mp3 / wav / ogg / m4a など）。" +
+					"空欄の場合は内蔵の短いチャイムを使います。「選択」で OS のファイルダイアログから選べます。"
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("（空欄 = 内蔵チャイム）")
+					.setValue(this.plugin.settings.notifySoundPath)
+					.onChange(async (value) => {
+						this.plugin.settings.notifySoundPath = value.trim();
+						await this.plugin.saveSettings();
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
+					.setIcon("folder-open")
+					.setTooltip("ファイルを選択")
+					.onClick(async () => {
+						const result = await pickFilesViaDialog();
+						const picked = result.paths[0];
+						if (!picked) return;
+						this.plugin.settings.notifySoundPath = picked;
+						await this.plugin.saveSettings();
+						this.display();
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
+					.setIcon("x")
+					.setTooltip("クリア（内蔵チャイムに戻す）")
+					.onClick(async () => {
+						this.plugin.settings.notifySoundPath = "";
+						await this.plugin.saveSettings();
+						this.display();
+					})
+			);
 
 		new Setting(containerEl)
 			.setName("ホットキー")

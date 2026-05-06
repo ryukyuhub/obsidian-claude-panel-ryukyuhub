@@ -5,6 +5,7 @@ import {
 	Component,
 	TFile,
 } from "obsidian";
+import type { EffortLevel, ThinkingMode } from "./settings";
 
 export type PermissionStatus = "pending" | "approved" | "denied";
 
@@ -64,6 +65,12 @@ export interface ChatMessage {
 	// ユーザーメッセージ専用: 入力された生テキスト。プロンプト履歴
 	// ナビゲーション（textarea 内の Up/Down キー）で使う。
 	inputText?: string;
+	// ユーザーメッセージ専用: 送信時に有効だった thinking mode。
+	// バブル本文には混ぜず、役割ラベル横の小さなバッジとして表示する。
+	thinkingMode?: ThinkingMode;
+	// ユーザーメッセージ専用: 送信時に有効だった effort レベル。
+	// `auto` のときは保存しない。役割ラベル横にバッジ表示する。
+	effortLevel?: EffortLevel;
 	// アシスタントメッセージ専用: 当該ターンのトークン使用量。
 	// メッセージ単位で保持することで、セッション累計メーターが
 	// リロードを跨いでも復元できるようにしている。
@@ -145,10 +152,25 @@ export function renderMessage(
 	host.addClass(`claude-panel-msg-${msg.role}`);
 	host.setAttr("data-msg-id", msg.id);
 
-	host.createDiv({
-		cls: "claude-panel-msg-role",
+	const roleRow = host.createDiv({ cls: "claude-panel-msg-role" });
+	roleRow.createSpan({
+		cls: "claude-panel-msg-role-label",
 		text: msg.role === "user" ? "ユーザー" : msg.role === "assistant" ? "アシスタント" : msg.role,
 	});
+	if (msg.role === "user" && msg.thinkingMode && msg.thinkingMode !== "off") {
+		roleRow.createSpan({
+			cls: "claude-panel-think-badge",
+			text: msg.thinkingMode,
+			attr: { title: `Thinking mode: ${msg.thinkingMode}` },
+		});
+	}
+	if (msg.role === "user" && msg.effortLevel && msg.effortLevel !== "auto") {
+		roleRow.createSpan({
+			cls: "claude-panel-effort-badge",
+			text: msg.effortLevel,
+			attr: { title: `Effort: ${msg.effortLevel}` },
+		});
+	}
 
 	const body = host.createDiv({ cls: "claude-panel-msg-text" });
 	if (msg.mentions?.length || msg.selectionRef) {

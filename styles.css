@@ -651,11 +651,53 @@
 }
 
 .claude-panel-msg-role {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 	font-size: 11px;
 	font-weight: 700;
 	color: var(--text-faint);
 	letter-spacing: 0.05em;
 	margin-bottom: 6px;
+}
+
+/* Thinking / Effort モードバッジ: ユーザーメッセージの役割ラベルの横に
+   控えめに表示する。プロンプト本文に混ぜるよりも視覚ノイズが少なく、
+   どの送信でどの強度が使われたかが一目で分かる。共通の形状で、色だけ
+   分けて意味を区別する（thinking = アクセント色、effort = ニュートラル）。 */
+.claude-panel-think-badge,
+.claude-panel-effort-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 7px;
+	border-radius: 8px;
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	cursor: help;
+	white-space: nowrap;
+}
+
+.claude-panel-think-badge {
+	color: var(--text-accent);
+	background: color-mix(
+		in srgb,
+		var(--interactive-accent) 14%,
+		transparent
+	);
+	border: 1px solid
+		color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+}
+
+.claude-panel-effort-badge {
+	color: var(--text-muted);
+	background: color-mix(
+		in srgb,
+		var(--text-normal) 8%,
+		transparent
+	);
+	border: 1px solid var(--background-modifier-border);
 }
 
 .claude-panel-msg-text {
