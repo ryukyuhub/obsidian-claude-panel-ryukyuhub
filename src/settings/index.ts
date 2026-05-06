@@ -13,4 +13,7 @@
 export * from "./types";
 export * from "./labels";
 export { ClaudePanelSettingTab } from "./tab";
-export { VaultAudioFileSuggestModal } from "./vault-audio-suggest";
+export {
+	VaultAudioFileSuggestModal,
+	listVaultAudioFiles,
+} from "./vault-audio-suggest";

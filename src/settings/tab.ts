@@ -22,7 +22,10 @@ import {
 	notifyOnCompleteLabel,
 	permissionModeLabel,
 } from "./labels";
-import { VaultAudioFileSuggestModal } from "./vault-audio-suggest";
+import {
+	VaultAudioFileSuggestModal,
+	listVaultAudioFiles,
+} from "./vault-audio-suggest";
 
 export class ClaudePanelSettingTab extends PluginSettingTab {
 	plugin: ClaudePanelPlugin;
@@ -309,11 +312,17 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				btn
 					.setIcon("library")
 					.setTooltip("Vault 内のファイルから選択")
-					.onClick(() => {
+					.onClick(async () => {
+						// `.obsidian/` 配下も拾うため、`vault.getFiles()` ではなく
+						// `adapter.list` で再帰スキャンしてからモーダルを開く。
+						const paths = await listVaultAudioFiles(
+							this.plugin.app.vault.adapter
+						);
 						new VaultAudioFileSuggestModal(
 							this.plugin.app,
-							async (file) => {
-								this.plugin.settings.notifySoundPath = file.path;
+							paths,
+							async (path) => {
+								this.plugin.settings.notifySoundPath = path;
 								await this.plugin.saveSettings();
 								this.display();
 							}
