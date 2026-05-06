@@ -8,13 +8,12 @@ import {
 	setIcon,
 } from "obsidian";
 import type ClaudePanelPlugin from "./main";
+import { checkClaudeCli } from "./agent";
 import {
-	checkClaudeCli,
-	runAgent,
-	type PermissionDecision,
-	type PermissionRequest,
-	type RunHandle,
-} from "./agent";
+	ChatRuntime,
+	type ChatRuntimeHost,
+	type ComposedMessage,
+} from "./chat-runtime";
 import {
 	EFFORT_LEVELS,
 	MODEL_PRESETS,
@@ -37,6 +36,7 @@ import {
 	savePastedImage,
 } from "./attachments";
 import { CompletionNotifier } from "./completion-notifier";
+import { loadSoundBuffer } from "./notify-sound-source";
 import { ContextMeter } from "./context-meter";
 import {
 	loadChat as persistLoadChat,
@@ -51,16 +51,9 @@ import * as nodeFs from "fs";
 import {
 	type ChatMessage,
 	type MessageUsage,
-	type RunResult,
 	type SelectionRef,
-	nextMsgId,
-	appendText as appendTextToParts,
-	pushPermission as pushPermissionToParts,
-	pushTool as pushToolToParts,
-	renderMessage,
-	renderToolPill,
-	setPermissionStatus,
 } from "./chat-message";
+import { renderMessage, renderToolPill } from "./chat-message-render";
 
 
 export const VIEW_TYPE_CLAUDE_PANEL = "claude-panel-view";
@@ -79,17 +72,9 @@ export class ClaudePanelView extends ItemView {
 	private effortSelect: HTMLSelectElement | null = null;
 	private permSelect: HTMLSelectElement | null = null;
 	private sendBtn!: HTMLButtonElement;
-	// CLI からの未解決パーミッションリクエスト（key: tool_use_id）。
-	// agent 層がリクエストを転送する際に `decide(...)` コールバックを
-	// 渡してくるので、view 側でここに保持し、Allow/Deny クリックで解決
-	// する。/clear や cancel 時はまとめて Deny で flush する。
-	private pendingPermDecisions = new Map<
-		string,
-		(d: PermissionDecision) => void
-	>();
 
-	// 状態
-	private messages: ChatMessage[] = [];
+	// 入力（コンポーザー）側の状態。会話履歴やセッション ID は ChatRuntime
+	// 側に集約しており、view はユーザー入力の組み立てだけを所有する。
 	private attachments: string[] = []; // Vault 相対パス
 	private includeActiveFile = true;
 	// 直近にファイルエクスプローラーでクリックされたフォルダ。
@@ -98,26 +83,21 @@ export class ClaudePanelView extends ItemView {
 	// ファイル選択（file-open）が発生したらクリアされる。
 	private activeFolderPath: string | null = null;
 	private includeSelection = true;
-	private busy = false;
-	private currentRun: RunHandle | null = null;
 	private selection!: SelectionCapture;
 	// プロンプト履歴ナビゲーション（textarea 内の Up/Down キー）。
 	// state は PromptHistory に持たせている。inputEl 構築後に初期化。
 	private history!: PromptHistory;
 	// `/` で始まる入力に対するコマンド候補ポップアップ。inputEl 構築後に初期化。
 	private slashSuggest!: SlashSuggest;
-	// claude CLI から得た最新のトークン使用量。コンテキストメーター
-	// （ドーナツ）の表示ソース。
-	private lastUsage: MessageUsage | null = null;
 	private contextMeter: ContextMeter | null = null;
-	// アクティブな claude セッション ID。設定されている場合、次のターン
-	// で `--resume` 付きで起動して会話コンテキストを継続する（コンテキスト
-	// が貯まり、CLI の自動コンパクションも動作する）。/clear でクリア。
-	private currentSessionId: string | null = null;
 	// 応答完了通知（フラッシュ・ビープ）。state を view に持つと肥大化する
 	// ので CompletionNotifier に切り出している。view からはモードと panel
 	// root を引き渡すだけ。
 	private notifier!: CompletionNotifier;
+	// 会話エンジン。messages / currentRun / セッション ID / pending
+	// パーミッション / busy / 累計 usage を所有する。host インターフェース
+	// （= この view 自身）経由で DOM 更新と通知音を依頼する。
+	private runtime!: ChatRuntime;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudePanelPlugin) {
 		super(leaf);
@@ -158,8 +138,13 @@ export class ClaudePanelView extends ItemView {
 			getMode: () => this.plugin.settings.notifyOnComplete,
 			getVolume: () => this.plugin.settings.notifySoundVolume,
 			getSoundPath: () => this.plugin.settings.notifySoundPath,
+			readSoundBytes: (path) => loadSoundBuffer(this.app, path),
 			panelRoot: root,
 		});
+		// view 自身が ChatRuntimeHost を構造的に実装している（onMessagesChanged
+		// など以下のメソッド群）。runtime には plugin と host の参照だけを
+		// 渡し、状態は完全に runtime 内部に閉じ込める。
+		this.runtime = new ChatRuntime(this.plugin, this);
 
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
@@ -206,8 +191,8 @@ export class ClaudePanelView extends ItemView {
 		// が動き続けるようにしている。
 		this.scope = new Scope(this.app.scope);
 		this.scope.register([], "Escape", () => {
-			if (this.currentRun && !this.currentRun.canceled()) {
-				this.currentRun.cancel();
+			if (this.runtime.isCurrentRunActive()) {
+				this.runtime.cancel();
 				return false;
 			}
 			return true;
@@ -218,7 +203,7 @@ export class ClaudePanelView extends ItemView {
 		this.renderMessages();
 		this.renderActiveFile();
 		this.renderAttachments();
-		this.contextMeter?.update(this.lastUsage);
+		this.contextMeter?.update(this.runtime.getLastUsage());
 		this.selection.poll();
 	}
 
@@ -273,8 +258,8 @@ export class ClaudePanelView extends ItemView {
 		void this.send();
 	}
 	commandCancel(): boolean {
-		if (this.currentRun && !this.currentRun.canceled()) {
-			this.cancelCurrentRun();
+		if (this.runtime.isCurrentRunActive()) {
+			this.runtime.cancel();
 			return true;
 		}
 		return false;
@@ -311,7 +296,7 @@ export class ClaudePanelView extends ItemView {
 			text: "コンテキスト",
 		});
 		this.contextMeter = new ContextMeter(meterHost);
-		this.contextMeter.update(this.lastUsage);
+		this.contextMeter.update(this.runtime?.getLastUsage() ?? null);
 
 		const accountBtn = header.createEl("button", {
 			cls: "claude-panel-icon-btn claude-panel-account-btn",
@@ -331,7 +316,7 @@ export class ClaudePanelView extends ItemView {
 	/** コンテキストメーターを再描画する（関連する設定が変わった際に
 	 *  プラグイン側から呼ばれる）。 */
 	refreshMeters(): void {
-		this.contextMeter?.update(this.lastUsage);
+		this.contextMeter?.update(this.runtime?.getLastUsage() ?? null);
 	}
 
 	private renderComposer(root: HTMLElement): void {
@@ -368,7 +353,7 @@ export class ClaudePanelView extends ItemView {
 		this.inputEl.rows = 4;
 		this.slashSuggest = new SlashSuggest(suggestEl, this.inputEl);
 		this.history = new PromptHistory(this.inputEl, () =>
-			this.collectInputHistory()
+			this.runtime.getInputHistory()
 		);
 		this.inputEl.addEventListener("keydown", (e) => {
 			// サジェスト popup が開いている場合は、popup のキーバインドを
@@ -376,10 +361,10 @@ export class ClaudePanelView extends ItemView {
 			if (this.slashSuggest.handleKey(e)) return;
 			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
-				this.send();
-			} else if (e.key === "Escape" && this.busy) {
+				void this.send();
+			} else if (e.key === "Escape" && this.runtime.isBusy()) {
 				e.preventDefault();
-				this.cancelCurrentRun();
+				this.runtime.cancel();
 			} else if (e.key === "ArrowUp" && this.history.cursorOnFirstLine()) {
 				e.preventDefault();
 				this.history.prev();
@@ -407,8 +392,8 @@ export class ClaudePanelView extends ItemView {
 			cls: "mod-cta claude-panel-send",
 		});
 		this.sendBtn.onclick = () => {
-			if (this.busy) this.cancelCurrentRun();
-			else this.send();
+			if (this.runtime.isBusy()) this.runtime.cancel();
+			else void this.send();
 		};
 
 		this.renderModelThinkControls(composer);
@@ -758,14 +743,15 @@ export class ClaudePanelView extends ItemView {
 
 	private renderMessages(): void {
 		this.messagesEl.empty();
-		if (this.messages.length === 0) {
+		const messages = this.runtime.getMessages();
+		if (messages.length === 0) {
 			this.renderEmptyState(this.messagesEl);
 			return;
 		}
-		for (const msg of this.messages) {
+		for (const msg of messages) {
 			const host = this.messagesEl.createDiv();
 			renderMessage(host, msg, this.app, this, (toolUseId, decision) =>
-				this.permissionDecision(toolUseId, decision)
+				this.runtime.applyPermissionDecision(toolUseId, decision)
 			);
 		}
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -839,13 +825,18 @@ export class ClaudePanelView extends ItemView {
 		) as HTMLElement | null;
 	}
 
-	/** ストリーミング中のメッセージにテキストチャンクを追記し、DOM を逐次更新する。 */
-	private appendStreamingText(msgId: string, chunk: string): void {
-		const msg = this.messages.find((m) => m.id === msgId);
-		if (!msg) return;
-		appendTextToParts(msg.parts, chunk);
+	// ============================================================
+	//   ChatRuntimeHost 実装
+	//   ChatRuntime からの通知を受けて DOM 更新と通知音を担当する。
+	//   ここに並ぶ on* メソッドは runtime からのみ呼ばれ、view 内の他の
+	//   メソッドからは直接呼ばない（runtime 経由で状態と DOM を同期させる
+	//   一貫したフローを維持するため）。
+	// ============================================================
 
-		const body = this.getMessageBody(msgId);
+	/** ストリーミング中のメッセージにテキストチャンクを追記する DOM 高速パッチ。
+	 *  最後の text-part span に textContent を append し、再描画を避ける。 */
+	onStreamingText(msg: ChatMessage, chunk: string): void {
+		const body = this.getMessageBody(msg.id);
 		if (!body) return;
 		const last = body.lastElementChild as HTMLElement | null;
 		if (last && last.classList.contains("claude-panel-msg-text-part")) {
@@ -858,175 +849,33 @@ export class ClaudePanelView extends ItemView {
 	}
 
 	/** ストリーミング中のメッセージにツール実行ピルを追加する。 */
-	private appendStreamingTool(
-		msgId: string,
-		name: string,
-		input: unknown
-	): void {
-		const msg = this.messages.find((m) => m.id === msgId);
-		if (!msg) return;
-		pushToolToParts(msg.parts, name, input);
-
-		const body = this.getMessageBody(msgId);
+	onStreamingTool(msg: ChatMessage, name: string, input: unknown): void {
+		const body = this.getMessageBody(msg.id);
 		if (!body) return;
 		renderToolPill(body, name, input);
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
-	/**
-	 * ストリーミング中のアシスタントメッセージにインラインの承認カードを
-	 * 追加し、agent から渡された resolver を登録する。Allow / Deny クリック
-	 * は `permissionDecision()` 経由で resolver を呼び、CLI に
-	 * control_response を返す。
-	 */
-	private appendPermissionRequest(
-		msgId: string,
-		req: PermissionRequest,
-		decide: (d: PermissionDecision) => void
-	): void {
-		const msg = this.messages.find((m) => m.id === msgId);
-		if (!msg) {
-			// 通常起こらないが、CLI をハングさせないよう fail-closed で拒否しておく。
-			decide({ allow: false, message: "アクティブなチャットメッセージがありません。" });
-			return;
-		}
-		this.pendingPermDecisions.set(req.toolUseId, decide);
-		pushPermissionToParts(
-			msg.parts,
-			req.toolName,
-			req.input,
-			req.toolUseId,
-			req.reason
-		);
-		this.rerenderMessage(msg);
-		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+	/** メッセージ配列の構造的変化（追加・置換・clear）。全体再描画する。 */
+	onMessagesChanged(): void {
+		this.renderMessages();
 	}
 
-	/**
-	 * パーミッションカードの Allow/Deny クリックを処理する。決定を agent 層に
-	 * 転送し、part を終了状態に更新したうえで該当メッセージを再描画する
-	 * （ボタンがステータスバッジに置き換わる）。
-	 */
-	private permissionDecision(
-		toolUseId: string,
-		decision: PermissionDecision
-	): void {
-		const decide = this.pendingPermDecisions.get(toolUseId);
-		if (!decide) return;
-		this.pendingPermDecisions.delete(toolUseId);
-		decide(decision);
-		const msg = this.findMessageWithPermission(toolUseId);
-		if (!msg) return;
-		setPermissionStatus(
-			msg.parts,
-			toolUseId,
-			decision.allow ? "approved" : "denied"
-		);
-		this.rerenderMessage(msg);
-	}
-
-	/** 未解決のパーミッションカードをすべてキャンセルする。CLI に
-	 *  Deny+interrupt を送り、UI 上のステータスを "denied" に更新する。
-	 *  cancel 処理および /clear から呼ばれる。 */
-	private flushPendingPermissions(reason = "実行を中断しました。"): void {
-		for (const [toolUseId, decide] of this.pendingPermDecisions) {
-			decide({ allow: false, message: reason, interrupt: true });
-			const msg = this.findMessageWithPermission(toolUseId);
-			if (msg) {
-				setPermissionStatus(msg.parts, toolUseId, "denied");
-				this.rerenderMessage(msg);
-			}
-		}
-		this.pendingPermDecisions.clear();
-	}
-
-	private findMessageWithPermission(toolUseId: string): ChatMessage | null {
-		for (const m of this.messages) {
-			for (const p of m.parts) {
-				if (p.type === "permission" && p.toolUseId === toolUseId) {
-					return m;
-				}
-			}
-		}
-		return null;
-	}
-
-	private rerenderMessage(msg: ChatMessage): void {
+	/** 単一メッセージの完全再描画（permission 状態変化、結果確定など）。 */
+	onMessageRerender(msg: ChatMessage): void {
 		const host = this.messagesEl.querySelector(
 			`[data-msg-id="${msg.id}"]`
 		) as HTMLElement | null;
 		if (host) {
 			renderMessage(host, msg, this.app, this, (toolUseId, decision) =>
-				this.permissionDecision(toolUseId, decision)
+				this.runtime.applyPermissionDecision(toolUseId, decision)
 			);
 		}
+		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
-	/**
-	 * ラン結果を保存する。フッターの実描画は finalizeStreamingMessage
-	 * 側で1度だけ行う（メッセージ全体のコンテキストが必要なため）。
-	 */
-	private setMessageResult(msgId: string, result: RunResult): void {
-		const msg = this.messages.find((m) => m.id === msgId);
-		if (!msg) return;
-		msg.result = result;
-	}
-
-	private finalizeStreamingMessage(msgId: string): void {
-		const msg = this.messages.find((m) => m.id === msgId);
-		if (!msg) return;
-		msg.streaming = false;
-		const host = this.messagesEl.querySelector(
-			`[data-msg-id="${msgId}"]`
-		) as HTMLElement | null;
-		if (host) {
-			renderMessage(host, msg, this.app, this, (toolUseId, decision) =>
-				this.permissionDecision(toolUseId, decision)
-			);
-		}
-	}
-
-	private appendSystemMessage(text: string): void {
-		this.messages.push({
-			id: nextMsgId(),
-			role: "system",
-			parts: [{ type: "text", text }],
-		});
-		this.renderMessages();
-	}
-
-	private appendInteractiveSystemMessage(
-		render: (container: HTMLElement) => void
-	): void {
-		this.messages.push({
-			id: nextMsgId(),
-			role: "system",
-			parts: [],
-			interactive: render,
-		});
-		this.renderMessages();
-	}
-
-	private clearConversation(): void {
-		// 表示中の会話だけクリアする。コンテキストドーナツの値は保持する
-		// （Clear ボタンでメーターまで消えないようにユーザーから明確に
-		// 要望があったため）。セッション ID は破棄するので、次のターンは
-		// 新しい claude セッションで開始される。
-		this.flushPendingPermissions("会話をクリアしました。");
-		this.messages = [];
-		this.attachments = [];
-		this.currentSessionId = null;
-		this.renderMessages();
-		this.renderAttachments();
-		void this.saveChat();
-	}
-
-	// ============================================================
-	//   Send / cancel（送信・キャンセル）
-	// ============================================================
-
-	private setBusy(busy: boolean): void {
-		this.busy = busy;
+	/** 送信ボタンの見た目を busy に応じて切り替える。 */
+	onBusyChanged(busy: boolean): void {
 		if (busy) {
 			this.sendBtn.removeClass("mod-cta");
 			this.sendBtn.addClass("mod-warning");
@@ -1039,10 +888,37 @@ export class ClaudePanelView extends ItemView {
 		this.sendBtn.disabled = false;
 	}
 
-	private cancelCurrentRun(): void {
-		if (this.currentRun && !this.currentRun.canceled()) {
-			this.currentRun.cancel();
-		}
+	/** トークン使用量更新 → コンテキストメーターを駆動する。 */
+	onUsageChanged(usage: MessageUsage | null): void {
+		this.contextMeter?.update(usage);
+	}
+
+	/** 1 ターン完了 → ユーザーキャンセル時を除いて通知音／フラッシュ。 */
+	onRunComplete(canceled: boolean): void {
+		if (!canceled) this.notifier.notify();
+	}
+
+	/** AudioContext を起こす（ユーザージェスチャ中にだけ有効）。 */
+	onWarmup(): void {
+		this.notifier.warmup();
+	}
+
+	/** プロンプト履歴ナビ位置のリセット（送信時）。 */
+	onResetInputHistory(): void {
+		this.history.reset();
+	}
+
+	// ============================================================
+	//   会話操作のラッパー（パネルボタンとプラグインコマンド向け）
+	// ============================================================
+
+	private clearConversation(): void {
+		// 添付やドラフトは view 側の状態なのでここでクリアする。会話履歴と
+		// セッション ID は runtime 側で破棄される。永続化は最後にまとめて。
+		this.attachments = [];
+		this.runtime.clear();
+		this.renderAttachments();
+		void this.saveChat();
 	}
 
 	private slashContext(): SlashContext {
@@ -1051,9 +927,9 @@ export class ClaudePanelView extends ItemView {
 			getVaultPath: () => this.getVaultPath(),
 			clearConversation: () => this.clearConversation(),
 			refreshControls: () => this.refreshControls(),
-			appendSystemMessage: (text) => this.appendSystemMessage(text),
+			appendSystemMessage: (text) => this.runtime.appendSystemMessage(text),
 			appendInteractive: (render) =>
-				this.appendInteractiveSystemMessage(render),
+				this.runtime.appendInteractiveSystemMessage(render),
 			openAccountUsage: () =>
 				openAccountUsageModal(this.app, this.plugin.settings),
 			openPluginSettings: () => this.openPluginSettings(),
@@ -1077,17 +953,19 @@ export class ClaudePanelView extends ItemView {
 		setting.openTabById(this.plugin.manifest.id);
 	}
 
+	/**
+	 * 送信ボタン／Enter キー／プラグインコマンドから呼ばれるエントリ。
+	 * view 側でユーザー入力を受け取り、スラッシュコマンドの早期インター
+	 * セプト・cwd 検証・composeMessage を済ませてから ChatRuntime に
+	 * 渡す。runtime は busy 中の二重実行を内部で弾く。
+	 */
 	private async send(): Promise<void> {
-		if (this.busy) return;
+		if (this.runtime.isBusy()) return;
 		const text = this.inputEl.value.trim();
 		if (!text) return;
 
-		// Chromium の autoplay policy はユーザージェスチャの最中に
-		// AudioContext を resume することを要求するので、送信ボタンを
-		// 押したこの瞬間に起こしておく。応答完了時はジェスチャの文脈外
-		// なので、そこで初めて resume すると suspended のまま無音になる。
-		this.notifier.warmup();
-
+		// スラッシュコマンドはローカルで処理して runtime には渡さない。
+		// /clear など UI 操作系はここで完結する。
 		if (text.startsWith("/")) {
 			if (handleLocalSlashCommand(this.slashContext(), text)) {
 				this.inputEl.value = "";
@@ -1103,153 +981,14 @@ export class ClaudePanelView extends ItemView {
 
 		const composed = this.composeMessage(text);
 
-		this.messages.push(
-			{
-				id: nextMsgId(),
-				role: "user",
-				mentions: composed.mentions.length
-					? composed.mentions
-					: undefined,
-				selectionRef: composed.selectionRef,
-				parts: [{ type: "text", text: composed.body }],
-				inputText: text,
-				thinkingMode:
-					composed.thinkingMode !== "off"
-						? composed.thinkingMode
-						: undefined,
-				effortLevel:
-					!text.startsWith("/") &&
-					this.plugin.settings.effortLevel !== "auto"
-						? this.plugin.settings.effortLevel
-						: undefined,
-			},
-			{
-				id: nextMsgId(),
-				role: "assistant",
-				parts: [],
-				streaming: true,
-			}
-		);
-		this.history.reset();
-		const assistantMsgId = this.messages[this.messages.length - 1].id;
-		this.renderMessages();
-
+		// runtime に渡す前に入力欄と添付をクリアする（UI 即時フィードバック）。
 		this.inputEl.value = "";
 		this.attachments = [];
 		this.renderAttachments();
-		this.setBusy(true);
 
-		const runOnce = async (
-			sessionId: string | undefined
-		): Promise<{ canceled: boolean; errorMessage: string }> => {
-			let errorMessage = "";
-			const handle = runAgent(
-				{
-					prompt: composed.fullPrompt,
-					cwd,
-					settings: this.plugin.settings,
-					sessionId,
-				},
-				{
-					onText: (chunk) =>
-						this.appendStreamingText(assistantMsgId, chunk),
-					onToolUse: (name, input) =>
-						this.appendStreamingTool(assistantMsgId, name, input),
-					onPermissionRequest: (req, decide) =>
-						this.appendPermissionRequest(
-							assistantMsgId,
-							req,
-							decide
-						),
-					onResult: ({ durationMs, costUsd, sessionId: newSession }) => {
-						this.setMessageResult(assistantMsgId, {
-							durationMs,
-							costUsd,
-						});
-						if (newSession) this.currentSessionId = newSession;
-					},
-					onUsage: (usage) => {
-						const msg = this.messages.find(
-							(m) => m.id === assistantMsgId
-						);
-						if (msg) msg.usage = usage;
-						this.lastUsage = usage;
-						this.contextMeter?.update(this.lastUsage);
-					},
-					onError: (err) => {
-						errorMessage = err.message;
-						this.appendStreamingText(
-							assistantMsgId,
-							`\n\n**エラー:** ${err.message}`
-						);
-					},
-				}
-			);
-			this.currentRun = handle;
-			await handle.promise;
-			const canceled = handle.canceled();
-			if (canceled) {
-				this.flushPendingPermissions("ユーザーが実行を中断しました。");
-				this.appendStreamingText(
-					assistantMsgId,
-					"\n\n_**[ユーザーが中断しました]**_"
-				);
-			} else {
-				// 自然終了。残った pending（通常は発生しないがフェイルセーフ）
-				// はもう古いので、ここでまとめて Deny で flush しておく。
-				this.flushPendingPermissions("実行終了。");
-			}
-			this.currentRun = null;
-			return { canceled, errorMessage };
-		};
-
-		const first = await runOnce(this.currentSessionId ?? undefined);
-		let canceled = first.canceled;
-
-		// CLI 側でセッションが失われることがある（クリーンアップ、期限切れ、
-		// ~/.claude/sessions の手動編集など）。--resume が存在しない
-		// セッションを指したときの唯一の復旧策はリセットしてやり直すこと。
-		// 保存していたセッション ID を破棄し、--resume なしで1度だけ再実行
-		// することで、ユーザーが手動でリトライしなくても済むようにする。
-		if (
-			!first.canceled &&
-			this.currentSessionId &&
-			/No conversation found with session ID/i.test(first.errorMessage)
-		) {
-			this.currentSessionId = null;
-			const msg = this.messages.find((m) => m.id === assistantMsgId);
-			if (msg) {
-				// resume 失敗のエラーメッセージを消去する。これがないと
-				// リトライの出力が古い赤バナーの下に描画されてしまう。
-				msg.parts = [];
-				msg.streaming = true;
-				msg.result = undefined;
-				msg.usage = undefined;
-				this.rerenderMessage(msg);
-			}
-			const retry = await runOnce(undefined);
-			canceled = retry.canceled;
-		}
-
-		this.finalizeStreamingMessage(assistantMsgId);
-		this.setBusy(false);
-
-		// ユーザー自身がキャンセルしたランでは通知しない（自分で止めたので
-		// 不要）。エラー終了でも通知する — 失敗を見落とすほうがよくない。
-		if (!canceled) this.notifier.notify();
+		await this.runtime.send(text, composed, cwd);
 
 		void this.saveChat();
-	}
-
-	/** PromptHistory に渡す履歴ソース。messages から user 入力だけを抽出する。 */
-	private collectInputHistory(): string[] {
-		const out: string[] = [];
-		for (const m of this.messages) {
-			if (m.role === "user" && typeof m.inputText === "string") {
-				out.push(m.inputText);
-			}
-		}
-		return out;
 	}
 
 	// ============================================================
@@ -1257,24 +996,25 @@ export class ClaudePanelView extends ItemView {
 	// ============================================================
 
 	private saveChat(): Promise<void> {
+		const snap = this.runtime.captureSnapshot();
 		return persistSaveChat(this.app, this.plugin.manifest.id, {
-			messages: this.messages,
+			messages: snap.messages,
 			attachments: this.attachments,
 			draft: this.inputEl?.value ?? "",
-			lastUsage: this.lastUsage,
-			currentSessionId: this.currentSessionId,
+			lastUsage: snap.lastUsage,
+			currentSessionId: snap.currentSessionId,
 		});
 	}
 
 	private async loadChat(): Promise<void> {
 		const snap = await persistLoadChat(this.app, this.plugin.manifest.id);
 		if (!snap) return;
-		if (snap.messages) this.messages = snap.messages;
+		this.runtime.applySnapshot({
+			messages: snap.messages,
+			currentSessionId: snap.currentSessionId,
+			lastUsage: snap.lastUsage ?? null,
+		});
 		if (snap.attachments) this.attachments = snap.attachments;
-		if (snap.currentSessionId !== undefined) {
-			this.currentSessionId = snap.currentSessionId;
-		}
-		if (snap.lastUsage) this.lastUsage = snap.lastUsage;
 		if (typeof snap.draft === "string" && this.inputEl) {
 			this.inputEl.value = snap.draft;
 		}
@@ -1286,13 +1026,7 @@ export class ClaudePanelView extends ItemView {
 	 * チップ（ファイル名・行情報のみ、本文は含めない）を表示する。
 	 * 選択範囲の本文は `fullPrompt` 側にだけ含めて claude に送る。
 	 */
-	private composeMessage(userText: string): {
-		mentions: string[];
-		selectionRef: SelectionRef | undefined;
-		body: string;
-		fullPrompt: string;
-		thinkingMode: ThinkingMode;
-	} {
+	private composeMessage(userText: string): ComposedMessage {
 		const isSlash = userText.startsWith("/");
 
 		// 表示用ラベル（フォルダは末尾 `/` 付きで1チップ）と、CLI に渡す
@@ -1382,7 +1116,22 @@ export class ClaudePanelView extends ItemView {
 			? `${mentionsStr}\n\n${promptBody}`
 			: promptBody;
 
-		return { mentions: mentionLabels, selectionRef, body, fullPrompt, thinkingMode };
+		// effortLevel は user メッセージのバッジ表示用。スラッシュコマンドや
+		// `auto` のときは保存しない（バッジが出ないことで「明示的な選択」と
+		// 「既定」を区別する）。
+		const effortLevel: EffortLevel | undefined =
+			!isSlash && this.plugin.settings.effortLevel !== "auto"
+				? this.plugin.settings.effortLevel
+				: undefined;
+
+		return {
+			mentions: mentionLabels,
+			selectionRef,
+			body,
+			fullPrompt,
+			thinkingMode,
+			effortLevel,
+		};
 	}
 
 	private getVaultPath(): string | null {

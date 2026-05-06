@@ -1,189 +1,28 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
-import type ClaudePanelPlugin from "./main";
-import { checkClaudeCli, resolveClaudePath, type CliStatus } from "./agent";
-import { pickFilesViaDialog } from "./attachments";
-
-export type ThinkingMode =
-	| "off"
-	| "think"
-	| "think hard"
-	| "think harder"
-	| "ultrathink";
-
-export const THINKING_MODES: ThinkingMode[] = [
-	"off",
-	"think",
-	"think hard",
-	"think harder",
-	"ultrathink",
-];
-
-/**
- * Claude Code の `--effort` フラグに渡す値。`auto` は「フラグを渡さない」を
- * 意味し、CLI 側のデフォルト（あるいは `~/.claude/settings.json` の
- * `effortLevel`）に処理を委ねる。`low`/`medium`/`high`/`max` は新しめの
- * モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度を制御する。Haiku など
- * 非対応モデルでは指定しても CLI が黙って無視する。
- */
-export type EffortLevel = "auto" | "low" | "medium" | "high" | "max";
-
-export const EFFORT_LEVELS: EffortLevel[] = [
-	"auto",
-	"low",
-	"medium",
-	"high",
-	"max",
-];
-
-export const MODEL_PRESETS: string[] = [
-	"claude-sonnet-4-5",
-	"claude-opus-4-5",
-	"claude-haiku-4-5",
-];
-
-/**
- * `claude` CLI が受け付けるパーミッションモード。SDK の PermissionMode から
- * ユーザー向けの4種類を露出している。SDK 内部用の `delegate` / `dontAsk`
- * は本プラグインでは扱わない（不要なため意図的に非公開）。
- *
- * - `default`            — リスクのあるツールごとに毎回確認（パネル内で Approve / Deny）。
- * - `acceptEdits`        — ファイル編集は自動許可、それ以外は引き続き確認。
- * - `bypassPermissions`  — 完全自律実行（旧デフォルト。全ての確認をスキップ）。
- * - `plan`               — 読み取り専用のプラン作成。ツール実行はしない。
- */
-export type PermissionMode =
-	| "default"
-	| "acceptEdits"
-	| "bypassPermissions"
-	| "plan";
-
-export const PERMISSION_MODES: PermissionMode[] = [
-	"default",
-	"acceptEdits",
-	"bypassPermissions",
-	"plan",
-];
-
-/**
- * 応答完了時の通知方式。`flash` はパネル枠を一瞬 accent カラーで光らせる。
- * `sound` は Web Audio で短いビープを鳴らす（音声ファイルは同梱しない）。
- * ユーザーがキャンセルしたランでは通知しない（自分で止めたので不要）。
- */
-export type NotifyOnComplete = "none" | "sound" | "flash" | "both";
-
-export const NOTIFY_ON_COMPLETE_OPTIONS: NotifyOnComplete[] = [
-	"none",
-	"sound",
-	"flash",
-	"both",
-];
-
-export function notifyOnCompleteLabel(n: NotifyOnComplete): string {
-	switch (n) {
-		case "none":
-			return "なし";
-		case "sound":
-			return "音のみ";
-		case "flash":
-			return "フラッシュのみ";
-		case "both":
-			return "音とフラッシュ";
-	}
-}
-
-export function permissionModeLabel(m: PermissionMode): string {
-	switch (m) {
-		case "default":
-			return "編集前に確認";
-		case "acceptEdits":
-			return "編集を自動承認";
-		case "bypassPermissions":
-			return "全ての確認をスキップ";
-		case "plan":
-			return "プランモード";
-	}
-}
-
-/** 各オプションのホバー時に表示する 1 文の説明。 */
-export function permissionModeTooltip(m: PermissionMode): string {
-	switch (m) {
-		case "default":
-			return "ツール（編集・Bash・MCP など）を実行するたびに承認を求めます。";
-		case "acceptEdits":
-			return "ファイル編集は自動承認。Bash や MCP などは引き続き確認します。";
-		case "bypassPermissions":
-			return "確認なしで全てのツールを実行します。エージェントを信頼できるときのみ。";
-		case "plan":
-			return "プラン作成のみ。ツールは実行せず、提案だけを返します。";
-	}
-}
-
-/**
- * モデル ID 用の UI ラベルを生成する。"claude-" プレフィックスを除去し
- * （Claude モデルしか使わない）、`4-5` のようなハイフン区切りバージョンを
- * `4.5` に変換する。CLI 側に渡す正規 ID（`--model claude-sonnet-4-5`）は
- * そのまま保持される。
- *   claude-sonnet-4-5            → "sonnet 4.5"
- *   claude-haiku-4-5-20251001    → "haiku 4.5 (20251001)"
- *   gpt-4 / unknown              → そのまま返す
- */
-export function formatModelLabel(id: string): string {
-	const stripped = id.startsWith("claude-")
-		? id.slice("claude-".length)
-		: id;
-	const m = stripped.match(/^([a-z]+)-(\d+)-(\d+)(?:-(.+))?$/);
-	if (!m) return stripped;
-	const [, family, major, minor, suffix] = m;
-	const version = `${major}.${minor}`;
-	return suffix ? `${family} ${version} (${suffix})` : `${family} ${version}`;
-}
-
-export interface ClaudePanelSettings {
-	claudePath: string;
-	model: string;
-	thinkingMode: ThinkingMode;
-	effortLevel: EffortLevel;
-	disableMcpServers: boolean;
-	permissionMode: PermissionMode;
-	/** チャットパネルの基準フォントサイズ（px）。パネルルート要素の
-	 *  `--claude-panel-font-size` CSS 変数を駆動する。 */
-	fontSize: number;
-	/** 応答完了時の通知方式。既定はフラッシュ（控えめに目立たせる）。 */
-	notifyOnComplete: NotifyOnComplete;
-	/** 完了通知音の音量（0-100）。既定値の中央を採用。 */
-	notifySoundVolume: number;
-	/** 完了通知に使う音声ファイルの絶対パス。空のときは内蔵チャイムを使う。
-	 *  対応形式は実行環境（Electron / Chromium）が decodeAudioData できる
-	 *  もの（mp3 / wav / ogg / m4a など）。 */
-	notifySoundPath: string;
-}
-
-/** 通知音量スライダーの上下限（パーセント）。 */
-export const NOTIFY_VOLUME_MIN = 0;
-export const NOTIFY_VOLUME_MAX = 100;
-
-/** フォントサイズスライダーの上下限。10px 未満ではチャットパネルが
- *  読めない大きさになり、20px を超えるとサイドパネルの横幅に収まらない。 */
-export const FONT_SIZE_MIN = 10;
-export const FONT_SIZE_MAX = 20;
-
-export const DEFAULT_SETTINGS: ClaudePanelSettings = {
-	claudePath: "",
-	model: "claude-sonnet-4-5",
-	thinkingMode: "off",
-	effortLevel: "auto",
-	disableMcpServers: false,
-	// 既定は明示的なプロンプト（"default"）。0.1.8 以前は
-	// `bypassPermissions` をハードコードしており、agent が ~/.claude.json
-	// を黙って書き換える挙動になっていた。アップグレード時の既存ユーザーは
-	// 自動的に "default" に移行される（saveData が欠落キーにこの既定値を
-	// マージするため）。
-	permissionMode: "default",
-	fontSize: 13,
-	notifyOnComplete: "flash",
-	notifySoundVolume: 70,
-	notifySoundPath: "",
-};
+import type ClaudePanelPlugin from "../main";
+import { checkClaudeCli, resolveClaudePath, type CliStatus } from "../agent";
+import { pickFilesViaDialog } from "../attachments";
+import { toVaultRelativeIfInside } from "../notify-sound-source";
+import {
+	DEFAULT_SETTINGS,
+	EFFORT_LEVELS,
+	FONT_SIZE_MAX,
+	FONT_SIZE_MIN,
+	MODEL_PRESETS,
+	NOTIFY_ON_COMPLETE_OPTIONS,
+	NOTIFY_VOLUME_MAX,
+	NOTIFY_VOLUME_MIN,
+	PERMISSION_MODES,
+	type EffortLevel,
+	type NotifyOnComplete,
+	type PermissionMode,
+} from "./types";
+import {
+	formatModelLabel,
+	notifyOnCompleteLabel,
+	permissionModeLabel,
+} from "./labels";
+import { VaultAudioFileSuggestModal } from "./vault-audio-suggest";
 
 export class ClaudePanelSettingTab extends PluginSettingTab {
 	plugin: ClaudePanelPlugin;
@@ -359,6 +198,42 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					})
 			);
 
+		this.renderNotificationSection(containerEl);
+
+		new Setting(containerEl)
+			.setName("ホットキー")
+			.setDesc(
+				"パネルを開く / 入力欄にフォーカス / 送信 / キャンセル / 会話クリア / モデル切替 などのコマンドは" +
+					"Obsidian 標準の『ホットキー』設定画面で自由にキーを割り当てられます。"
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText("ホットキー設定を開く")
+					.setCta()
+					.onClick(() => {
+						// Obsidian の設定モーダルは ID 指定で setting タブを開ける。
+						// `hotkeys` は組み込みタブ。プラグイン ID を渡すと、
+						// 表示されるコマンドを本プラグイン分に事前フィルタできる。
+						const setting = (this.app as any).setting;
+						setting?.open?.();
+						setting?.openTabById?.("hotkeys");
+						const tab = setting?.activeTab;
+						if (tab && typeof tab.setQuery === "function") {
+							tab.setQuery(this.plugin.manifest.id);
+						}
+					})
+			);
+	}
+
+	/**
+	 * 完了通知まわりの 3 設定（モード・音量・音声ファイル）をまとめて描画する。
+	 *
+	 * 音声ファイル設定は 4 つのアクション（Vault 内ピッカー / OS ピッカー /
+	 * クリア + 直接入力）を持ち、保存形式は「絶対 OS パス」「Vault 相対パス」
+	 * の 2 通り。Vault 同期で別環境に移っても追従させるため、OS ピッカーで
+	 * 選ばれたファイルが Vault 配下なら自動で相対パス化して保存する。
+	 */
+	private renderNotificationSection(containerEl: HTMLElement): void {
 		new Setting(containerEl)
 			.setName("完了通知")
 			.setDesc(
@@ -418,7 +293,8 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.setName("通知音ファイル")
 			.setDesc(
 				"通知に使う音声ファイル（mp3 / wav / ogg / m4a など）。" +
-					"空欄の場合は内蔵の短いチャイムを使います。「選択」で OS のファイルダイアログから選べます。"
+					"Vault 内のファイルは相対パスとして保存され、Vault 同期で別環境に移っても追従します。" +
+					"空欄の場合は内蔵の短いチャイムを使います。"
 			)
 			.addText((text) =>
 				text
@@ -431,13 +307,30 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			)
 			.addExtraButton((btn) =>
 				btn
+					.setIcon("library")
+					.setTooltip("Vault 内のファイルから選択")
+					.onClick(() => {
+						new VaultAudioFileSuggestModal(
+							this.plugin.app,
+							async (file) => {
+								this.plugin.settings.notifySoundPath = file.path;
+								await this.plugin.saveSettings();
+								this.display();
+							}
+						).open();
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
 					.setIcon("folder-open")
-					.setTooltip("ファイルを選択")
+					.setTooltip("OS のファイルダイアログから選択")
 					.onClick(async () => {
 						const result = await pickFilesViaDialog();
 						const picked = result.paths[0];
 						if (!picked) return;
-						this.plugin.settings.notifySoundPath = picked;
+						// Vault 配下なら相対パスへ。外部ならそのまま絶対パス。
+						this.plugin.settings.notifySoundPath =
+							toVaultRelativeIfInside(picked, this.plugin.app);
 						await this.plugin.saveSettings();
 						this.display();
 					})
@@ -450,30 +343,6 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 						this.plugin.settings.notifySoundPath = "";
 						await this.plugin.saveSettings();
 						this.display();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("ホットキー")
-			.setDesc(
-				"パネルを開く / 入力欄にフォーカス / 送信 / キャンセル / 会話クリア / モデル切替 などのコマンドは" +
-					"Obsidian 標準の『ホットキー』設定画面で自由にキーを割り当てられます。"
-			)
-			.addButton((btn) =>
-				btn
-					.setButtonText("ホットキー設定を開く")
-					.setCta()
-					.onClick(() => {
-						// Obsidian の設定モーダルは ID 指定で setting タブを開ける。
-						// `hotkeys` は組み込みタブ。プラグイン ID を渡すと、
-						// 表示されるコマンドを本プラグイン分に事前フィルタできる。
-						const setting = (this.app as any).setting;
-						setting?.open?.();
-						setting?.openTabById?.("hotkeys");
-						const tab = setting?.activeTab;
-						if (tab && typeof tab.setQuery === "function") {
-							tab.setQuery(this.plugin.manifest.id);
-						}
 					})
 			);
 	}

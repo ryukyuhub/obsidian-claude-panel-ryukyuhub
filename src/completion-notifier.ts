@@ -14,7 +14,12 @@ const normalizeVolume = (vol: number): number => {
 interface NotifierConfig {
 	getMode: () => NotifyOnComplete;
 	getVolume: () => number;
+	/** 設定値のパス文字列。空文字なら内蔵チャイム。形式（絶対 / Vault 相対）
+	 *  の解釈は `readSoundBytes` 側に委ねており、ここでは関知しない。 */
 	getSoundPath: () => string;
+	/** 設定値のパスをそのまま受け取り、ArrayBuffer を返す。読めなければ null。
+	 *  notify-sound-source.ts 内の `loadSoundBuffer` を想定。 */
+	readSoundBytes: (path: string) => Promise<ArrayBuffer | null>;
 	panelRoot: HTMLElement;
 }
 
@@ -25,8 +30,8 @@ interface NotifierConfig {
  * AudioContext は遅延生成し、view 単位で使い回す（Obsidian のウィンドウ
  * は長寿命なので毎回作るより安い）。連続した完了でフラッシュ CSS が
  * 途中キャンセルされないよう timeout id も保持する。カスタム音声ファイル
- * を指定された場合はパス→AudioBuffer の対応表をキャッシュし、Vault や
- * OS のファイルを毎回読み直さずに済ませる。
+ * を指定された場合はパス→AudioBuffer の対応表をキャッシュし、ファイルを
+ * 毎回読み直さずに済ませる。
  */
 export class CompletionNotifier {
 	private audioCtx: AudioContext | null = null;
@@ -136,7 +141,7 @@ export class CompletionNotifier {
 
 		const promise = (async (): Promise<AudioBuffer | null> => {
 			try {
-				const arrayBuffer = await this.readFileAsArrayBuffer(path);
+				const arrayBuffer = await this.config.readSoundBytes(path);
 				if (!arrayBuffer) return null;
 				// decodeAudioData はブラウザ実装によっては破壊的に
 				// ArrayBuffer を消費するため、AudioContext の slice を渡す
@@ -146,7 +151,7 @@ export class CompletionNotifier {
 				return decoded;
 			} catch (e) {
 				console.warn(
-					"[claude-panel] failed to load notification sound:",
+					"[claude-panel] failed to decode notification sound:",
 					path,
 					e
 				);
@@ -157,38 +162,6 @@ export class CompletionNotifier {
 		})();
 		this.inflightLoads.set(path, promise);
 		return promise;
-	}
-
-	/**
-	 * 絶対パスの音声ファイルを Node の fs で読み、ArrayBuffer に変換する。
-	 * Electron 環境前提（Obsidian デスクトップ版）。HTTP fetch は
-	 * file:// で動かない環境があり、Vault.adapter は Vault 外の絶対パスを
-	 * 扱えないため、Node の require("fs") を直接使うのが最も確実。
-	 */
-	private async readFileAsArrayBuffer(
-		path: string
-	): Promise<ArrayBuffer | null> {
-		try {
-			const req = (
-				window as unknown as {
-					require?: (id: string) => unknown;
-				}
-			).require;
-			if (!req) return null;
-			const fs = req("fs") as {
-				promises: { readFile: (p: string) => Promise<Buffer> };
-			};
-			const buf = await fs.promises.readFile(path);
-			// Node の Buffer は Uint8Array のサブクラス。ArrayBuffer 部分を
-			// 切り出して渡す（offset/length が 0 とは限らないので注意）。
-			return buf.buffer.slice(
-				buf.byteOffset,
-				buf.byteOffset + buf.byteLength
-			) as ArrayBuffer;
-		} catch (e) {
-			console.warn("[claude-panel] read sound file failed", path, e);
-			return null;
-		}
 	}
 
 	private playBuffer(
