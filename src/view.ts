@@ -1,7 +1,6 @@
 import {
 	ItemView,
 	WorkspaceLeaf,
-	TFile,
 	TFolder,
 	Notice,
 	Scope,
@@ -9,11 +8,7 @@ import {
 } from "obsidian";
 import type ClaudePanelPlugin from "./main";
 import { checkClaudeCli } from "./agent";
-import {
-	ChatRuntime,
-	type ChatRuntimeHost,
-	type ComposedMessage,
-} from "./chat-runtime";
+import { ChatRuntime } from "./chat-runtime";
 import {
 	EFFORT_LEVELS,
 	MODEL_PRESETS,
@@ -26,27 +21,18 @@ import {
 	type PermissionMode,
 	type ThinkingMode,
 } from "./settings";
-import {
-	SelectionCapture,
-	type CapturedSelection,
-} from "./selection-capture";
-import {
-	extractPastedImages,
-	pickFilesViaDialog,
-	savePastedImage,
-} from "./attachments";
+import { SelectionCapture } from "./selection-capture";
 import { CompletionNotifier } from "./completion-notifier";
 import { loadSoundBuffer } from "./notify-sound-source";
 import { ContextMeter } from "./context-meter";
 import { PromptHistory } from "./prompt-history";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
 import { SlashSuggest } from "./slash-suggest";
-import { openAccountUsageModal } from "./account-usage";
-import * as nodePath from "path";
+import { openAccountUsageModal } from "./account-modal";
+import { Composer } from "./composer";
 import {
 	type ChatMessage,
 	type MessageUsage,
-	type SelectionRef,
 } from "./chat-message";
 import { renderMessage, renderToolPill } from "./chat-message-render";
 
@@ -56,28 +42,22 @@ export const VIEW_TYPE_CLAUDE_PANEL = "claude-panel-view";
 export class ClaudePanelView extends ItemView {
 	plugin: ClaudePanelPlugin;
 
-	// DOM 参照（onOpen で初期化）
+	// DOM 参照（onOpen で初期化）。コンポーザー配下の 3 ホスト
+	// （activeFile / selection / attachments）は Composer がオーナーシップを
+	// 持つので view 側には保持しない。
 	private messagesEl!: HTMLDivElement;
 	private inputEl!: HTMLTextAreaElement;
-	private attachmentsEl!: HTMLDivElement;
-	private activeFileEl!: HTMLDivElement;
-	private selectionEl!: HTMLDivElement;
+	// 一部の select 要素は refreshControls で外部設定変更を反映するため
+	// 保持する。effort は現状 sync 対象外なので参照を持たない。
 	private modelSelect: HTMLSelectElement | null = null;
 	private thinkSelect: HTMLSelectElement | null = null;
-	private effortSelect: HTMLSelectElement | null = null;
 	private permSelect: HTMLSelectElement | null = null;
 	private sendBtn!: HTMLButtonElement;
 
-	// 入力（コンポーザー）側の状態。会話履歴やセッション ID は ChatRuntime
-	// 側に集約しており、view はユーザー入力の組み立てだけを所有する。
-	private attachments: string[] = []; // Vault 相対パス
-	private includeActiveFile = true;
-	// 直近にファイルエクスプローラーでクリックされたフォルダ。
-	// 設定されている間はアクティブファイルの自動メンションを置き換え、
-	// 送信時にフォルダ配下のファイルを @メンションとして展開する。
-	// ファイル選択（file-open）が発生したらクリアされる。
-	private activeFolderPath: string | null = null;
-	private includeSelection = true;
+	// 入力（コンポーザー）側の状態と組み立てロジックは Composer に
+	// 委譲している。view は Composer に DOM ホストを渡してマウントし、
+	// 送信時に composeMessage を呼ぶだけ。
+	private composer!: Composer;
 	private selection!: SelectionCapture;
 	// プロンプト履歴ナビゲーション（textarea 内の Up/Down キー）。
 	// state は PromptHistory に持たせている。inputEl 構築後に初期化。
@@ -124,11 +104,14 @@ export class ClaudePanelView extends ItemView {
 
 		this.renderHeader(root);
 		this.messagesEl = root.createDiv({ cls: "claude-panel-messages" });
+		// Composer は selection に依存するので先に SelectionCapture を作る。
+		// SelectionCapture のコールバックも Composer 側へ委譲する。
+		this.selection = new SelectionCapture(this.app, this.containerEl, () =>
+			this.composer.renderSelection()
+		);
+		this.composer = new Composer(this.app, this.plugin, this.selection);
 		this.renderComposer(root);
 
-		this.selection = new SelectionCapture(this.app, this.containerEl, () =>
-			this.renderSelection()
-		);
 		this.notifier = new CompletionNotifier({
 			getMode: () => this.plugin.settings.notifyOnComplete,
 			getVolume: () => this.plugin.settings.notifySoundVolume,
@@ -143,15 +126,14 @@ export class ClaudePanelView extends ItemView {
 
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
-				this.renderActiveFile();
+				this.composer.renderActiveFile();
 				this.selection.poll();
 			})
 		);
 		this.registerEvent(
 			this.app.workspace.on("file-open", () => {
 				// ファイル選択でアクティブフォルダは解除（相互排他）
-				this.activeFolderPath = null;
-				this.renderActiveFile();
+				this.composer.setActiveFolderPath(null);
 				this.selection.poll();
 			})
 		);
@@ -168,8 +150,7 @@ export class ClaudePanelView extends ItemView {
 			if (!path) return; // ルート（path="" / null）は無視
 			const f = this.app.vault.getAbstractFileByPath(path);
 			if (!(f instanceof TFolder)) return;
-			this.activeFolderPath = path;
-			this.renderActiveFile();
+			this.composer.setActiveFolderPath(path);
 		});
 		// Grace-period handoff（猶予期間の引き継ぎ）: パネル内クリックで
 		// キャプチャ済みの markdown 選択を失わないようにする。これがないと
@@ -204,8 +185,7 @@ export class ClaudePanelView extends ItemView {
 		}
 
 		this.renderMessages();
-		this.renderActiveFile();
-		this.renderAttachments();
+		this.composer.renderAll();
 		this.contextMeter?.update(this.runtime.getLastUsage());
 		this.selection.poll();
 	}
@@ -278,12 +258,9 @@ export class ClaudePanelView extends ItemView {
 		new Notice(`モデル: ${formatModelLabel(next)}`);
 	}
 	commandToggleIncludeActive(): void {
-		this.includeActiveFile = !this.includeActiveFile;
-		this.renderActiveFile();
-		const target = this.activeFolderPath
-			? `${this.activeFolderPath}/`
-			: this.getActiveFile()?.path ?? null;
-		const state = this.includeActiveFile ? "含める" : "除外";
+		const include = this.composer.toggleIncludeActive();
+		const target = this.composer.getActiveTargetLabel();
+		const state = include ? "含める" : "除外";
 		const label = target ? `「${target}」を` : "アクティブを";
 		new Notice(`${label}${state}`);
 	}
@@ -335,15 +312,17 @@ export class ClaudePanelView extends ItemView {
 
 		// レイアウト（上 → 下）: アクティブファイル → 選択範囲 → 添付 →
 		// プロンプト textarea → アクションボタン → モデル/Thinking コントロール。
-		this.activeFileEl = composer.createDiv({
+		// 上 3 ホストは Composer がオーナー — view は createDiv して mount するだけ。
+		const activeFileEl = composer.createDiv({
 			cls: "claude-panel-active-file",
 		});
-		this.selectionEl = composer.createDiv({
+		const selectionEl = composer.createDiv({
 			cls: "claude-panel-selection is-empty",
 		});
-		this.attachmentsEl = composer.createDiv({
+		const attachmentsEl = composer.createDiv({
 			cls: "claude-panel-attachments",
 		});
+		this.composer.mount({ activeFileEl, selectionEl, attachmentsEl });
 
 		// textarea とサジェスト popup を同じ relative 親に入れて、popup を
 		// 入力欄の真上にオーバレイする。composer 全体を relative にすると
@@ -388,7 +367,7 @@ export class ClaudePanelView extends ItemView {
 			}
 		});
 		this.inputEl.addEventListener("paste", (e) => {
-			void this.handlePaste(e);
+			void this.composer.handlePaste(e);
 		});
 
 		const actions = composer.createDiv({ cls: "claude-panel-actions" });
@@ -396,7 +375,7 @@ export class ClaudePanelView extends ItemView {
 			text: "添付",
 			cls: "claude-panel-attach",
 		});
-		attachBtn.onclick = () => void this.openAttachPicker();
+		attachBtn.onclick = () => void this.composer.openAttachPicker();
 
 		this.sendBtn = actions.createEl("button", {
 			text: "送信",
@@ -477,7 +456,6 @@ export class ClaudePanelView extends ItemView {
 			this.plugin.settings.effortLevel = effortSelect.value as EffortLevel;
 			await this.plugin.saveSettings();
 		};
-		this.effortSelect = effortSelect;
 
 		row.createSpan({
 			cls: "claude-panel-control-label",
@@ -531,217 +509,6 @@ export class ClaudePanelView extends ItemView {
 		}
 		if (this.permSelect) {
 			this.permSelect.value = this.plugin.settings.permissionMode;
-		}
-	}
-
-	// ============================================================
-	//   アクティブファイル / 選択範囲 / 添付の描画
-	// ============================================================
-
-	private getActiveFile(): TFile | null {
-		return this.app.workspace.getActiveFile();
-	}
-
-	private renderActiveFile(): void {
-		this.activeFileEl.empty();
-
-		// アクティブフォルダが設定されているとアクティブファイルより優先
-		// （相互排他）。表示と挙動はファイルと対称。
-		if (this.activeFolderPath) {
-			const folder = this.app.vault.getAbstractFileByPath(
-				this.activeFolderPath
-			);
-			if (!(folder instanceof TFolder)) {
-				// 削除済み等で実体が無い場合は黙ってクリアしてフォールバック
-				this.activeFolderPath = null;
-			} else {
-				const fileCount = this.listFolderFiles(folder.path).length;
-				const label = this.activeFileEl.createSpan({
-					cls: "claude-panel-active-file-label",
-					text: "アクティブ:",
-				});
-				label.title =
-					"フォルダパスを @メンションとして Claude に送ります（配下のファイルは Claude が必要に応じて読みます）";
-				const pathEl = this.activeFileEl.createSpan({
-					cls: "claude-panel-active-file-path",
-					text: `${folder.path}/ ×${fileCount}`,
-				});
-				pathEl.title = `${folder.path} (${fileCount} ファイル)`;
-				const toggle = this.activeFileEl.createEl("button", {
-					cls: "claude-panel-active-file-toggle",
-					text: this.includeActiveFile ? "✓ 含める" : "○ 除外",
-				});
-				toggle.onclick = () => {
-					this.includeActiveFile = !this.includeActiveFile;
-					this.renderActiveFile();
-				};
-				return;
-			}
-		}
-
-		const file = this.getActiveFile();
-		if (!file) {
-			this.activeFileEl.createSpan({
-				cls: "claude-panel-active-file-empty",
-				text: "アクティブファイルなし",
-			});
-			return;
-		}
-		const label = this.activeFileEl.createSpan({
-			cls: "claude-panel-active-file-label",
-			text: "アクティブ:",
-		});
-		label.title = "メッセージ送信のたびに @メンションとして Claude に送られます";
-		const pathEl = this.activeFileEl.createSpan({
-			cls: "claude-panel-active-file-path",
-			text: file.path,
-		});
-		pathEl.title = file.path;
-		const toggle = this.activeFileEl.createEl("button", {
-			cls: "claude-panel-active-file-toggle",
-			text: this.includeActiveFile ? "✓ 含める" : "○ 除外",
-		});
-		toggle.onclick = () => {
-			this.includeActiveFile = !this.includeActiveFile;
-			this.renderActiveFile();
-		};
-	}
-
-	private renderSelection(): void {
-		this.selectionEl.empty();
-		const sel = this.selection?.get() ?? null;
-		if (!sel) {
-			this.selectionEl.addClass("is-empty");
-			return;
-		}
-		this.selectionEl.removeClass("is-empty");
-
-		const charCount = sel.text.length;
-
-		const header = this.selectionEl.createDiv({
-			cls: "claude-panel-selection-header",
-		});
-		header.createSpan({
-			cls: "claude-panel-selection-label",
-			text: "選択範囲:",
-		});
-		header.createSpan({
-			cls: "claude-panel-selection-meta",
-			text: `${sel.lineCount} 行 · ${charCount} 文字 · L${sel.startLine}`,
-		});
-		const toggle = header.createEl("button", {
-			cls: "claude-panel-selection-toggle",
-			text: this.includeSelection ? "✓ 含める" : "○ 除外",
-		});
-		toggle.onclick = () => {
-			this.includeSelection = !this.includeSelection;
-			this.renderSelection();
-		};
-
-		const preview = this.selectionEl.createDiv({
-			cls: "claude-panel-selection-preview",
-		});
-		const firstLine = sel.text.split("\n")[0];
-		const truncated =
-			firstLine.length > 100 ? firstLine.slice(0, 100) + "…" : firstLine;
-		const tail = sel.lineCount > 1 ? ` ⋯ 他 ${sel.lineCount - 1} 行` : "";
-		preview.setText(truncated + tail);
-		preview.title = sel.text;
-	}
-
-	private isFolderPath(path: string): boolean {
-		return this.app.vault.getAbstractFileByPath(path) instanceof TFolder;
-	}
-
-	private listFolderFiles(folderPath: string): string[] {
-		const folder = this.app.vault.getAbstractFileByPath(folderPath);
-		if (!(folder instanceof TFolder)) return [];
-		const out: string[] = [];
-		const walk = (f: TFolder): void => {
-			for (const child of f.children) {
-				if (child instanceof TFolder) walk(child);
-				else if (child instanceof TFile) out.push(child.path);
-			}
-		};
-		walk(folder);
-		out.sort();
-		return out;
-	}
-
-	private renderAttachments(): void {
-		this.attachmentsEl.empty();
-		for (const path of this.attachments) {
-			const isFolder = this.isFolderPath(path);
-			const isAbs = nodePath.isAbsolute(path);
-			const chip = this.attachmentsEl.createDiv({
-				cls: "claude-panel-chip",
-			});
-			// 絶対パス（OS ピッカーで添付された Vault 外ファイル）は
-			// パスが長くなりがちなのでファイル名だけ表示し、フルパスは
-			// ツールチップに格納する。Vault 相対パスは従来通り全文表示。
-			const displayPath = isAbs ? nodePath.basename(path) : path;
-			const labelText = isFolder ? `@${displayPath}/` : `@${displayPath}`;
-			const labelEl = chip.createSpan({ text: labelText });
-			labelEl.title = path;
-			if (isFolder) {
-				const count = this.listFolderFiles(path).length;
-				chip.createSpan({
-					text: ` ×${count}`,
-					attr: { title: `${count} ファイル` },
-				});
-			}
-			const x = chip.createEl("button", { text: "×" });
-			x.onclick = () => {
-				this.attachments = this.attachments.filter((p) => p !== path);
-				this.renderAttachments();
-			};
-		}
-	}
-
-	// ============================================================
-	//   添付アクション（ピッカー + クリップボードペースト）
-	// ============================================================
-
-	private async openAttachPicker(): Promise<void> {
-		const { paths, unresolvedCount } = await pickFilesViaDialog();
-		let added = 0;
-		for (const p of paths) {
-			if (!this.attachments.includes(p)) {
-				this.attachments.push(p);
-				added++;
-			}
-		}
-		if (added > 0) {
-			this.renderAttachments();
-		}
-		if (unresolvedCount > 0) {
-			new Notice(
-				`${unresolvedCount} 件のファイルパスを取得できませんでした（Electron 環境制約）。`
-			);
-		} else if (paths.length > 0 && added === 0) {
-			new Notice("選択されたファイルはすでに添付済みです。");
-		}
-	}
-
-	private async handlePaste(e: ClipboardEvent): Promise<void> {
-		const images = extractPastedImages(e);
-		if (images.length === 0) return;
-		// バイナリ文字列が textarea に貼り付けられないよう抑止する。
-		e.preventDefault();
-		const folder = this.plugin.getAttachmentFolder();
-		for (const img of images) {
-			try {
-				const savedPath = await savePastedImage(this.app, folder, img);
-				if (!this.attachments.includes(savedPath)) {
-					this.attachments.push(savedPath);
-				}
-				this.renderAttachments();
-				new Notice(`貼り付け: ${savedPath}`);
-			} catch (err) {
-				new Notice(
-					`貼り付け画像の保存に失敗: ${(err as Error).message}`
-				);
-			}
 		}
 	}
 
@@ -923,11 +690,10 @@ export class ClaudePanelView extends ItemView {
 	// ============================================================
 
 	private clearConversation(): void {
-		// 添付は view 側の状態なのでここでクリアする。会話履歴と
-		// セッション ID は runtime 側で破棄される。
-		this.attachments = [];
+		// 添付状態のクリアは Composer に委譲。会話履歴とセッション ID は
+		// runtime 側で破棄される。
+		this.composer.clearAttachments();
 		this.runtime.clear();
-		this.renderAttachments();
 	}
 
 	private slashContext(): SlashContext {
@@ -990,115 +756,13 @@ export class ClaudePanelView extends ItemView {
 			return;
 		}
 
-		const composed = this.composeMessage(text);
+		const composed = this.composer.composeMessage(text);
 
 		// runtime に渡す前に入力欄と添付をクリアする（UI 即時フィードバック）。
 		this.inputEl.value = "";
-		this.attachments = [];
-		this.renderAttachments();
+		this.composer.clearAttachments();
 
 		await this.runtime.send(text, composed, cwd);
-	}
-
-	/**
-	 * 送信用プロンプトとユーザーメッセージバブル描画用のメタデータを
-	 * 組み立てる。バブルには添付ファイルごとにメンションチップ、選択範囲
-	 * チップ（ファイル名・行情報のみ、本文は含めない）を表示する。
-	 * 選択範囲の本文は `fullPrompt` 側にだけ含めて claude に送る。
-	 */
-	private composeMessage(userText: string): ComposedMessage {
-		const isSlash = userText.startsWith("/");
-
-		// 表示用ラベル（フォルダは末尾 `/` 付きで1チップ）と、CLI に渡す
-		// パスを別々に組み立てる。フォルダは中身を展開せず、フォルダパス
-		// 自体を1つの @-mention として送る。配下が大きいフォルダで全
-		// ファイルを読み込ませて context を溢れさせないため。Claude Code
-		// 側で必要なファイルだけ Glob/Read で探索してもらう前提。
-		const mentionLabels: string[] = [];
-		const promptPaths: string[] = [];
-		const addMention = (path: string, isFolder: boolean): void => {
-			const label = isFolder ? `${path}/` : path;
-			if (!mentionLabels.includes(label)) mentionLabels.push(label);
-			const promptPath = isFolder ? `${path}/` : path;
-			if (!promptPaths.includes(promptPath)) promptPaths.push(promptPath);
-		};
-		if (!isSlash) {
-			// アクティブフォルダがあればフォルダを優先（相互排他）。
-			if (this.includeActiveFile && this.activeFolderPath) {
-				const folder = this.app.vault.getAbstractFileByPath(
-					this.activeFolderPath
-				);
-				if (folder instanceof TFolder) {
-					addMention(folder.path, true);
-				}
-			} else if (this.includeActiveFile) {
-				const activeFile = this.getActiveFile();
-				if (activeFile) addMention(activeFile.path, false);
-			}
-			for (const fp of this.attachments) {
-				addMention(fp, this.isFolderPath(fp));
-			}
-		}
-
-		const thinkPrefix =
-			!isSlash && this.plugin.settings.thinkingMode !== "off"
-				? `${this.plugin.settings.thinkingMode}: `
-				: "";
-
-		const sel =
-			!isSlash && this.includeSelection
-				? this.selection?.get() ?? null
-				: null;
-		const selectionBlock = sel ? formatSelectionBlock(sel) : "";
-		const selectionRef: SelectionRef | undefined = sel
-			? {
-					filePath: sel.filePath,
-					startLine: sel.startLine,
-					lineCount: sel.lineCount,
-				}
-			: undefined;
-
-		// バブルに表示する本文: ユーザーが入力した生テキストのみ。
-		// thinking-mode はバッジとして役割ラベル横に出すので本文には混ぜない。
-		// 選択範囲の本文も除外し、引用ブロックが UI を埋め尽くさないようにする。
-		const body = userText;
-		const thinkingMode = isSlash
-			? ("off" as ThinkingMode)
-			: this.plugin.settings.thinkingMode;
-
-		// claude へ送る添付パスは Vault 相対 / 絶対を区別せず、すべて
-		// 「添付パス」ブロックに列挙する。@-mention で送ると Claude Code
-		// が解決時にファイル本文をプロンプトへ自動展開してしまい、フォルダ
-		// や巨大ファイル指定で context が溢れるため、内容ではなくパスだけ
-		// を渡し、必要に応じて Read/Glob ツールで読ませる方針に統一する。
-		// 絶対パスはバックスラッシュをフォワードスラッシュへ正規化する。
-		const attachPaths = promptPaths.map((p) =>
-			nodePath.isAbsolute(p) ? p.replace(/\\/g, "/") : p
-		);
-		const attachBlock = attachPaths.length
-			? `[添付パス — 必要に応じて Read / Glob ツールで読み込んでください]\n${attachPaths
-					.map((p) => `- ${p}`)
-					.join("\n")}\n\n`
-			: "";
-
-		const fullPrompt = `${attachBlock}${selectionBlock}${thinkPrefix}${userText}`;
-
-		// effortLevel は user メッセージのバッジ表示用。スラッシュコマンドや
-		// `auto` のときは保存しない（バッジが出ないことで「明示的な選択」と
-		// 「既定」を区別する）。
-		const effortLevel: EffortLevel | undefined =
-			!isSlash && this.plugin.settings.effortLevel !== "auto"
-				? this.plugin.settings.effortLevel
-				: undefined;
-
-		return {
-			mentions: mentionLabels,
-			selectionRef,
-			body,
-			fullPrompt,
-			thinkingMode,
-			effortLevel,
-		};
 	}
 
 	private getVaultPath(): string | null {
@@ -1108,12 +772,4 @@ export class ClaudePanelView extends ItemView {
 		};
 		return adapter.getBasePath?.() ?? adapter.basePath ?? null;
 	}
-}
-
-function formatSelectionBlock(sel: CapturedSelection | null): string {
-	if (!sel) return "";
-	const src = sel.filePath
-		? `（出典: \`${sel.filePath}\` L${sel.startLine}）`
-		: "";
-	return `選択範囲${src}:\n\`\`\`\n${sel.text}\n\`\`\`\n\n`;
 }

@@ -1,10 +1,6 @@
 import type ClaudePanelPlugin from "./main";
-import {
-	fetchUsage,
-	openAccountUsageModal,
-	type UsageData,
-	type UsageWindow,
-} from "./account-usage";
+import { fetchUsage, type UsageData, type UsageWindow } from "./account-api";
+import { openAccountUsageModal } from "./account-modal";
 
 /**
  * Obsidian 最下部のステータスバーに Claude 使用状況を表示する。

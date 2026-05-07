@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ClaudePanelPlugin from "../main";
-import { checkClaudeCli, resolveClaudePath, type CliStatus } from "../agent";
+import { checkClaudeCli, type CliStatus } from "../agent";
+import { resolveClaudePath } from "../cli-resolver";
 import { pickFilesViaDialog } from "../attachments";
 import { toVaultRelativeIfInside } from "../notify-sound-source";
 import {
