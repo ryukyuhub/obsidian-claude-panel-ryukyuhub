@@ -105,6 +105,9 @@ export interface ClaudePanelSettings {
 	 *  対応形式は実行環境（Electron / Chromium）が decodeAudioData できる
 	 *  もの（mp3 / wav / ogg / m4a など）。 */
 	notifySoundPath: string;
+	/** Obsidian 最下部のステータスバーに Claude 使用状況（5h / 7d など）
+	 *  を常時表示するかどうか。クリックで詳細モーダルを開く。 */
+	showUsageStatusBar: boolean;
 }
 
 /** 通知音量スライダーの上下限（パーセント）。 */
@@ -132,4 +135,5 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	notifyOnComplete: "flash",
 	notifySoundVolume: 70,
 	notifySoundPath: "",
+	showUsageStatusBar: true,
 };

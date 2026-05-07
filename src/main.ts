@@ -5,9 +5,11 @@ import {
 	ClaudePanelSettingTab,
 } from "./settings";
 import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
+import { UsageStatusBar } from "./usage-status-bar";
 
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
+	private usageStatusBar: UsageStatusBar | null = null;
 
 	// クリップボードからペーストした画像の保存先（Vault 相対パス）。
 	// プラグイン自身のディレクトリ配下に置くことでユーザー側の
@@ -95,12 +97,48 @@ export default class ClaudePanelPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: "toggle-claude-panel-include-active",
+			name: "アクティブなファイル/フォルダを含めるをトグル",
+			checkCallback: (checking) => {
+				const view = this.getView();
+				if (!view) return false;
+				if (!checking) view.commandToggleIncludeActive();
+				return true;
+			},
+		});
+
 		this.addSettingTab(new ClaudePanelSettingTab(this.app, this));
+
+		if (this.settings.showUsageStatusBar) {
+			this.usageStatusBar = new UsageStatusBar(this);
+			this.usageStatusBar.attach();
+		}
 	}
 
 	async onunload(): Promise<void> {
 		// Leaf は Obsidian 側で自動的に切り離されるので明示的な処理は不要。
+		this.usageStatusBar?.detach();
+		this.usageStatusBar = null;
 		await this.cleanupAttachments();
+	}
+
+	/** 設定変更時にステータスバーの表示を切り替える。 */
+	applyUsageStatusBarVisibility(): void {
+		if (this.settings.showUsageStatusBar) {
+			if (!this.usageStatusBar) {
+				this.usageStatusBar = new UsageStatusBar(this);
+				this.usageStatusBar.attach();
+			}
+		} else {
+			this.usageStatusBar?.detach();
+			this.usageStatusBar = null;
+		}
+	}
+
+	/** チャットラン完了などのタイミングでステータスバーを更新する。 */
+	refreshUsageStatusBar(): void {
+		this.usageStatusBar?.refreshSoon();
 	}
 
 	/**

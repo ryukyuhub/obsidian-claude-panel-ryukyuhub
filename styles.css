@@ -1897,3 +1897,47 @@
 	background: var(--background-primary);
 	color: var(--text-normal);
 }
+
+/* ============================================================
+   ステータスバー（使用状況）
+   ============================================================ */
+
+.claude-panel-usage-statusbar {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+}
+
+.claude-panel-usage-statusbar:hover {
+	color: var(--text-normal);
+}
+
+.claude-panel-usage-sb-prefix {
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.claude-panel-usage-sb-chip {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-normal);
+}
+
+.claude-panel-usage-sb-chip.is-warn {
+	color: var(--text-warning, #d29922);
+}
+
+.claude-panel-usage-sb-chip.is-danger {
+	color: var(--text-error, #f85149);
+	font-weight: 600;
+}
+
+.claude-panel-usage-sb-remain {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+	font-size: 0.92em;
+}
+
+.claude-panel-usage-statusbar.is-error .claude-panel-usage-sb-chip {
+	color: var(--text-faint);
+}

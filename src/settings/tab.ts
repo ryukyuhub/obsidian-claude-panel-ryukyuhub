@@ -204,6 +204,22 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		this.renderNotificationSection(containerEl);
 
 		new Setting(containerEl)
+			.setName("使用状況をステータスバーに表示")
+			.setDesc(
+				"Obsidian 最下部のステータスバーに Claude の 5 時間 / 7 日使用状況と" +
+					"リセットまでの残り時間を常時表示します。クリックで詳細モーダルを開きます。"
+			)
+			.addToggle((t) =>
+				t
+					.setValue(this.plugin.settings.showUsageStatusBar)
+					.onChange(async (v) => {
+						this.plugin.settings.showUsageStatusBar = v;
+						await this.plugin.saveSettings();
+						this.plugin.applyUsageStatusBarVisibility();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName("ホットキー")
 			.setDesc(
 				"パネルを開く / 入力欄にフォーカス / 送信 / キャンセル / 会話クリア / モデル切替 などのコマンドは" +

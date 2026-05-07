@@ -277,6 +277,16 @@ export class ClaudePanelView extends ItemView {
 		if (this.modelSelect) this.modelSelect.value = next;
 		new Notice(`モデル: ${formatModelLabel(next)}`);
 	}
+	commandToggleIncludeActive(): void {
+		this.includeActiveFile = !this.includeActiveFile;
+		this.renderActiveFile();
+		const target = this.activeFolderPath
+			? `${this.activeFolderPath}/`
+			: this.getActiveFile()?.path ?? null;
+		const state = this.includeActiveFile ? "含める" : "除外";
+		const label = target ? `「${target}」を` : "アクティブを";
+		new Notice(`${label}${state}`);
+	}
 
 	// ============================================================
 	//   コンポーザーの構築
@@ -551,7 +561,7 @@ export class ClaudePanelView extends ItemView {
 					text: "アクティブ:",
 				});
 				label.title =
-					"フォルダ内のファイルを @メンションとして Claude に送ります";
+					"フォルダパスを @メンションとして Claude に送ります（配下のファイルは Claude が必要に応じて読みます）";
 				const pathEl = this.activeFileEl.createSpan({
 					cls: "claude-panel-active-file-path",
 					text: `${folder.path}/ ×${fileCount}`,
@@ -891,9 +901,11 @@ export class ClaudePanelView extends ItemView {
 		this.contextMeter?.update(usage);
 	}
 
-	/** 1 ターン完了 → ユーザーキャンセル時を除いて通知音／フラッシュ。 */
+	/** 1 ターン完了 → ユーザーキャンセル時を除いて通知音／フラッシュ。
+	 *  併せてステータスバーの使用状況も再取得する（直近の消費を反映）。 */
 	onRunComplete(canceled: boolean): void {
 		if (!canceled) this.notifier.notify();
+		this.plugin.refreshUsageStatusBar();
 	}
 
 	/** AudioContext を起こす（ユーザージェスチャ中にだけ有効）。 */
@@ -998,19 +1010,17 @@ export class ClaudePanelView extends ItemView {
 		const isSlash = userText.startsWith("/");
 
 		// 表示用ラベル（フォルダは末尾 `/` 付きで1チップ）と、CLI に渡す
-		// 展開済みファイルパスを別々に組み立てる。
+		// パスを別々に組み立てる。フォルダは中身を展開せず、フォルダパス
+		// 自体を1つの @-mention として送る。配下が大きいフォルダで全
+		// ファイルを読み込ませて context を溢れさせないため。Claude Code
+		// 側で必要なファイルだけ Glob/Read で探索してもらう前提。
 		const mentionLabels: string[] = [];
 		const promptPaths: string[] = [];
 		const addMention = (path: string, isFolder: boolean): void => {
 			const label = isFolder ? `${path}/` : path;
 			if (!mentionLabels.includes(label)) mentionLabels.push(label);
-			if (isFolder) {
-				for (const child of this.listFolderFiles(path)) {
-					if (!promptPaths.includes(child)) promptPaths.push(child);
-				}
-			} else if (!promptPaths.includes(path)) {
-				promptPaths.push(path);
-			}
+			const promptPath = isFolder ? `${path}/` : path;
+			if (!promptPaths.includes(promptPath)) promptPaths.push(promptPath);
 		};
 		if (!isSlash) {
 			// アクティブフォルダがあればフォルダを優先（相互排他）。
@@ -1056,33 +1066,22 @@ export class ClaudePanelView extends ItemView {
 			? ("off" as ThinkingMode)
 			: this.plugin.settings.thinkingMode;
 
-		// claude へ送るパスを2つに分ける:
-		// - Vault 相対パス（拡張子付きの普通のパス）は従来どおり @-mention
-		// - OS の絶対パス（Vault 外）は Claude Code の @-mention パーサが
-		//   ドライブレター・スペース・バックスラッシュを正しく扱えない
-		//   ことがあるため、専用の「添付」ブロックに列挙して Read ツール
-		//   での読み込みを Claude に任せる。フォワードスラッシュへ正規化
-		//   して可読性も上げる。
-		const vaultPaths: string[] = [];
-		const externalPaths: string[] = [];
-		for (const p of promptPaths) {
-			if (nodePath.isAbsolute(p)) {
-				externalPaths.push(p.replace(/\\/g, "/"));
-			} else {
-				vaultPaths.push(p);
-			}
-		}
-		const mentionsStr = vaultPaths.map((p) => `@${p}`).join(" ");
-		const externalBlock = externalPaths.length
-			? `[添付ファイル — Read ツールで読み込んでください]\n${externalPaths
+		// claude へ送る添付パスは Vault 相対 / 絶対を区別せず、すべて
+		// 「添付パス」ブロックに列挙する。@-mention で送ると Claude Code
+		// が解決時にファイル本文をプロンプトへ自動展開してしまい、フォルダ
+		// や巨大ファイル指定で context が溢れるため、内容ではなくパスだけ
+		// を渡し、必要に応じて Read/Glob ツールで読ませる方針に統一する。
+		// 絶対パスはバックスラッシュをフォワードスラッシュへ正規化する。
+		const attachPaths = promptPaths.map((p) =>
+			nodePath.isAbsolute(p) ? p.replace(/\\/g, "/") : p
+		);
+		const attachBlock = attachPaths.length
+			? `[添付パス — 必要に応じて Read / Glob ツールで読み込んでください]\n${attachPaths
 					.map((p) => `- ${p}`)
 					.join("\n")}\n\n`
 			: "";
 
-		const promptBody = `${externalBlock}${selectionBlock}${thinkPrefix}${userText}`;
-		const fullPrompt = mentionsStr
-			? `${mentionsStr}\n\n${promptBody}`
-			: promptBody;
+		const fullPrompt = `${attachBlock}${selectionBlock}${thinkPrefix}${userText}`;
 
 		// effortLevel は user メッセージのバッジ表示用。スラッシュコマンドや
 		// `auto` のときは保存しない（バッジが出ないことで「明示的な選択」と
