@@ -20,6 +20,7 @@ export default class ClaudePanelPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		await this.cleanupLegacyChatState();
 
 		this.registerView(
 			VIEW_TYPE_CLAUDE_PANEL,
@@ -100,6 +101,27 @@ export default class ClaudePanelPlugin extends Plugin {
 	async onunload(): Promise<void> {
 		// Leaf は Obsidian 側で自動的に切り離されるので明示的な処理は不要。
 		await this.cleanupAttachments();
+	}
+
+	/**
+	 * 旧バージョンが書き出していた `chat.json`（チャット履歴の永続化）を
+	 * 削除する。Vault を Google Drive 等で同期している環境で、片方の端末の
+	 * セッション ID や絶対パス添付が他端末側に流れて誤動作するのを防ぐ
+	 * ため、永続化機能を撤去した。残置ファイルは無害だが同期トラフィック
+	 * の元になるので、起動時に一度だけ掃除する。
+	 */
+	private async cleanupLegacyChatState(): Promise<void> {
+		const path = normalizePath(
+			`${this.app.vault.configDir}/plugins/${this.manifest.id}/chat.json`
+		);
+		const adapter = this.app.vault.adapter;
+		try {
+			if (await adapter.exists(path)) {
+				await adapter.remove(path);
+			}
+		} catch {
+			/* noop — 削除失敗してもユーザー体験は変わらないので握りつぶす */
+		}
 	}
 
 	private async cleanupAttachments(): Promise<void> {

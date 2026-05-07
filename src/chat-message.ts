@@ -4,9 +4,9 @@ import type { EffortLevel, ThinkingMode } from "./settings";
  * チャットメッセージのデータモデルと、parts 配列を in-place で組み立てる
  * 純粋関数群。DOM 描画は `chat-message-render.ts` に分離している。
  *
- * 「型と永続化のためだけに ChatMessage を import したい」モジュール
- * （chat-persistence.ts / context-meter.ts など）が描画コードを引き込まずに
- * 済むよう、obsidian の依存はこのファイルから外している。
+ * 「型のためだけに ChatMessage を import したい」モジュール
+ * （context-meter.ts など）が描画コードを引き込まずに済むよう、
+ * obsidian の依存はこのファイルから外している。
  */
 
 export type PermissionStatus = "pending" | "approved" | "denied";

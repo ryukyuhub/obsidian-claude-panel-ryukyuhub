@@ -52,6 +52,11 @@ export interface RunArgs {
 	 *  undefined を渡すと新規セッション開始 — claude が result イベントで
 	 *  新しい session_id を返すので、呼び出し側が以降のターン用に保持する。 */
 	sessionId?: string;
+	/** true のとき、`--continue` を付けて cwd における直近セッションを再開
+	 *  する。`sessionId` が指定されている場合はそちらが優先される。
+	 *  Obsidian 再起動後にユーザーが `/resume` を打って前回会話を拾うために
+	 *  使う。 */
+	continueLast?: boolean;
 }
 
 const isWindows = process.platform === "win32";
@@ -558,6 +563,12 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 			// 蓄積され、ウィンドウが埋まったタイミングで CLI 側の自動
 			// コンパクションが動作するようになる。
 			cliArgs.push("--resume", args.sessionId);
+		} else if (args.continueLast) {
+			// セッション ID が手元にないが、CLI 側に残っている直近会話を
+			// 拾い上げる。Obsidian 再起動後に `/resume` で前回の続きから
+			// 始めるためのパス。新しい session_id は result イベント経由で
+			// 受け取り、以降のターンでは sessionId 経由の `--resume` に切り替わる。
+			cliArgs.push("--continue");
 		}
 		// `auto` のときはフラグを送らず、CLI 既定 / ~/.claude/settings.json の
 		// `effortLevel` をそのまま尊重する。明示値が選ばれているときだけ

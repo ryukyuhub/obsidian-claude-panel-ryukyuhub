@@ -9,6 +9,7 @@ import {
 	type ThinkingMode,
 } from "./settings";
 import { listMcpServers } from "./agent";
+import { diagnoseSessionLookup } from "./session-history";
 
 /**
  * 入力欄に表示する候補のカテゴリ。バッジの色分けにも使う。
@@ -31,6 +32,7 @@ export interface SlashCommandSpec {
  */
 export const SLASH_COMMANDS: SlashCommandSpec[] = [
 	{ name: "/clear", desc: "会話をクリア", category: "local" },
+	{ name: "/continue", desc: "前回セッションを再開（履歴も復元）", category: "local" },
 	{ name: "/help", desc: "コマンド一覧を表示", category: "local" },
 	{ name: "/model", desc: "モデルの表示 / 変更", category: "local" },
 	{ name: "/think", desc: "思考深度の表示 / 変更", category: "local" },
@@ -80,6 +82,9 @@ export interface SlashContext {
 	plugin: ClaudePanelPlugin;
 	getVaultPath: () => string | null;
 	clearConversation: () => void;
+	/** 直近のセッション JSONL から UI 履歴を復元し、次の送信で
+	 *  `--continue` を 1 回だけ予約する。戻り値は復元したメッセージ件数。 */
+	restoreFromLatestSession: (cwd: string) => number;
 	refreshControls: () => void;
 	appendSystemMessage: (text: string) => void;
 	appendInteractive: (render: (c: HTMLElement) => void) => void;
@@ -102,6 +107,9 @@ export function handleLocalSlashCommand(
 	switch (cmd) {
 		case "/clear":
 			ctx.clearConversation();
+			return true;
+		case "/continue":
+			handleContinueCommand(ctx);
 			return true;
 		case "/help":
 			showHelp(ctx);
@@ -196,6 +204,33 @@ export function handleLocalSlashCommand(
  * `claude <cmd>` を実行するよう案内するシステムメッセージを表示する。
  * `--print` 経由では動かない（あるいは TTY 必須の）コマンドに使う。
  */
+function handleContinueCommand(ctx: SlashContext): void {
+	const cwd = ctx.getVaultPath();
+	if (!cwd) {
+		ctx.appendSystemMessage("Vault のパスを解決できません。");
+		return;
+	}
+	const count = ctx.restoreFromLatestSession(cwd);
+	if (count === 0) {
+		const diag = diagnoseSessionLookup(cwd);
+		ctx.appendSystemMessage(
+			[
+				"再開できるセッションが見つかりません。",
+				"",
+				"**診断:**",
+				`- Vault パス: \`${diag.cwd}\``,
+				`- 探索先: \`${diag.encodedDir}\``,
+				`- フォルダ存在: ${diag.exists ? "はい" : "いいえ"}`,
+				`- JSONL ファイル数: ${diag.jsonlCount}`,
+			].join("\n")
+		);
+		return;
+	}
+	ctx.appendSystemMessage(
+		`前回セッションを復元しました（メッセージ ${count} 件）。次の送信で \`--continue\` 付きで再開します。`
+	);
+}
+
 function showTerminalOnlyNote(
 	ctx: SlashContext,
 	command: string,
@@ -223,6 +258,7 @@ function showHelp(ctx: SlashContext): void {
 		const list = c.createEl("ul", { cls: "claude-panel-sys-list" });
 		const items: [string, string][] = [
 			["/clear", "会話をクリア"],
+			["/continue", "前回セッションを再開（UI 履歴も `~/.claude/projects/...jsonl` から復元）"],
 			["/help", "このヘルプを表示"],
 			["/model [id]", "モデルの表示 / 変更"],
 			["/think [mode]", "思考深度の表示 / 変更"],

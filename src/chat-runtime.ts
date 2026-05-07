@@ -20,18 +20,18 @@ import {
 	pushTool as pushToolToParts,
 	setPermissionStatus,
 } from "./chat-message";
+import { loadLatestSessionMessages } from "./session-history";
 
 /**
- * 会話ランタイム。チャット 1 ターンの送信〜受信〜パーミッション処理〜
- * 永続化スナップショットを担う。view から「state とフロー制御」を切り
- * 離した結果、view は DOM とユーザー入力（添付・選択範囲・コンポーザー）
- * の構築だけに専念できる。
+ * 会話ランタイム。チャット 1 ターンの送信〜受信〜パーミッション処理を
+ * 担う。view から「state とフロー制御」を切り離した結果、view は DOM と
+ * ユーザー入力（添付・選択範囲・コンポーザー）の構築だけに専念できる。
  *
  * 設計上の境界:
  *   - **runtime が所有する**: messages 配列、currentRun、セッション ID、
  *     pending パーミッション、最新 usage、busy フラグ。
- *   - **view が所有する**: DOM、添付・ドラフト・アクティブファイル等の
- *     入力状態、composeMessage の組み立て、永続化の I/O。
+ *   - **view が所有する**: DOM、添付・アクティブファイル等の入力状態、
+ *     composeMessage の組み立て。
  *   - **橋渡し**: `ChatRuntimeHost` インターフェース。runtime が状態を
  *     書き換えるたびに対応するイベントを呼び、view（host 実装）が DOM
  *     を高速パッチするか、必要に応じて 1 メッセージ／全体を再描画する。
@@ -54,13 +54,6 @@ export interface ComposedMessage {
 	/** ユーザーメッセージのバッジ表示用。`auto` やスラッシュコマンドでは
 	 *  undefined にしておく。 */
 	effortLevel?: EffortLevel;
-}
-
-/** 永続化用のスナップショット。runtime が所有する状態の保存可能な部分。 */
-export interface ChatSnapshot {
-	messages: ChatMessage[];
-	lastUsage: MessageUsage | null;
-	currentSessionId: string | null;
 }
 
 /**
@@ -95,6 +88,9 @@ export class ChatRuntime {
 	private messages: ChatMessage[] = [];
 	private currentRun: RunHandle | null = null;
 	private currentSessionId: string | null = null;
+	// `/resume` で立つフラグ。次の send() で `--continue` を 1 回だけ
+	// 渡し、CLI 側の cwd 直近セッションを拾い上げる。消費で false に戻る。
+	private pendingContinue = false;
 	private pendingPermDecisions = new Map<
 		string,
 		(d: PermissionDecision) => void
@@ -127,10 +123,6 @@ export class ChatRuntime {
 		return this.lastUsage;
 	}
 
-	getCurrentSessionId(): string | null {
-		return this.currentSessionId;
-	}
-
 	/** PromptHistory に渡す履歴ソース。messages から user 入力だけを抽出する。 */
 	getInputHistory(): string[] {
 		const out: string[] = [];
@@ -143,35 +135,28 @@ export class ChatRuntime {
 	}
 
 	// ------------------------------------------------------------------
-	//   永続化スナップショット（永続化 I/O 自体は view が担う）
-	// ------------------------------------------------------------------
-
-	captureSnapshot(): ChatSnapshot {
-		return {
-			messages: this.messages,
-			lastUsage: this.lastUsage,
-			currentSessionId: this.currentSessionId,
-		};
-	}
-
-	/**
-	 * onOpen 時にロードしたスナップショットを反映する。再描画は呼び出し側
-	 * （view）でまとめて行う前提でここでは host を呼ばない（onOpen の
-	 * 初期描画と二重発火しないようにするため）。
-	 */
-	applySnapshot(snap: Partial<ChatSnapshot>): void {
-		if (snap.messages) this.messages = snap.messages;
-		if (snap.currentSessionId !== undefined) {
-			this.currentSessionId = snap.currentSessionId;
-		}
-		if (snap.lastUsage !== undefined) {
-			this.lastUsage = snap.lastUsage;
-		}
-	}
-
-	// ------------------------------------------------------------------
 	//   会話操作
 	// ------------------------------------------------------------------
+
+	/**
+	 * `/continue` から呼ばれる。指定 cwd に対応する Claude CLI の直近セッション
+	 * ファイル（`~/.claude/projects/<encoded-cwd>/<session>.jsonl`）を読み出し、
+	 * UI のチャット履歴を復元する。あわせて次回 send() 時に `--continue` を
+	 * 1 回だけ付与し、CLI 側の会話コンテキストも続きから再開させる。
+	 *
+	 * 戻り値: 復元したメッセージ件数。0 件のとき（セッションファイルが
+	 * 無いか有効メッセージが取れなかった）はフラグを立てず false ぽい挙動。
+	 */
+	restoreFromLatestSession(cwd: string): number {
+		const restored = loadLatestSessionMessages(cwd);
+		if (!restored) return 0;
+		this.flushPendingPermissions("会話を復元しました。");
+		this.messages = restored;
+		this.currentSessionId = null;
+		this.pendingContinue = true;
+		this.host.onMessagesChanged();
+		return restored.length;
+	}
 
 	/**
 	 * 1 ターンを送信する。view の composeMessage で組み立てたメタデータと
@@ -221,7 +206,8 @@ export class ChatRuntime {
 		this.setBusy(true);
 
 		const runOnce = async (
-			sessionId: string | undefined
+			sessionId: string | undefined,
+			continueLast: boolean
 		): Promise<{ canceled: boolean; errorMessage: string }> => {
 			let errorMessage = "";
 			const handle = runAgent(
@@ -230,6 +216,7 @@ export class ChatRuntime {
 					cwd,
 					settings: this.plugin.settings,
 					sessionId,
+					continueLast,
 				},
 				{
 					onText: (chunk) =>
@@ -282,7 +269,16 @@ export class ChatRuntime {
 			return { canceled, errorMessage };
 		};
 
-		const first = await runOnce(this.currentSessionId ?? undefined);
+		// `--continue` は session ID と排他。pendingContinue を消費するのは
+		// 実際に CLI を起動するこの瞬間。runOnce 後にエラーで再試行する
+		// ケースでも誤って 2 回 --continue を渡さないよう先に読み出す。
+		const useContinue = this.pendingContinue;
+		this.pendingContinue = false;
+
+		const first = await runOnce(
+			this.currentSessionId ?? undefined,
+			useContinue
+		);
 		let canceled = first.canceled;
 
 		// CLI 側でセッションが失われることがある（クリーンアップ、期限切れ、
@@ -306,7 +302,7 @@ export class ChatRuntime {
 				msg.usage = undefined;
 				this.host.onMessageRerender(msg);
 			}
-			const retry = await runOnce(undefined);
+			const retry = await runOnce(undefined, false);
 			canceled = retry.canceled;
 		}
 
@@ -329,6 +325,7 @@ export class ChatRuntime {
 		this.flushPendingPermissions("会話をクリアしました。");
 		this.messages = [];
 		this.currentSessionId = null;
+		this.pendingContinue = false;
 		this.host.onMessagesChanged();
 	}
 

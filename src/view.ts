@@ -38,16 +38,11 @@ import {
 import { CompletionNotifier } from "./completion-notifier";
 import { loadSoundBuffer } from "./notify-sound-source";
 import { ContextMeter } from "./context-meter";
-import {
-	loadChat as persistLoadChat,
-	saveChat as persistSaveChat,
-} from "./chat-persistence";
 import { PromptHistory } from "./prompt-history";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
 import { SlashSuggest } from "./slash-suggest";
 import { openAccountUsageModal } from "./account-usage";
 import * as nodePath from "path";
-import * as nodeFs from "fs";
 import {
 	type ChatMessage,
 	type MessageUsage,
@@ -198,7 +193,15 @@ export class ClaudePanelView extends ItemView {
 			return true;
 		});
 
-		await this.loadChat();
+		// Obsidian 起動時に前回の会話を自動復元する。
+		// `~/.claude/projects/<encoded-cwd>/<session>.jsonl` から直近セッションを
+		// 読み出し、UI 履歴と `--continue` 予約を一括でセットする。Vault 内
+		// （= Google Drive 等で同期される領域）には何も書かないので、複数端末
+		// 間でセッション ID が衝突したり absolute path 添付が混入したりしない。
+		const cwd = this.getVaultPath();
+		if (cwd) {
+			this.runtime.restoreFromLatestSession(cwd);
+		}
 
 		this.renderMessages();
 		this.renderActiveFile();
@@ -208,8 +211,6 @@ export class ClaudePanelView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
-		// 未送信のドラフトを保存しておき、次回開いた時に復元できるようにする。
-		await this.saveChat();
 		this.notifier?.dispose();
 	}
 
@@ -683,7 +684,6 @@ export class ClaudePanelView extends ItemView {
 			x.onclick = () => {
 				this.attachments = this.attachments.filter((p) => p !== path);
 				this.renderAttachments();
-				void this.saveChat();
 			};
 		}
 	}
@@ -703,7 +703,6 @@ export class ClaudePanelView extends ItemView {
 		}
 		if (added > 0) {
 			this.renderAttachments();
-			void this.saveChat();
 		}
 		if (unresolvedCount > 0) {
 			new Notice(
@@ -734,7 +733,6 @@ export class ClaudePanelView extends ItemView {
 				);
 			}
 		}
-		void this.saveChat();
 	}
 
 	// ============================================================
@@ -913,12 +911,11 @@ export class ClaudePanelView extends ItemView {
 	// ============================================================
 
 	private clearConversation(): void {
-		// 添付やドラフトは view 側の状態なのでここでクリアする。会話履歴と
-		// セッション ID は runtime 側で破棄される。永続化は最後にまとめて。
+		// 添付は view 側の状態なのでここでクリアする。会話履歴と
+		// セッション ID は runtime 側で破棄される。
 		this.attachments = [];
 		this.runtime.clear();
 		this.renderAttachments();
-		void this.saveChat();
 	}
 
 	private slashContext(): SlashContext {
@@ -926,6 +923,8 @@ export class ClaudePanelView extends ItemView {
 			plugin: this.plugin,
 			getVaultPath: () => this.getVaultPath(),
 			clearConversation: () => this.clearConversation(),
+			restoreFromLatestSession: (cwd) =>
+				this.runtime.restoreFromLatestSession(cwd),
 			refreshControls: () => this.refreshControls(),
 			appendSystemMessage: (text) => this.runtime.appendSystemMessage(text),
 			appendInteractive: (render) =>
@@ -987,37 +986,6 @@ export class ClaudePanelView extends ItemView {
 		this.renderAttachments();
 
 		await this.runtime.send(text, composed, cwd);
-
-		void this.saveChat();
-	}
-
-	// ============================================================
-	//   チャットの永続化
-	// ============================================================
-
-	private saveChat(): Promise<void> {
-		const snap = this.runtime.captureSnapshot();
-		return persistSaveChat(this.app, this.plugin.manifest.id, {
-			messages: snap.messages,
-			attachments: this.attachments,
-			draft: this.inputEl?.value ?? "",
-			lastUsage: snap.lastUsage,
-			currentSessionId: snap.currentSessionId,
-		});
-	}
-
-	private async loadChat(): Promise<void> {
-		const snap = await persistLoadChat(this.app, this.plugin.manifest.id);
-		if (!snap) return;
-		this.runtime.applySnapshot({
-			messages: snap.messages,
-			currentSessionId: snap.currentSessionId,
-			lastUsage: snap.lastUsage ?? null,
-		});
-		if (snap.attachments) this.attachments = snap.attachments;
-		if (typeof snap.draft === "string" && this.inputEl) {
-			this.inputEl.value = snap.draft;
-		}
 	}
 
 	/**
