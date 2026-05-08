@@ -1902,14 +1902,24 @@
    ステータスバー（使用状況）
    ============================================================ */
 
+/* ステータスバーは小さく目立たない領域なので、ピル状の背景＋ボーダーで
+   ひとつのバッジに見えるようにする。警告/危険はバー自体を黄/赤に染めて
+   ひと目で気づけるようにする。 */
 .claude-panel-usage-statusbar {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
+	gap: 6px;
 	cursor: pointer;
+	padding: 2px 10px;
+	border-radius: 999px;
+	background-color: var(--background-modifier-hover);
+	border: 1px solid var(--background-modifier-border);
+	font-size: 0.95em;
+	line-height: 1.2;
 }
 
 .claude-panel-usage-statusbar:hover {
+	background-color: var(--interactive-hover);
 	color: var(--text-normal);
 }
 
@@ -1920,30 +1930,49 @@
 }
 
 .claude-panel-usage-sb-prefix .svg-icon {
-	width: 14px;
-	height: 14px;
+	width: 16px;
+	height: 16px;
 }
 
 .claude-panel-usage-sb-chip {
 	font-variant-numeric: tabular-nums;
 	color: var(--text-normal);
-}
-
-.claude-panel-usage-sb-chip.is-warn {
-	color: var(--text-warning, #d29922);
-}
-
-.claude-panel-usage-sb-chip.is-danger {
-	color: var(--text-error, #f85149);
 	font-weight: 600;
 }
 
 .claude-panel-usage-sb-remain {
 	font-variant-numeric: tabular-nums;
 	color: var(--text-faint);
-	font-size: 0.92em;
+	font-size: 0.9em;
+}
+
+/* color-mix は Obsidian の Electron で利用可能（Chromium 111+）。
+   テーマ非依存に色をブレンドして、明暗どちらでも読める背景にする。 */
+.claude-panel-usage-statusbar.is-warn {
+	background-color: color-mix(in srgb, var(--text-warning, #d29922) 18%, transparent);
+	border-color: color-mix(in srgb, var(--text-warning, #d29922) 45%, transparent);
+}
+
+.claude-panel-usage-statusbar.is-warn .claude-panel-usage-sb-chip,
+.claude-panel-usage-statusbar.is-warn .claude-panel-usage-sb-prefix {
+	color: var(--text-warning, #d29922);
+}
+
+.claude-panel-usage-statusbar.is-danger {
+	background-color: color-mix(in srgb, var(--text-error, #f85149) 22%, transparent);
+	border-color: color-mix(in srgb, var(--text-error, #f85149) 55%, transparent);
+}
+
+.claude-panel-usage-statusbar.is-danger .claude-panel-usage-sb-chip,
+.claude-panel-usage-statusbar.is-danger .claude-panel-usage-sb-prefix {
+	color: var(--text-error, #f85149);
+}
+
+.claude-panel-usage-statusbar.is-danger .claude-panel-usage-sb-chip {
+	font-weight: 700;
 }
 
 .claude-panel-usage-statusbar.is-error .claude-panel-usage-sb-chip {
 	color: var(--text-faint);
+	font-weight: 400;
 }

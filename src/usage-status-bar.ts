@@ -123,6 +123,8 @@ export class UsageStatusBar {
 		if (!this.el) return;
 		this.el.empty();
 		this.el.removeClass("is-error");
+		this.el.removeClass("is-warn");
+		this.el.removeClass("is-danger");
 		renderPrefixIcon(this.el);
 		appendChip(this.el, data.five_hour);
 		const fiveHRemain = formatRemainShort(data.five_hour?.resets_at);
@@ -148,6 +150,8 @@ export class UsageStatusBar {
 	private renderError(message: string): void {
 		if (!this.el) return;
 		this.el.empty();
+		this.el.removeClass("is-warn");
+		this.el.removeClass("is-danger");
 		this.el.addClass("is-error");
 		renderPrefixIcon(this.el);
 		this.el.createSpan({
@@ -165,6 +169,8 @@ function renderPrefixIcon(host: HTMLElement): void {
 	setIcon(wrap, "bot");
 }
 
+// 警告/危険の色は host（ステータスバー全体）に付ける。チップだけ色を変える
+// より、ピル全体を染めたほうが視覚的に強く、見落としにくい。
 function appendChip(
 	host: HTMLElement,
 	win: UsageWindow | null | undefined
@@ -176,8 +182,8 @@ function appendChip(
 	}
 	const pct = clamp(win.utilization, 0, 100);
 	chip.setText(`${Math.round(pct)}%`);
-	if (pct >= 85) chip.addClass("is-danger");
-	else if (pct >= 60) chip.addClass("is-warn");
+	if (pct >= 85) host.addClass("is-danger");
+	else if (pct >= 60) host.addClass("is-warn");
 }
 
 function formatPct(win: UsageWindow): string {
