@@ -2,6 +2,8 @@ import { setIcon } from "obsidian";
 import type ClaudePanelPlugin from "./main";
 import {
 	fetchUsage,
+	getCachedUsage,
+	getRateLimitedUntil,
 	UsageFetchError,
 	type UsageData,
 	type UsageWindow,
@@ -18,6 +20,8 @@ import { openAccountUsageModal } from "./account-modal";
  *   - 60秒おきにキャッシュ済みデータで再描画（残り時間カウントダウン）
  *   - チャットラン完了時など外部から refreshSoon() を呼べる
  *   - MIN_REFRESH_GAP_MS のクールダウンで連発を防ぐ
+ *   - account-api.ts のプロセス内キャッシュとバックオフを共有するので、
+ *     429 を受けている間は実 HTTP 要求を出さない
  */
 export class UsageStatusBar {
 	private plugin: ClaudePanelPlugin;
@@ -25,11 +29,15 @@ export class UsageStatusBar {
 	private fetchIntervalId: number | null = null;
 	private tickIntervalId: number | null = null;
 	private lastFetchAt = 0;
-	private latest: UsageData | null = null;
 
+	// 5h 表示の更新は 5 分間隔で十分（5h ウィンドウは時間オーダーで動くので
+	// 10 分でも実用上は問題ないが、複数 PC 間で叩きすぎない範囲で押さえる）。
 	private static readonly FETCH_INTERVAL_MS = 10 * 60 * 1000;
 	private static readonly TICK_INTERVAL_MS = 60 * 1000;
-	private static readonly MIN_REFRESH_GAP_MS = 30 * 1000;
+	// チャット完了直後の使用量はほぼ前回と変わらないので、頻繁に refresh
+	// する価値が低い。複数 PC で同じアカウントを使うとき 429 を踏みやすく
+	// なるため 30 秒 → 2 分に伸ばしている。
+	private static readonly MIN_REFRESH_GAP_MS = 2 * 60 * 1000;
 
 	constructor(plugin: ClaudePanelPlugin) {
 		this.plugin = plugin;
@@ -77,44 +85,52 @@ export class UsageStatusBar {
 		}
 		this.el?.remove();
 		this.el = null;
-		this.latest = null;
 	}
 
-	/** 外部からの更新依頼。クールダウン中なら何もしない。 */
+	/** 外部からの更新依頼。クールダウン中／バックオフ中なら何もしない。 */
 	refreshSoon(): void {
 		if (!this.el) return;
 		const elapsed = Date.now() - this.lastFetchAt;
 		if (elapsed < UsageStatusBar.MIN_REFRESH_GAP_MS) return;
+		if (Date.now() < getRateLimitedUntil()) return;
 		void this.refresh();
 	}
 
 	/** キャッシュ済みデータで残り時間表示だけ再計算。fetch はしない。 */
 	private tick(): void {
-		if (this.el && this.latest) this.render(this.latest);
+		const cached = getCachedUsage();
+		if (this.el && cached) this.render(cached.data);
 	}
 
 	private async refresh(): Promise<void> {
 		if (!this.el) return;
+		// 429 バックオフ中は実 fetch 自体を打たない。直近のキャッシュ値が
+		// あればそれで描画し続け、Anthropic 側の制限が解けるまで待つ。
+		if (Date.now() < getRateLimitedUntil()) {
+			const cached = getCachedUsage();
+			if (cached) this.render(cached.data);
+			return;
+		}
 		this.lastFetchAt = Date.now();
 		try {
 			const usage = await fetchUsage();
 			if (!this.el) return;
-			this.latest = usage;
 			this.render(usage);
 		} catch (err) {
 			if (!this.el) return;
 			// 429（レート制限）のときは直近のキャッシュ値をそのまま残す。
-			// 一時的な制限で表示が「—」に崩れるのを避け、次の成功 fetch で
-			// 自然回復させる。それ以外のエラー（401・ネットワーク不通など）は
-			// 状態が確実に分かったほうが良いのでエラー表示に切り替える。
+			// 一時的な制限で表示が「—」に崩れるのを避け、バックオフが解けて
+			// から自然回復させる。それ以外のエラー（401・ネットワーク不通
+			// など）は状態が確実に分かったほうが良いのでエラー表示に切り替える。
+			const cached = getCachedUsage();
 			if (
 				err instanceof UsageFetchError &&
 				err.status === 429 &&
-				this.latest
+				cached
 			) {
+				this.render(cached.data);
 				return;
 			}
-			this.latest = null;
 			this.renderError((err as Error).message);
 		}
 	}

@@ -157,12 +157,47 @@ function readOAuthToken(): Promise<string | null> {
 }
 
 /**
+ * 直近の成功 fetch 結果を保持するプロセス内キャッシュ。
+ * ステータスバーとモーダルで共有することで、モーダルを開くたびに新規
+ * リクエストを発射するのを避ける。Obsidian を再起動すると消える。
+ */
+let cachedUsage: { data: UsageData; fetchedAt: number } | null = null;
+
+/**
+ * 429 を受けた直後の再リクエスト抑制ウィンドウ。`Date.now()` がこの値を
+ * 超えるまで `fetchUsage()` は実 HTTP 要求を出さず、キャッシュ済み 429
+ * エラーを即時 throw する。Anthropic 側の制限が解けないうちに連打して
+ * 制限を伸ばすのを防ぐ目的。
+ */
+let rateLimitedUntil = 0;
+const DEFAULT_RATE_LIMIT_BACKOFF_MS = 30 * 60 * 1000;
+
+export function getCachedUsage(): { data: UsageData; fetchedAt: number } | null {
+	return cachedUsage;
+}
+
+/** 現在 429 バックオフ中なら解除予定時刻、そうでなければ 0。 */
+export function getRateLimitedUntil(): number {
+	return rateLimitedUntil;
+}
+
+/**
  * Anthropic OAuth API からレートリミット使用状況をリアルタイム取得する。
  * これは VS Code 拡張の "Account & Usage" ポップオーバーが叩いているのと
  * 同じエンドポイント。ネットワーク／認証エラーは例外として上位に伝播させ、
  * 呼び出し元で UI に表示する。
+ *
+ * 直近で 429 を受けている間は HTTP 要求を出さず、即座に同じ 429 を
+ * 投げ返す（再連打で制限を伸ばさないため）。成功時はキャッシュ更新と
+ * バックオフ解除を行う。
  */
 export async function fetchUsage(): Promise<UsageData> {
+	if (Date.now() < rateLimitedUntil) {
+		throw new UsageFetchError(
+			humanizeUsageError(429, ""),
+			429
+		);
+	}
 	const token = await readOAuthToken();
 	if (!token) {
 		throw new Error(
@@ -183,9 +218,43 @@ export async function fetchUsage(): Promise<UsageData> {
 		throw: false,
 	});
 	if (res.status < 200 || res.status >= 300) {
+		if (res.status === 429) {
+			const hint = parseRetryAfter(res);
+			rateLimitedUntil = Date.now() + (hint > 0 ? hint : DEFAULT_RATE_LIMIT_BACKOFF_MS);
+		}
 		throw new UsageFetchError(humanizeUsageError(res.status, res.text), res.status);
 	}
-	return res.json as UsageData;
+	const data = res.json as UsageData;
+	cachedUsage = { data, fetchedAt: Date.now() };
+	rateLimitedUntil = 0;
+	return data;
+}
+
+/**
+ * Retry-After ヘッダー（秒数 or HTTP-date）またはレスポンスボディ内の
+ * `retry_after` をミリ秒に変換する。値が見当たらない／不正なら 0 を返し、
+ * 呼び出し側の既定バックオフが使われる。
+ */
+function parseRetryAfter(res: { headers?: Record<string, string>; text: string }): number {
+	const header = res.headers?.["retry-after"] ?? res.headers?.["Retry-After"];
+	if (header) {
+		const seconds = Number(header);
+		if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+		const dateMs = Date.parse(header);
+		if (Number.isFinite(dateMs)) {
+			const diff = dateMs - Date.now();
+			if (diff > 0) return diff;
+		}
+	}
+	try {
+		const parsed = JSON.parse(res.text) as { retry_after?: number };
+		if (typeof parsed.retry_after === "number" && parsed.retry_after > 0) {
+			return parsed.retry_after * 1000;
+		}
+	} catch {
+		/* not JSON — fall through */
+	}
+	return 0;
 }
 
 function humanizeUsageError(status: number, body: string): string {

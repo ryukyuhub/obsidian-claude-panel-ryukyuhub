@@ -3,10 +3,20 @@ import type { ClaudePanelSettings } from "./settings";
 import {
 	fetchAuthStatus,
 	fetchUsage,
+	getCachedUsage,
+	getRateLimitedUntil,
+	UsageFetchError,
 	type AuthStatus,
 	type UsageData,
 	type UsageWindow,
 } from "./account-api";
+
+/**
+ * モーダルを開いた時に「キャッシュ済みデータをそのまま使ってよい」と
+ * みなす最大経過時間。ステータスバーが 10 分間隔で更新するので、これ
+ * より新しいデータが既にあれば追加 fetch は不要 — 同じ値しか返ってこない。
+ */
+const MODAL_CACHE_FRESHNESS_MS = 5 * 60 * 1000;
 
 /**
  * 「アカウントと使用状況」モーダル。account-api.ts のデータ取得を
@@ -49,9 +59,41 @@ export class AccountUsageModal extends Modal {
 	}
 
 	private async load(): Promise<void> {
+		// 認証ステータスは `claude auth status --json` のローカル呼び出しで
+		// API レート制限とは独立しているので毎回取得する。使用状況は API
+		// 呼び出しなので、十分新しいキャッシュがあればそれで済ませる。
+		const cached = getCachedUsage();
+		const cacheIsFresh =
+			cached !== null &&
+			Date.now() - cached.fetchedAt < MODAL_CACHE_FRESHNESS_MS;
+		const rateLimited = Date.now() < getRateLimitedUntil();
+
+		const usagePromise: Promise<UsageData | UsageFallback> =
+			cacheIsFresh || rateLimited
+				? Promise.resolve(
+						cached
+							? ({ kind: "cache", data: cached.data, fetchedAt: cached.fetchedAt } as const)
+							: ({ kind: "rate-limited" } as const)
+					)
+				: fetchUsage().catch((err) => {
+						const cachedNow = getCachedUsage();
+						if (
+							err instanceof UsageFetchError &&
+							err.status === 429 &&
+							cachedNow
+						) {
+							return {
+								kind: "cache",
+								data: cachedNow.data,
+								fetchedAt: cachedNow.fetchedAt,
+							} as const;
+						}
+						throw err;
+					});
+
 		const results = await Promise.allSettled([
 			fetchAuthStatus(this.settings),
-			fetchUsage(),
+			usagePromise,
 		]);
 		this.bodyEl.empty();
 
@@ -88,7 +130,25 @@ export class AccountUsageModal extends Modal {
 			text: "使用状況",
 		});
 		if (usageResult.status === "fulfilled") {
-			renderUsageRows(usageSection, usageResult.value);
+			const value = usageResult.value;
+			if (isUsageData(value)) {
+				renderUsageRows(usageSection, value);
+			} else if (value.kind === "cache") {
+				renderUsageRows(usageSection, value.data);
+				const note = usageSection.createDiv({
+					cls: "claude-panel-account-note",
+				});
+				note.setText(
+					`${formatCacheAge(value.fetchedAt)} のキャッシュを表示しています。`
+				);
+			} else {
+				const note = usageSection.createDiv({
+					cls: "claude-panel-account-note",
+				});
+				note.setText(
+					"レート制限中のため最新の使用状況を取得できませんでした。しばらくしてから「更新」をクリックしてください。"
+				);
+			}
 		} else {
 			const note = usageSection.createDiv({
 				cls: "claude-panel-account-note",
@@ -113,11 +173,34 @@ export class AccountUsageModal extends Modal {
 			text: "更新",
 			cls: "claude-panel-account-refresh",
 		});
+		// バックオフ中は「更新」を無効化。叩いても直ちに 429 を返すだけで、
+		// API への余計な負荷にもユーザの混乱の元にもなる。
+		if (rateLimited) {
+			refreshBtn.disabled = true;
+			refreshBtn.title = "レート制限中のため更新できません";
+		}
 		refreshBtn.onclick = () => {
 			this.renderLoading();
 			void this.load();
 		};
 	}
+}
+
+type UsageFallback =
+	| { kind: "cache"; data: UsageData; fetchedAt: number }
+	| { kind: "rate-limited" };
+
+function isUsageData(v: UsageData | UsageFallback): v is UsageData {
+	return !(v as UsageFallback).kind;
+}
+
+function formatCacheAge(fetchedAt: number): string {
+	const diff = Date.now() - fetchedAt;
+	if (diff < 60_000) return "1 分未満前";
+	const minutes = Math.floor(diff / 60_000);
+	if (minutes < 60) return `${minutes} 分前`;
+	const hours = Math.floor(minutes / 60);
+	return `${hours} 時間前`;
 }
 
 export function openAccountUsageModal(
