@@ -1,6 +1,6 @@
 {
   "name": "claude-panel-ryukyuhub",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Claude Panel for Obsidian — Obsidian の Vault に Claude を組み込む右サイドバーのチャットパネル。アクティブな Vault をワーキングディレクトリとして Claude Code を実行します。",
   "main": "main.js",
   "scripts": {
