@@ -5,6 +5,8 @@ import { resolveClaudePath } from "../cli-resolver";
 import { pickFilesViaDialog } from "../attachments";
 import { toVaultRelativeIfInside } from "../notify-sound-source";
 import {
+	COMPOSER_BOTTOM_PADDING_MAX,
+	COMPOSER_BOTTOM_PADDING_MIN,
 	DEFAULT_SETTINGS,
 	EFFORT_LEVELS,
 	FONT_SIZE_MAX,
@@ -198,6 +200,41 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 							DEFAULT_SETTINGS.fontSize;
 						await this.plugin.saveSettings();
 						this.plugin.getView()?.applyFontSize();
+						this.display();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("下端の余白")
+			.setDesc(
+				`コンポーザーの下に追加で確保する余白 (${COMPOSER_BOTTOM_PADDING_MIN}–${COMPOSER_BOTTOM_PADDING_MAX}px)。` +
+					"テーマによっては Obsidian のステータスバーが右サイドバーの下端に被って" +
+					"送信ボタンやモデル選択が隠れることがあります。隠れて困るときだけ値を上げてください。"
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(
+						COMPOSER_BOTTOM_PADDING_MIN,
+						COMPOSER_BOTTOM_PADDING_MAX,
+						2
+					)
+					.setValue(this.plugin.settings.composerBottomPadding)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.composerBottomPadding = value;
+						await this.plugin.saveSettings();
+						this.plugin.getView()?.applyComposerBottomPadding();
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
+					.setIcon("rotate-ccw")
+					.setTooltip("デフォルトに戻す")
+					.onClick(async () => {
+						this.plugin.settings.composerBottomPadding =
+							DEFAULT_SETTINGS.composerBottomPadding;
+						await this.plugin.saveSettings();
+						this.plugin.getView()?.applyComposerBottomPadding();
 						this.display();
 					})
 			);

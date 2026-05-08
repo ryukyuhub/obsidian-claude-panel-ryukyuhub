@@ -1586,7 +1586,7 @@
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
-	padding: 14px 14px 12px;
+	padding: 14px 14px calc(12px + var(--claude-panel-composer-bottom-padding, 0px));
 	/* エディタの primary bg と前景テキスト色をミックスする。これにより
 	   コンポーザーがサイドバーのチャットエリア背景とは確実に視覚的に
 	   区別できる色になる。Obsidian のどの変数が「異なる」かに依存せずに
@@ -2019,13 +2019,13 @@
 
 /* 残り時間はチップ（%）と同サイズ・同色にして対等に読めるようにする。
    情報の重みは同じ（残量と残り時間）なので、視覚的にも揃える。
-   文字間をわずかに広げて数字の塊（"1h23m" 等）を読みやすくする。 */
+   文字間を広げて、数字と単位（"1h23m" の h / m）の境目を視認しやすくする。 */
 .claude-panel-usage-sb-remain {
 	font-variant-numeric: tabular-nums;
 	color: var(--text-normal);
 	font-size: 1.05em;
 	font-weight: 500;
-	letter-spacing: 0.05em;
+	letter-spacing: 0.12em;
 }
 
 /* color-mix は Obsidian の Electron で利用可能（Chromium 111+）。

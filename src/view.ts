@@ -101,6 +101,7 @@ export class ClaudePanelView extends ItemView {
 		root.empty();
 		root.addClass("claude-panel-root");
 		this.applyFontSize(root);
+		this.applyComposerBottomPadding(root);
 
 		this.renderHeader(root);
 		this.messagesEl = root.createDiv({ cls: "claude-panel-messages" });
@@ -228,6 +229,22 @@ export class ClaudePanelView extends ItemView {
 		target.style.setProperty(
 			"--claude-panel-font-size",
 			`${this.plugin.settings.fontSize}px`
+		);
+	}
+
+	/**
+	 * `settings.composerBottomPadding` をパネルルートに CSS カスタム
+	 * プロパティとして適用する。styles.css 側のコンポーザールールが
+	 * `--claude-panel-composer-bottom-padding` を読み、既定の下端 padding
+	 * に加算する。テーマのステータスバーがサイドバーの最下部に被る環境
+	 * でだけユーザーが手動で値を上げて回避できるよう、既定値は 0px。
+	 */
+	applyComposerBottomPadding(root?: HTMLElement): void {
+		const target = root ?? this.panelRoot();
+		if (!target) return;
+		target.style.setProperty(
+			"--claude-panel-composer-bottom-padding",
+			`${this.plugin.settings.composerBottomPadding}px`
 		);
 	}
 

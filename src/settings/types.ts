@@ -108,6 +108,11 @@ export interface ClaudePanelSettings {
 	/** Obsidian 最下部のステータスバーに Claude 使用状況（5h / 7d など）
 	 *  を常時表示するかどうか。クリックで詳細モーダルを開く。 */
 	showUsageStatusBar: boolean;
+	/** コンポーザー下端に追加で確保する余白（px）。テーマによっては
+	 *  Obsidian のステータスバーが右サイドバーの最下部に被ってしまい、
+	 *  送信ボタンやモデル選択が隠れることがある。0 では現状の見た目を
+	 *  維持し、必要な人だけ値を上げて余白を確保できるようにする。 */
+	composerBottomPadding: number;
 }
 
 /** 通知音量スライダーの上下限（パーセント）。 */
@@ -118,6 +123,11 @@ export const NOTIFY_VOLUME_MAX = 100;
  *  読めない大きさになり、20px を超えるとサイドパネルの横幅に収まらない。 */
 export const FONT_SIZE_MIN = 10;
 export const FONT_SIZE_MAX = 20;
+
+/** コンポーザー下端の追加余白の上下限（px）。0 で現状維持、最大 80px
+ *  あれば大半のテーマのステータスバー高をカバーできる。 */
+export const COMPOSER_BOTTOM_PADDING_MIN = 0;
+export const COMPOSER_BOTTOM_PADDING_MAX = 80;
 
 export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	claudePath: "",
@@ -136,4 +146,5 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	notifySoundVolume: 70,
 	notifySoundPath: "",
 	showUsageStatusBar: true,
+	composerBottomPadding: 0,
 };
