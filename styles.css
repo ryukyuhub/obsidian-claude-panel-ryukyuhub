@@ -281,6 +281,21 @@
    Claude Panel — サイドバーのチャットパネル
    ============================================================ */
 
+/* Obsidian の `.view-content` は環境によっては leaf の高さを取り切らず、
+   結果として composer の下にステータスバーまでの余白ができる。
+   plugin view 限定で flex column を強制し、root を flex で埋めることで
+   レイアウトを固定する（テーマや DPI に依存しない）。 */
+.workspace-leaf-content[data-type="claude-panel-view"] .view-content {
+	display: flex;
+	flex-direction: column;
+	padding: 0;
+}
+
+.workspace-leaf-content[data-type="claude-panel-view"] .view-content > .claude-panel-root {
+	flex: 1 1 0;
+	min-height: 0;
+}
+
 .claude-panel-root {
 	display: flex;
 	flex-direction: column;
@@ -840,12 +855,22 @@
 
 /* ----- ツール実行ピル（アシスタントメッセージの本文間に表示） ----- */
 
+/* ピル単体（非編集系ツール）と、ピル＋差分プレビューの両方をまとめる
+   ラッパー。flex column にしておくことで、後置の diff/detail が
+   自然にピルの真下に並ぶ。 */
+.claude-panel-tool-block {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 8px 0;
+	max-width: 100%;
+}
+
 .claude-panel-tool {
 	display: inline-flex;
 	align-items: center;
 	gap: 8px;
 	padding: 3px 12px 3px 10px;
-	margin: 8px 0;
 	max-width: 100%;
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
@@ -853,6 +878,11 @@
 	font-size: 11px;
 	font-family: var(--font-monospace);
 	line-height: 1.4;
+}
+
+/* ラッパー内ではピルが横幅いっぱいに広がらないよう抑える。 */
+.claude-panel-tool-block > .claude-panel-tool {
+	align-self: flex-start;
 }
 
 .claude-panel-tool-name {
@@ -1033,31 +1063,54 @@
 	font-size: 11px;
 	line-height: 1.5;
 	background: var(--background-primary-alt, var(--background-secondary));
+	/* 自身の幅でレイアウトを切り替えるためのコンテナ宣言。
+	   親（チャットバブル）の幅でなく、diff コンテナ自身の幅を見るため
+	   inline-size を使う。広ければ左右 split、狭ければ縦積み（unified）。 */
+	container-type: inline-size;
 }
 
-.claude-panel-perm-diff-line {
+/* 1 行 = 左右 2 セル。デフォルト（ナロー）は column 配置で、del/add は
+   左セルが上、右セルが下に積まれる。これは unified diff と同じ並びで
+   既存の見た目を保つ。 */
+.claude-panel-perm-diff-row {
+	display: flex;
+	flex-direction: column;
+}
+
+.claude-panel-perm-diff-cell {
 	display: flex;
 	align-items: flex-start;
 	padding: 0 6px;
 	white-space: pre-wrap;
 	word-break: break-word;
+	min-width: 0;
 }
 
-.claude-panel-perm-diff-line.is-ctx {
+.claude-panel-perm-diff-cell.is-ctx {
 	color: var(--text-muted);
 }
 
-.claude-panel-perm-diff-line.is-del {
+.claude-panel-perm-diff-cell.is-del {
 	background: rgba(248, 81, 73, 0.15);
 	color: var(--text-normal);
 }
 
-.claude-panel-perm-diff-line.is-add {
+.claude-panel-perm-diff-cell.is-add {
 	background: rgba(63, 185, 80, 0.15);
 	color: var(--text-normal);
 }
 
-.claude-panel-perm-diff-line.is-ellipsis {
+/* ナローでは右側ダミー（empty）と ctx の右複製は隠す。
+   結果として ctx は 1 行、del-only / add-only は片側だけが見える。 */
+.claude-panel-perm-diff-cell.is-empty {
+	display: none;
+}
+
+.claude-panel-perm-diff-row.is-ctx > .claude-panel-perm-diff-cell.is-right {
+	display: none;
+}
+
+.claude-panel-perm-diff-row.is-ellipsis {
 	display: block;
 	text-align: center;
 	color: var(--text-faint);
@@ -1074,17 +1127,37 @@
 	user-select: none;
 }
 
-.claude-panel-perm-diff-line.is-del .claude-panel-perm-diff-marker {
+.claude-panel-perm-diff-cell.is-del .claude-panel-perm-diff-marker {
 	color: var(--text-error, #f85149);
 }
 
-.claude-panel-perm-diff-line.is-add .claude-panel-perm-diff-marker {
+.claude-panel-perm-diff-cell.is-add .claude-panel-perm-diff-marker {
 	color: var(--text-success, #3fb950);
 }
 
 .claude-panel-perm-diff-text {
 	flex: 1 1 auto;
 	min-width: 0;
+}
+
+/* 横幅が十分あるとき（サイドバーを広げた、メインビュー中央に置いた等）は
+   左右並びに切り替える。閾値はおおよそ「1 セル 240px 確保できる」を狙う。 */
+@container (min-width: 520px) {
+	.claude-panel-perm-diff-row {
+		flex-direction: row;
+	}
+	.claude-panel-perm-diff-cell {
+		flex: 1 1 50%;
+	}
+	/* ワイドでは empty セルや ctx 右側も列を保つために描画する。 */
+	.claude-panel-perm-diff-cell.is-empty,
+	.claude-panel-perm-diff-row.is-ctx > .claude-panel-perm-diff-cell.is-right {
+		display: flex;
+	}
+	/* 中央にうっすら区切り線。 */
+	.claude-panel-perm-diff-cell.is-right {
+		border-left: 1px solid var(--background-modifier-border);
+	}
 }
 
 .claude-panel-perm-actions {

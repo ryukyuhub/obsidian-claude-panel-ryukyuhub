@@ -276,7 +276,12 @@ export function renderToolPill(
 	name: string,
 	input: unknown
 ): void {
-	const pill = parent.createDiv({ cls: "claude-panel-tool" });
+	// ピル本体だけだと「何のファイルを触ったか」しか分からないので、
+	// 編集系ツール（Edit/MultiEdit/Write/NotebookEdit）はピルの下に
+	// 差分プレビューを並べる。ピルとプレビューを 1 つのブロックに
+	// まとめるためのラッパーを作る。
+	const block = parent.createDiv({ cls: "claude-panel-tool-block" });
+	const pill = block.createDiv({ cls: "claude-panel-tool" });
 	pill.createSpan({
 		cls: "claude-panel-tool-name",
 		text: name,
@@ -289,6 +294,18 @@ export function renderToolPill(
 			attr: { title: arg },
 		});
 	}
+	if (shouldShowInlineDiff(name)) {
+		renderToolDetails(block, name, input);
+	}
+}
+
+function shouldShowInlineDiff(toolName: string): boolean {
+	return (
+		toolName === "Edit" ||
+		toolName === "MultiEdit" ||
+		toolName === "Write" ||
+		toolName === "NotebookEdit"
+	);
 }
 
 function renderMentionChips(parent: HTMLElement, mentions: string[]): void {
@@ -445,25 +462,103 @@ function renderDiffBlock(
 	wrap.createDiv({ cls: "claude-panel-perm-detail-label", text: label });
 	const diff = wrap.createDiv({ cls: "claude-panel-perm-diff" });
 
+	// DOM は常に「左右ペア」として描き、ナローでは縦積み（unified ライク）、
+	// ワイドでは左右並び（split）をコンテナクエリで切り替える。
+	// ペアリングは「直前から積んだ del 群と add 群を ctx か末尾で flush」する
+	// 単純なロジック。差分は隣接する add/del 群が同じ hunk になりやすいので、
+	// この単純なペアリングで実用上は十分整列する。
 	const lines = clipDiff(diffLines(oldStr, newStr), 40);
-	for (const line of lines) {
-		const row = diff.createDiv({
-			cls: `claude-panel-perm-diff-line is-${line.kind}`,
-		});
-		if (line.kind === "ellipsis") {
-			row.setText(line.text || "⋯");
+	const rows = pairForSplit(lines);
+	for (const row of rows) {
+		if (row.kind === "ellipsis") {
+			const r = diff.createDiv({
+				cls: "claude-panel-perm-diff-row is-ellipsis",
+			});
+			r.setText(row.text || "⋯");
 			continue;
 		}
-		row.createSpan({
-			cls: "claude-panel-perm-diff-marker",
-			text: line.kind === "add" ? "+" : line.kind === "del" ? "−" : " ",
+		const r = diff.createDiv({
+			cls: `claude-panel-perm-diff-row is-${row.kind}`,
 		});
-		row.createSpan({
-			cls: "claude-panel-perm-diff-text",
-			// 空行も視覚的に1行分の高さを確保するため non-breaking space に置換。
-			text: line.text.length === 0 ? " " : line.text,
-		});
+		appendDiffCell(r, "left", row.left);
+		appendDiffCell(r, "right", row.right);
 	}
+}
+
+interface DiffCell {
+	kind: "del" | "add" | "ctx" | "empty";
+	text: string;
+}
+
+type SplitRow =
+	| { kind: "ctx" | "pair"; left: DiffCell; right: DiffCell }
+	| { kind: "ellipsis"; text: string };
+
+function appendDiffCell(
+	row: HTMLElement,
+	side: "left" | "right",
+	cell: DiffCell
+): void {
+	const el = row.createDiv({
+		cls: `claude-panel-perm-diff-cell is-${side} is-${cell.kind}`,
+	});
+	if (cell.kind === "empty") return;
+	const marker =
+		cell.kind === "add" ? "+" : cell.kind === "del" ? "−" : " ";
+	el.createSpan({
+		cls: "claude-panel-perm-diff-marker",
+		text: marker,
+	});
+	el.createSpan({
+		cls: "claude-panel-perm-diff-text",
+		// 空行も視覚的に 1 行分の高さを確保するため non-breaking space に置換。
+		text: cell.text.length === 0 ? " " : cell.text,
+	});
+}
+
+function pairForSplit(lines: DiffLine[]): SplitRow[] {
+	const rows: SplitRow[] = [];
+	let dels: string[] = [];
+	let adds: string[] = [];
+
+	const flush = (): void => {
+		const n = Math.max(dels.length, adds.length);
+		for (let i = 0; i < n; i++) {
+			rows.push({
+				kind: "pair",
+				left:
+					i < dels.length
+						? { kind: "del", text: dels[i] }
+						: { kind: "empty", text: "" },
+				right:
+					i < adds.length
+						? { kind: "add", text: adds[i] }
+						: { kind: "empty", text: "" },
+			});
+		}
+		dels = [];
+		adds = [];
+	};
+
+	for (const line of lines) {
+		if (line.kind === "ctx") {
+			flush();
+			rows.push({
+				kind: "ctx",
+				left: { kind: "ctx", text: line.text },
+				right: { kind: "ctx", text: line.text },
+			});
+		} else if (line.kind === "ellipsis") {
+			flush();
+			rows.push({ kind: "ellipsis", text: line.text });
+		} else if (line.kind === "del") {
+			dels.push(line.text);
+		} else {
+			adds.push(line.text);
+		}
+	}
+	flush();
+	return rows;
 }
 
 interface DiffLine {
