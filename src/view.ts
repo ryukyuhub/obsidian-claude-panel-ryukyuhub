@@ -310,20 +310,10 @@ export class ClaudePanelView extends ItemView {
 	private renderComposer(root: HTMLElement): void {
 		const composer = root.createDiv({ cls: "claude-panel-composer" });
 
-		// レイアウト（上 → 下）: アクティブファイル → 選択範囲 → 添付 →
-		// プロンプト textarea → アクションボタン → モデル/Thinking コントロール。
-		// 上 3 ホストは Composer がオーナー — view は createDiv して mount するだけ。
-		const activeFileEl = composer.createDiv({
-			cls: "claude-panel-active-file",
-		});
-		const selectionEl = composer.createDiv({
-			cls: "claude-panel-selection is-empty",
-		});
-		const attachmentsEl = composer.createDiv({
-			cls: "claude-panel-attachments",
-		});
-		this.composer.mount({ activeFileEl, selectionEl, attachmentsEl });
-
+		// レイアウト（上 → 下）: プロンプト textarea → アクティブファイル →
+		// 選択範囲 → 添付 → アクションボタン → モデル/Thinking コントロール。
+		// 入力欄を最上段に置き、参照系（含める/除外できる行）はその下に
+		// 並べる。selection/attachments は該当時のみ表示される。
 		// textarea とサジェスト popup を同じ relative 親に入れて、popup を
 		// 入力欄の真上にオーバレイする。composer 全体を relative にすると
 		// 他の絶対配置要素（モデルセレクト等）に影響するため避ける。
@@ -335,10 +325,6 @@ export class ClaudePanelView extends ItemView {
 		});
 		this.inputEl = inputWrap.createEl("textarea", {
 			cls: "claude-panel-input",
-			attr: {
-				placeholder:
-					"Claude に質問... Enter=送信 · Shift+Enter=改行 · Esc=中断 · /help",
-			},
 		});
 		this.inputEl.rows = 4;
 		this.slashSuggest = new SlashSuggest(suggestEl, this.inputEl);
@@ -369,6 +355,19 @@ export class ClaudePanelView extends ItemView {
 		this.inputEl.addEventListener("paste", (e) => {
 			void this.composer.handlePaste(e);
 		});
+
+		// 参照系（含める/除外）行は textarea の下に並べる。Composer が
+		// 個別 mount ホストを所有するので、view 側は枠だけ作って渡す。
+		const activeFileEl = composer.createDiv({
+			cls: "claude-panel-active-file",
+		});
+		const selectionEl = composer.createDiv({
+			cls: "claude-panel-selection is-empty",
+		});
+		const attachmentsEl = composer.createDiv({
+			cls: "claude-panel-attachments",
+		});
+		this.composer.mount({ activeFileEl, selectionEl, attachmentsEl });
 
 		const actions = composer.createDiv({ cls: "claude-panel-actions" });
 		const attachBtn = actions.createEl("button", {

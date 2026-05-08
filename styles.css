@@ -1978,17 +1978,20 @@
 /* ステータスバーは小さく目立たない領域なので、ピル状の背景＋ボーダーで
    ひとつのバッジに見えるようにする。警告/危険はバー自体を黄/赤に染めて
    ひと目で気づけるようにする。 */
+/* Obsidian ステータスバー既定（~12px）から em 倍率で底上げする。
+   ユーザのフォント設定スケールを尊重しつつ、サイドバーに置いて読める
+   サイズにする。 */
 .claude-panel-usage-statusbar {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	gap: 0.55em;
 	cursor: pointer;
-	padding: 2px 10px;
+	padding: 0.25em 0.9em;
 	border-radius: 999px;
 	background-color: var(--background-modifier-hover);
 	border: 1px solid var(--background-modifier-border);
-	font-size: 0.95em;
-	line-height: 1.2;
+	font-size: 1.1em;
+	line-height: 1.25;
 }
 
 .claude-panel-usage-statusbar:hover {
@@ -2003,20 +2006,26 @@
 }
 
 .claude-panel-usage-sb-prefix .svg-icon {
-	width: 16px;
-	height: 16px;
+	width: 1.25em;
+	height: 1.25em;
 }
 
 .claude-panel-usage-sb-chip {
 	font-variant-numeric: tabular-nums;
 	color: var(--text-normal);
-	font-weight: 600;
+	font-weight: 700;
+	font-size: 1.05em;
 }
 
+/* 残り時間はチップ（%）と同サイズ・同色にして対等に読めるようにする。
+   情報の重みは同じ（残量と残り時間）なので、視覚的にも揃える。
+   文字間をわずかに広げて数字の塊（"1h23m" 等）を読みやすくする。 */
 .claude-panel-usage-sb-remain {
 	font-variant-numeric: tabular-nums;
-	color: var(--text-faint);
-	font-size: 0.9em;
+	color: var(--text-normal);
+	font-size: 1.05em;
+	font-weight: 500;
+	letter-spacing: 0.05em;
 }
 
 /* color-mix は Obsidian の Electron で利用可能（Chromium 111+）。
