@@ -28,6 +28,17 @@ export interface UsageWindow {
 	resets_at: string | null;
 }
 
+/**
+ * /api/oauth/usage の HTTP エラーを HTTP ステータス込みで伝える型付きエラー。
+ * 呼び出し側が 429（レート制限）と他の失敗を区別したいときに使う。
+ */
+export class UsageFetchError extends Error {
+	constructor(message: string, public readonly status: number) {
+		super(message);
+		this.name = "UsageFetchError";
+	}
+}
+
 // /api/oauth/usage が返すフィールドのうち本プラグインで表示するサブセット。
 // エンドポイント自体は extra_usage / cowork / oauth_apps なども返すが、
 // それらは VS Code 拡張側でも表示されていないので扱わない。
@@ -172,7 +183,7 @@ export async function fetchUsage(): Promise<UsageData> {
 		throw: false,
 	});
 	if (res.status < 200 || res.status >= 300) {
-		throw new Error(humanizeUsageError(res.status, res.text));
+		throw new UsageFetchError(humanizeUsageError(res.status, res.text), res.status);
 	}
 	return res.json as UsageData;
 }

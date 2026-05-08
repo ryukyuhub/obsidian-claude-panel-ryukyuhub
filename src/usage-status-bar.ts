@@ -1,5 +1,11 @@
+import { setIcon } from "obsidian";
 import type ClaudePanelPlugin from "./main";
-import { fetchUsage, type UsageData, type UsageWindow } from "./account-api";
+import {
+	fetchUsage,
+	UsageFetchError,
+	type UsageData,
+	type UsageWindow,
+} from "./account-api";
 import { openAccountUsageModal } from "./account-modal";
 
 /**
@@ -36,7 +42,8 @@ export class UsageStatusBar {
 		item.setAttr("role", "button");
 		item.setAttr("aria-label", "Claude 使用状況");
 		item.title = "Claude 使用状況を読み込み中…";
-		item.setText("Claude …");
+		renderPrefixIcon(item);
+		item.createSpan({ cls: "claude-panel-usage-sb-chip", text: "…" });
 		item.addEventListener("click", () => {
 			openAccountUsageModal(this.plugin.app, this.plugin.settings);
 		});
@@ -96,6 +103,17 @@ export class UsageStatusBar {
 			this.render(usage);
 		} catch (err) {
 			if (!this.el) return;
+			// 429（レート制限）のときは直近のキャッシュ値をそのまま残す。
+			// 一時的な制限で表示が「—」に崩れるのを避け、次の成功 fetch で
+			// 自然回復させる。それ以外のエラー（401・ネットワーク不通など）は
+			// 状態が確実に分かったほうが良いのでエラー表示に切り替える。
+			if (
+				err instanceof UsageFetchError &&
+				err.status === 429 &&
+				this.latest
+			) {
+				return;
+			}
 			this.latest = null;
 			this.renderError((err as Error).message);
 		}
@@ -105,11 +123,8 @@ export class UsageStatusBar {
 		if (!this.el) return;
 		this.el.empty();
 		this.el.removeClass("is-error");
-		this.el.createSpan({
-			cls: "claude-panel-usage-sb-prefix",
-			text: "Claude",
-		});
-		appendChip(this.el, "5h", data.five_hour);
+		renderPrefixIcon(this.el);
+		appendChip(this.el, data.five_hour);
 		const fiveHRemain = formatRemainShort(data.five_hour?.resets_at);
 		if (fiveHRemain) {
 			this.el.createSpan({
@@ -117,28 +132,14 @@ export class UsageStatusBar {
 				text: fiveHRemain,
 			});
 		}
-		appendChip(this.el, "7d", data.seven_day);
 
 		const tipLines: string[] = [];
 		if (data.five_hour) {
 			const remain = formatRemainLong(data.five_hour.resets_at);
 			tipLines.push(
-				`5h セッション: ${formatPct(data.five_hour)}` +
+				`セッション: ${formatPct(data.five_hour)}` +
 					(remain ? `（${remain}）` : "")
 			);
-		}
-		if (data.seven_day) {
-			const remain = formatRemainLong(data.seven_day.resets_at);
-			tipLines.push(
-				`7d 週間: ${formatPct(data.seven_day)}` +
-					(remain ? `（${remain}）` : "")
-			);
-		}
-		if (data.seven_day_opus) {
-			tipLines.push(`7d Opus: ${formatPct(data.seven_day_opus)}`);
-		}
-		if (data.seven_day_sonnet) {
-			tipLines.push(`7d Sonnet: ${formatPct(data.seven_day_sonnet)}`);
 		}
 		tipLines.push("", "クリックで詳細");
 		this.el.title = tipLines.join("\n");
@@ -148,10 +149,7 @@ export class UsageStatusBar {
 		if (!this.el) return;
 		this.el.empty();
 		this.el.addClass("is-error");
-		this.el.createSpan({
-			cls: "claude-panel-usage-sb-prefix",
-			text: "Claude",
-		});
+		renderPrefixIcon(this.el);
 		this.el.createSpan({
 			cls: "claude-panel-usage-sb-chip",
 			text: "—",
@@ -160,18 +158,24 @@ export class UsageStatusBar {
 	}
 }
 
+// プレフィックスにテキスト「Claude」ではなくアイコンを描く。リボンアイコン
+// と同じ `bot` を使うことで「Claude を表す印」として一貫させる。
+function renderPrefixIcon(host: HTMLElement): void {
+	const wrap = host.createSpan({ cls: "claude-panel-usage-sb-prefix" });
+	setIcon(wrap, "bot");
+}
+
 function appendChip(
 	host: HTMLElement,
-	label: string,
 	win: UsageWindow | null | undefined
 ): void {
 	const chip = host.createSpan({ cls: "claude-panel-usage-sb-chip" });
 	if (!win) {
-		chip.setText(`${label} —`);
+		chip.setText("—");
 		return;
 	}
 	const pct = clamp(win.utilization, 0, 100);
-	chip.setText(`${label} ${Math.round(pct)}%`);
+	chip.setText(`${Math.round(pct)}%`);
 	if (pct >= 85) chip.addClass("is-danger");
 	else if (pct >= 60) chip.addClass("is-warn");
 }

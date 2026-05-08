@@ -1914,8 +1914,14 @@
 }
 
 .claude-panel-usage-sb-prefix {
-	font-weight: 600;
+	display: inline-flex;
+	align-items: center;
 	color: var(--text-muted);
+}
+
+.claude-panel-usage-sb-prefix .svg-icon {
+	width: 14px;
+	height: 14px;
 }
 
 .claude-panel-usage-sb-chip {
