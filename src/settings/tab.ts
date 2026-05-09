@@ -242,22 +242,6 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		this.renderNotificationSection(containerEl);
 
 		new Setting(containerEl)
-			.setName("使用状況をステータスバーに表示")
-			.setDesc(
-				"Obsidian 最下部のステータスバーに Claude の 5 時間 / 7 日使用状況と" +
-					"リセットまでの残り時間を常時表示します。クリックで詳細モーダルを開きます。"
-			)
-			.addToggle((t) =>
-				t
-					.setValue(this.plugin.settings.showUsageStatusBar)
-					.onChange(async (v) => {
-						this.plugin.settings.showUsageStatusBar = v;
-						await this.plugin.saveSettings();
-						this.plugin.applyUsageStatusBarVisibility();
-					})
-			);
-
-		new Setting(containerEl)
 			.setName("ホットキー")
 			.setDesc(
 				"パネルを開く / 入力欄にフォーカス / 送信 / キャンセル / 会話クリア / モデル切替 などのコマンドは" +
@@ -280,6 +264,23 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 						}
 					})
 			);
+
+		this.renderAboutSection(containerEl);
+	}
+
+	/** リポジトリ URL とバージョンを表示する。コミュニティプラグイン
+	 *  カードの説明欄全体がクリッカブルでリンクを置けないため、設定
+	 *  画面側で誘導する。 */
+	private renderAboutSection(containerEl: HTMLElement): void {
+		const setting = new Setting(containerEl)
+			.setName("このプラグインについて")
+			.setDesc(`バージョン ${this.plugin.manifest.version}`);
+		setting.controlEl.createEl("a", {
+			text: "GitHub リポジトリ",
+			href: "https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases",
+			cls: "claude-panel-repo-link",
+			attr: { target: "_blank", rel: "noopener" },
+		});
 	}
 
 	/**

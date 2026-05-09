@@ -5,7 +5,6 @@ import {
 	ClaudePanelSettingTab,
 } from "./settings";
 import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
-import { UsageStatusBar } from "./usage-status-bar";
 import { UsageHistory } from "./usage-history";
 import {
 	fetchAuthStatus,
@@ -17,7 +16,6 @@ import type { MessageUsage } from "./chat-message";
 
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
-	private usageStatusBar: UsageStatusBar | null = null;
 	// チャットターン終了ごとの usage を vault 設定フォルダ配下に永続化する。
 	// /usage モーダルとメッセージフッターから読み出す。
 	usageHistory!: UsageHistory;
@@ -130,17 +128,10 @@ export default class ClaudePanelPlugin extends Plugin {
 		});
 
 		this.addSettingTab(new ClaudePanelSettingTab(this.app, this));
-
-		if (this.settings.showUsageStatusBar) {
-			this.usageStatusBar = new UsageStatusBar(this);
-			this.usageStatusBar.attach();
-		}
 	}
 
 	async onunload(): Promise<void> {
 		// Leaf は Obsidian 側で自動的に切り離されるので明示的な処理は不要。
-		this.usageStatusBar?.detach();
-		this.usageStatusBar = null;
 		// debounce 中の usage 書き込みを取りこぼさないよう即時 flush。
 		await this.usageHistory?.flushNow();
 		await this.cleanupAttachments();
@@ -153,12 +144,11 @@ export default class ClaudePanelPlugin extends Plugin {
 
 	/**
 	 * ChatRuntime から `rate_limit_event` を受け取り、共有キャッシュに反映
-	 * してステータスバーを即時更新する。チャット実行のたびに 1〜2 回発火
-	 * する「無料の」最新値で、API ポーリングの間を埋めて表示を新鮮に保つ。
+	 * する。チャット実行のたびに 1〜2 回発火する「無料の」最新値で、
+	 * AccountUsageModal を開いたときの初期表示を新鮮に保つ。
 	 */
 	applyRateLimitEvent(info: RateLimitInfo): void {
 		applyRateLimitEvent(info);
-		this.usageStatusBar?.refreshSoon();
 	}
 
 	/**
@@ -173,24 +163,6 @@ export default class ClaudePanelPlugin extends Plugin {
 		} catch {
 			this.usageHistory?.setAccount(null);
 		}
-	}
-
-	/** 設定変更時にステータスバーの表示を切り替える。 */
-	applyUsageStatusBarVisibility(): void {
-		if (this.settings.showUsageStatusBar) {
-			if (!this.usageStatusBar) {
-				this.usageStatusBar = new UsageStatusBar(this);
-				this.usageStatusBar.attach();
-			}
-		} else {
-			this.usageStatusBar?.detach();
-			this.usageStatusBar = null;
-		}
-	}
-
-	/** チャットラン完了などのタイミングでステータスバーを更新する。 */
-	refreshUsageStatusBar(): void {
-		this.usageStatusBar?.refreshSoon();
 	}
 
 	/**

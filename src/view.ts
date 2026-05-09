@@ -695,11 +695,9 @@ export class ClaudePanelView extends ItemView {
 		this.contextMeter?.update(usage);
 	}
 
-	/** 1 ターン完了 → ユーザーキャンセル時を除いて通知音／フラッシュ。
-	 *  併せてステータスバーの使用状況も再取得する（直近の消費を反映）。 */
+	/** 1 ターン完了 → ユーザーキャンセル時を除いて通知音／フラッシュ。 */
 	onRunComplete(canceled: boolean): void {
 		if (!canceled) this.notifier.notify();
-		this.plugin.refreshUsageStatusBar();
 	}
 
 	/** AudioContext を起こす（ユーザージェスチャ中にだけ有効）。 */
