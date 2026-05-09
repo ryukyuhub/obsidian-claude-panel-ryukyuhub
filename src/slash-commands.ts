@@ -16,8 +16,19 @@ import { diagnoseSessionLookup } from "./session-history";
  *   local         — このプラグイン内で完結（モーダル/設定操作など）
  *   repl-only     — TTY 必須なのでターミナル案内を出すだけ
  *   passthrough   — そのまま CLI に渡るが、よく使うので候補に出す
+ *   skill         — `<dir>/.claude/skills/<name>/SKILL.md` を発見したもの
+ *   user-command  — `<dir>/.claude/commands/<name>.md` を発見したもの
+ *
+ * skill / user-command は `slash-suggest` 側で動的にサジェストへ混ぜるが、
+ * `handleLocalSlashCommand` の switch には載らない（マッチしないものは
+ * 通常の passthrough としてそのまま CLI に渡る）。
  */
-export type SlashCategory = "local" | "repl-only" | "passthrough";
+export type SlashCategory =
+	| "local"
+	| "repl-only"
+	| "passthrough"
+	| "skill"
+	| "user-command";
 
 export interface SlashCommandSpec {
 	name: string;

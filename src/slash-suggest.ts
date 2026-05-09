@@ -25,6 +25,9 @@ export class SlashSuggest {
 	private items: { spec: SlashCommandSpec; el: HTMLElement }[] = [];
 	private selected = 0;
 	private visible = false;
+	// 動的に発見されたスキル / ユーザーコマンド（view が onOpen で注入する）。
+	// ハードコードの SLASH_COMMANDS と名前が衝突したものはここから除外する。
+	private extras: SlashCommandSpec[] = [];
 
 	constructor(host: HTMLElement, input: HTMLTextAreaElement) {
 		this.host = host;
@@ -42,6 +45,16 @@ export class SlashSuggest {
 		});
 	}
 
+	/**
+	 * 動的に発見されたコマンド（スキル / ユーザーコマンド）を差し替える。
+	 * ハードコードの SLASH_COMMANDS と名前が衝突したものは静かに除外する
+	 * （ハードコード側の説明・カテゴリの方が正確なので優先する）。
+	 */
+	setExtraCommands(specs: SlashCommandSpec[]): void {
+		const reserved = new Set(SLASH_COMMANDS.map((c) => c.name));
+		this.extras = specs.filter((s) => !reserved.has(s.name));
+	}
+
 	/** popup の表示/非表示を入力値に応じて更新する。 */
 	update(): void {
 		const value = this.input.value;
@@ -53,9 +66,10 @@ export class SlashSuggest {
 			return;
 		}
 		const term = m[1].toLowerCase();
-		const matches = SLASH_COMMANDS.filter((c) =>
-			c.name.slice(1).toLowerCase().startsWith(term)
-		).slice(0, 12);
+		const all = [...SLASH_COMMANDS, ...this.extras];
+		const matches = all
+			.filter((c) => c.name.slice(1).toLowerCase().startsWith(term))
+			.slice(0, 12);
 		if (matches.length === 0) {
 			this.close();
 			return;
@@ -181,5 +195,9 @@ function catLabel(cat: SlashCategory): string {
 			return "REPL";
 		case "passthrough":
 			return "CLI";
+		case "skill":
+			return "スキル";
+		case "user-command":
+			return "コマンド";
 	}
 }

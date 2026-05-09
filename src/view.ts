@@ -28,6 +28,7 @@ import { ContextMeter } from "./context-meter";
 import { PromptHistory } from "./prompt-history";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
 import { SlashSuggest } from "./slash-suggest";
+import { discoverDynamicCommands } from "./skill-discovery";
 import { openAccountUsageModal } from "./account-modal";
 import { Composer } from "./composer";
 import {
@@ -349,6 +350,12 @@ export class ClaudePanelView extends ItemView {
 		});
 		this.inputEl.rows = 4;
 		this.slashSuggest = new SlashSuggest(suggestEl, this.inputEl);
+		// Vault パスが取れる前提で、~/.claude と <vault>/.claude から
+		// スキル / ユーザーコマンドを発見してサジェストへ注入する。
+		// ファイル I/O は1回だけ（再スキャンが要るほど頻繁には変わらない）。
+		this.slashSuggest.setExtraCommands(
+			discoverDynamicCommands(this.getVaultPath())
+		);
 		this.history = new PromptHistory(this.inputEl, () =>
 			this.runtime.getInputHistory()
 		);
