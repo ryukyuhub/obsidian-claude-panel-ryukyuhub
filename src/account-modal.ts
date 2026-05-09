@@ -10,6 +10,11 @@ import {
 	type UsageData,
 	type UsageWindow,
 } from "./account-api";
+import {
+	formatTokens,
+	type UsageBucket,
+	type UsageHistory,
+} from "./usage-history";
 
 /**
  * モーダルを開いた時に「キャッシュ済みデータをそのまま使ってよい」と
@@ -25,10 +30,17 @@ const MODAL_CACHE_FRESHNESS_MS = 5 * 60 * 1000;
 export class AccountUsageModal extends Modal {
 	private settings: ClaudePanelSettings;
 	private bodyEl!: HTMLDivElement;
+	// 任意。渡されると「ローカル累計」セクションを描画する。
+	private history: UsageHistory | null;
 
-	constructor(app: App, settings: ClaudePanelSettings) {
+	constructor(
+		app: App,
+		settings: ClaudePanelSettings,
+		history: UsageHistory | null = null
+	) {
 		super(app);
 		this.settings = settings;
+		this.history = history;
 	}
 
 	onOpen(): void {
@@ -163,6 +175,18 @@ export class AccountUsageModal extends Modal {
 			);
 		}
 
+		// ローカル累計セクション（このプラグインが記録した分の今日 / 7日 / 今月）
+		if (this.history) {
+			const histSection = this.bodyEl.createDiv({
+				cls: "claude-panel-account-section",
+			});
+			histSection.createDiv({
+				cls: "claude-panel-account-section-label",
+				text: "ローカル累計（このプラグインが記録した分）",
+			});
+			renderHistoryRows(histSection, this.history);
+		}
+
 		// フッターリンク
 		const footer = this.bodyEl.createDiv({
 			cls: "claude-panel-account-footer",
@@ -210,10 +234,11 @@ function formatCacheAge(fetchedAt: number): string {
 
 export function openAccountUsageModal(
 	app: App,
-	settings: ClaudePanelSettings
+	settings: ClaudePanelSettings,
+	history: UsageHistory | null = null
 ): void {
 	try {
-		new AccountUsageModal(app, settings).open();
+		new AccountUsageModal(app, settings, history).open();
 	} catch (err) {
 		new Notice(
 			`「アカウントと使用状況」を開けません: ${(err as Error).message}`
@@ -241,6 +266,53 @@ function renderAuthRows(host: HTMLElement, status: AuthStatus): void {
 			text: value,
 		});
 	}
+}
+
+/**
+ * ローカル累計の表示。「7日間」は Claude API の「週間（7日）」と重複するので
+ * ここでは出さない（API のほうがアカウント全体を見ているので正確）。
+ * 「今日」「今月」は API に該当エンドポイントが無いのでローカル集計だけで描く。
+ */
+function renderHistoryRows(host: HTMLElement, history: UsageHistory): void {
+	const agg = history.aggregates();
+	const accountKey = history.getCurrentAccountKey();
+	const grid = host.createDiv({ cls: "claude-panel-account-grid" });
+	const rows: [string, UsageBucket][] = [
+		["今日", agg.today],
+		["今月", agg.thisMonth],
+	];
+	for (const [label, bucket] of rows) {
+		const row = grid.createDiv({ cls: "claude-panel-account-row" });
+		row.createSpan({
+			cls: "claude-panel-account-row-label",
+			text: label,
+		});
+		const value = row.createSpan({
+			cls: "claude-panel-account-row-value claude-panel-token-value",
+			text: `${formatTokens(bucket.total)} tokens`,
+		});
+		if (bucket.count > 0) {
+			value.setAttr(
+				"title",
+				`${bucket.count} ターン分\n` +
+					`入力: ${bucket.in.toLocaleString()}\n` +
+					`出力: ${bucket.out.toLocaleString()}\n` +
+					`キャッシュ作成: ${bucket.cacheCreate.toLocaleString()}\n` +
+					`キャッシュ読込: ${bucket.cacheRead.toLocaleString()}`
+			);
+		}
+	}
+	if (!accountKey) {
+		// アカウント解決中。集計値は全レコード（複数アカウント混在の可能性）。
+		host.createDiv({
+			cls: "claude-panel-account-note",
+			text: "アカウント情報を解決中… 表示値は全アカウント合算の可能性があります。",
+		});
+	}
+	host.createDiv({
+		cls: "claude-panel-account-note",
+		text: "このプラグインから送ったプロンプト分のみ。Claude.ai Web や他 CLI セッションは含まれません。7日間の正確な値は上の「週間（7日）」を参照してください。",
+	});
 }
 
 function renderUsageRows(host: HTMLElement, data: UsageData): void {

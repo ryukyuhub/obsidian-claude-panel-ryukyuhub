@@ -210,6 +210,10 @@ export class ChatRuntime {
 			continueLast: boolean
 		): Promise<{ canceled: boolean; errorMessage: string }> => {
 			let errorMessage = "";
+			// onUsage は 1 回の CLI 実行中に複数回（assistant チャンクごと
+			// + 最終 result）来る。最後の値が cumulative なので、ここに
+			// 退避し、runOnce 完了時に 1 回だけ永続履歴へ記録する。
+			let lastRunUsage: MessageUsage | null = null;
 			const handle = runAgent(
 				{
 					prompt: composed.fullPrompt,
@@ -240,6 +244,7 @@ export class ChatRuntime {
 						const msg = this.findMessage(assistantMsgId);
 						if (msg) msg.usage = usage;
 						this.lastUsage = usage;
+						lastRunUsage = usage;
 						this.host.onUsageChanged(this.lastUsage);
 					},
 					onRateLimit: (info) => {
@@ -270,6 +275,12 @@ export class ChatRuntime {
 				// 自然終了。残った pending（通常は発生しないがフェイルセーフ）
 				// はもう古いので、ここでまとめて Deny で flush しておく。
 				this.flushPendingPermissions("実行終了。");
+			}
+			// 永続履歴（今日/7日/今月）への記録は runOnce 単位で 1 回だけ。
+			// 中断時もそれまでに消費したトークンはアカウントに乗っているので
+			// 記録する（記録漏れより、二重カウントしないことのほうが大事）。
+			if (lastRunUsage) {
+				this.plugin.recordUsage(lastRunUsage);
 			}
 			this.currentRun = null;
 			return { canceled, errorMessage };

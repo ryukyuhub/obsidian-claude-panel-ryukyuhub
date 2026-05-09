@@ -538,6 +538,12 @@
 	overflow-wrap: anywhere;
 }
 
+/* ローカル累計（今日 / 7日 / 今月）— 数字を等幅にして桁を揃える。 */
+.claude-panel-token-value {
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
 .claude-panel-account-note {
 	font-size: 11px;
 	color: var(--text-faint);

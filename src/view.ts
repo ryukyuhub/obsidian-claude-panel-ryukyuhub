@@ -309,7 +309,11 @@ export class ClaudePanelView extends ItemView {
 		});
 		setIcon(accountBtn, "user");
 		accountBtn.onclick = () =>
-			openAccountUsageModal(this.app, this.plugin.settings);
+			openAccountUsageModal(
+				this.app,
+				this.plugin.settings,
+				this.plugin.usageHistory
+			);
 
 		const clearBtn = header.createEl("button", {
 			text: "クリア",
@@ -724,7 +728,11 @@ export class ClaudePanelView extends ItemView {
 			appendInteractive: (render) =>
 				this.runtime.appendInteractiveSystemMessage(render),
 			openAccountUsage: () =>
-				openAccountUsageModal(this.app, this.plugin.settings),
+				openAccountUsageModal(
+					this.app,
+					this.plugin.settings,
+					this.plugin.usageHistory
+				),
 			openPluginSettings: () => this.openPluginSettings(),
 			closeView: () => this.leaf.detach(),
 		};

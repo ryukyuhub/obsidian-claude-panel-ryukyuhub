@@ -60,7 +60,11 @@ export class UsageStatusBar {
 		renderPrefixIcon(item);
 		item.createSpan({ cls: "claude-panel-usage-sb-chip", text: "…" });
 		item.addEventListener("click", () => {
-			openAccountUsageModal(this.plugin.app, this.plugin.settings);
+			openAccountUsageModal(
+				this.plugin.app,
+				this.plugin.settings,
+				this.plugin.usageHistory
+			);
 		});
 		this.el = item;
 

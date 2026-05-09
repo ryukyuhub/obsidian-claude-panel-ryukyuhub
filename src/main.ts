@@ -6,15 +6,21 @@ import {
 } from "./settings";
 import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
 import { UsageStatusBar } from "./usage-status-bar";
+import { UsageHistory } from "./usage-history";
 import {
+	fetchAuthStatus,
 	applyRateLimitEvent,
 	loadCachedUsageFromDisk,
 } from "./account-api";
 import type { RateLimitInfo } from "./agent";
+import type { MessageUsage } from "./chat-message";
 
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
 	private usageStatusBar: UsageStatusBar | null = null;
+	// チャットターン終了ごとの usage を vault 設定フォルダ配下に永続化する。
+	// /usage モーダルとメッセージフッターから読み出す。
+	usageHistory!: UsageHistory;
 
 	// クリップボードからペーストした画像の保存先（Vault 相対パス）。
 	// プラグイン自身のディレクトリ配下に置くことでユーザー側の
@@ -28,10 +34,16 @@ export default class ClaudePanelPlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		await this.cleanupLegacyChatState();
+		this.usageHistory = new UsageHistory();
+		await this.usageHistory.load();
 		// 直前セッションで保存しておいた使用状況キャッシュを復元。これで
 		// Obsidian リロード直後でも 5h/7d 表示が「—」にならず、API が 429
 		// でも前回値を出し続けられる（次の rate_limit_event で自動更新）。
 		await loadCachedUsageFromDisk();
+		// アカウント識別キーは CLI 呼び出しが要るので非同期で解決する。
+		// 解決前に来た usage は内部で pending キューに退避され、解決時に
+		// 正しいアカウントキーで遡って記録される。
+		void this.resolveCurrentAccount();
 
 		this.registerView(
 			VIEW_TYPE_CLAUDE_PANEL,
@@ -129,7 +141,14 @@ export default class ClaudePanelPlugin extends Plugin {
 		// Leaf は Obsidian 側で自動的に切り離されるので明示的な処理は不要。
 		this.usageStatusBar?.detach();
 		this.usageStatusBar = null;
+		// debounce 中の usage 書き込みを取りこぼさないよう即時 flush。
+		await this.usageHistory?.flushNow();
 		await this.cleanupAttachments();
+	}
+
+	/** ChatRuntime から 1 ターン分の usage を渡される。永続履歴に追記する。 */
+	recordUsage(usage: MessageUsage): void {
+		this.usageHistory?.record(usage);
 	}
 
 	/**
@@ -140,6 +159,20 @@ export default class ClaudePanelPlugin extends Plugin {
 	applyRateLimitEvent(info: RateLimitInfo): void {
 		applyRateLimitEvent(info);
 		this.usageStatusBar?.refreshSoon();
+	}
+
+	/**
+	 * `claude auth status --json` を叩いて現在のサブスクアカウント識別キーを
+	 * 解決し、UsageHistory に渡す。失敗してもプラグインの動作は止めない。
+	 * 設定タブからの再ログイン後など、外から呼び直すのにも使う。
+	 */
+	async resolveCurrentAccount(): Promise<void> {
+		try {
+			const status = await fetchAuthStatus(this.settings);
+			this.usageHistory?.setAccount(status);
+		} catch {
+			this.usageHistory?.setAccount(null);
+		}
 	}
 
 	/** 設定変更時にステータスバーの表示を切り替える。 */

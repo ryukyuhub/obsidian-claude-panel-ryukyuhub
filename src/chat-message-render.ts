@@ -7,11 +7,13 @@ import {
 } from "obsidian";
 import type {
 	ChatMessage,
+	MessageUsage,
 	Part,
 	PermissionDecision,
 	RunResult,
 	SelectionRef,
 } from "./chat-message";
+import { formatTokens } from "./usage-history";
 
 /**
  * チャットメッセージの DOM 描画レイヤー。`chat-message.ts` のデータモデルを
@@ -75,7 +77,7 @@ export function renderMessage(
 	}
 
 	if (msg.result) {
-		renderResultFooter(host, msg.result);
+		renderResultFooter(host, msg.result, msg.usage);
 	}
 }
 
@@ -346,14 +348,41 @@ function renderSelectionChip(parent: HTMLElement, sel: SelectionRef): void {
 	});
 }
 
-function renderResultFooter(host: HTMLElement, r: RunResult): void {
+function renderResultFooter(
+	host: HTMLElement,
+	r: RunResult,
+	usage: MessageUsage | undefined
+): void {
 	const footer = host.createDiv({ cls: "claude-panel-msg-footer" });
 	const duration =
 		r.durationMs >= 1000
 			? `${(r.durationMs / 1000).toFixed(1)}秒`
 			: `${r.durationMs}ms`;
+	const tokens = usage ? formatTokens(sumUsage(usage)) : null;
+	const tokensText = tokens ? ` · ${tokens} tokens` : "";
 	const cost = r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : "";
-	footer.setText(`完了 · ${duration}${cost}`);
+	const text = `完了 · ${duration}${tokensText}${cost}`;
+	footer.setText(text);
+	if (usage) {
+		// 内訳をホバーで見られるようにする。フッター行は混雑するので
+		// 4 種別の数値はツールチップに退避。
+		footer.setAttr(
+			"title",
+			`入力: ${usage.inputTokens.toLocaleString()}\n` +
+				`出力: ${usage.outputTokens.toLocaleString()}\n` +
+				`キャッシュ作成: ${usage.cacheCreationTokens.toLocaleString()}\n` +
+				`キャッシュ読込: ${usage.cacheReadTokens.toLocaleString()}`
+		);
+	}
+}
+
+function sumUsage(u: MessageUsage): number {
+	return (
+		(u.inputTokens || 0) +
+		(u.outputTokens || 0) +
+		(u.cacheCreationTokens || 0) +
+		(u.cacheReadTokens || 0)
+	);
 }
 
 /**
@@ -399,9 +428,12 @@ function renderToolDetails(parent: HTMLElement, toolName: string, input: unknown
 		edits.forEach((e, idx) => {
 			const oldStr = typeof e.old_string === "string" ? e.old_string : "";
 			const newStr = typeof e.new_string === "string" ? e.new_string : "";
+			// 単一編集ではラベルを省略する（赤緑の diff 自体が「変更」を
+			// 自明に示すので "変更内容" の見出しは情報冗長）。複数編集の
+			// 場合だけ「変更 N / M」を残し、どの hunk か識別できるように。
 			renderDiffBlock(
 				parent,
-				edits.length > 1 ? `変更 ${idx + 1} / ${edits.length}` : "変更内容",
+				edits.length > 1 ? `変更 ${idx + 1} / ${edits.length}` : null,
 				oldStr,
 				newStr
 			);
@@ -430,7 +462,7 @@ function renderToolDetails(parent: HTMLElement, toolName: string, input: unknown
 			});
 		}
 		const oldSrc = typeof i.old_source === "string" ? i.old_source : "";
-		if (oldSrc) renderDiffBlock(parent, "変更内容", oldSrc, i.new_source);
+		if (oldSrc) renderDiffBlock(parent, null, oldSrc, i.new_source);
 		else renderPlainBlock(parent, "書き込む内容", i.new_source, "new");
 		return;
 	}
@@ -454,12 +486,14 @@ function renderPlainBlock(
 
 function renderDiffBlock(
 	parent: HTMLElement,
-	label: string,
+	label: string | null,
 	oldStr: string,
 	newStr: string
 ): void {
 	const wrap = parent.createDiv({ cls: "claude-panel-perm-detail" });
-	wrap.createDiv({ cls: "claude-panel-perm-detail-label", text: label });
+	if (label) {
+		wrap.createDiv({ cls: "claude-panel-perm-detail-label", text: label });
+	}
 	const diff = wrap.createDiv({ cls: "claude-panel-perm-diff" });
 
 	// DOM は常に「左右ペア」として描き、ナローでは縦積み（unified ライク）、
