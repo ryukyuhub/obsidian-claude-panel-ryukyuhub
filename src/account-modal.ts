@@ -62,9 +62,14 @@ export class AccountUsageModal extends Modal {
 		// 認証ステータスは `claude auth status --json` のローカル呼び出しで
 		// API レート制限とは独立しているので毎回取得する。使用状況は API
 		// 呼び出しなので、十分新しいキャッシュがあればそれで済ませる。
+		// ただしキャッシュに utilization が無い場合（rate_limit_event 由来
+		// の resets_at だけしか入っていない状態）は新鮮でも fetch を試す
+		// ─ ユーザがモーダルを開く瞬間は「実際の % が知りたい」意図。
 		const cached = getCachedUsage();
+		const hasUtil = cached?.data.five_hour?.utilization != null;
 		const cacheIsFresh =
 			cached !== null &&
+			hasUtil &&
 			Date.now() - cached.fetchedAt < MODAL_CACHE_FRESHNESS_MS;
 		const rateLimited = Date.now() < getRateLimitedUntil();
 
@@ -246,9 +251,11 @@ function renderUsageRows(host: HTMLElement, data: UsageData): void {
 		["週間 Sonnet", data.seven_day_sonnet],
 	];
 	let rendered = 0;
+	let anyMissingUtil = false;
 	for (const [label, win] of items) {
 		if (!win) continue;
 		renderUsageRow(host, label, win);
+		if (win.utilization == null) anyMissingUtil = true;
 		rendered++;
 	}
 	if (rendered === 0) {
@@ -256,6 +263,27 @@ function renderUsageRows(host: HTMLElement, data: UsageData): void {
 			cls: "claude-panel-account-note",
 			text: "使用状況データはありません。",
 		});
+	}
+	if (anyMissingUtil) {
+		// 「—」の理由をユーザに説明。リセット時刻だけは rate_limit_event
+		// 由来で取れているが、利用率（%）は API fetch が必須。
+		const backoffEnd = getRateLimitedUntil();
+		const note = host.createDiv({
+			cls: "claude-panel-account-note",
+		});
+		if (Date.now() < backoffEnd) {
+			const min = Math.max(
+				1,
+				Math.ceil((backoffEnd - Date.now()) / 60_000)
+			);
+			note.setText(
+				`使用率（%）は Anthropic API のレート制限中のため取得できません。あと ${min} 分後に「更新」をクリックしてください。`
+			);
+		} else {
+			note.setText(
+				"使用率（%）は API から取得します。「更新」をクリックすると最新値を取りにいきます。"
+			);
+		}
 	}
 }
 
@@ -270,6 +298,25 @@ function renderUsageRow(
 		cls: "claude-panel-usage-label",
 		text: label,
 	});
+	// utilization 不明（rate_limit_event 由来のリセット時刻だけある状態）は
+	// 「—」を表示。バーも描かず、リセットカウントダウンだけ出す。
+	if (win.utilization == null) {
+		head.createSpan({
+			cls: "claude-panel-usage-pct",
+			text: "—",
+			attr: {
+				title: "API 取得待ち（チャットを 1 回送ると更新されます）",
+			},
+		});
+		const reset = formatResetsIn(win.resets_at);
+		if (reset) {
+			row.createDiv({
+				cls: "claude-panel-usage-reset",
+				text: reset,
+			});
+		}
+		return;
+	}
 	const pct = clamp(win.utilization, 0, 100);
 	head.createSpan({
 		cls: "claude-panel-usage-pct",

@@ -12,16 +12,22 @@ import { openAccountUsageModal } from "./account-modal";
 
 /**
  * Obsidian 最下部のステータスバーに Claude 使用状況を表示する。
- * クリックで既存の AccountUsageModal を開く。
+ * クリックで AccountUsageModal を開く。
  *
- * 更新ポリシー:
- *   - プラグイン起動時に1回 fetch
- *   - FETCH_INTERVAL_MS おきにバックグラウンド更新（5h リセット追従）
- *   - 60秒おきにキャッシュ済みデータで再描画（残り時間カウントダウン）
- *   - チャットラン完了時など外部から refreshSoon() を呼べる
- *   - MIN_REFRESH_GAP_MS のクールダウンで連発を防ぐ
- *   - account-api.ts のプロセス内キャッシュとバックオフを共有するので、
- *     429 を受けている間は実 HTTP 要求を出さない
+ * **データソース** (優先度順):
+ *   1. `claude --print` の stream-json から拾った `rate_limit_event`
+ *      （チャット実行のたびに無料で取れる最新値。API コール不要）
+ *   2. `/api/oauth/usage` への HTTP fetch（バックグラウンドポーリング）
+ *
+ * 1 がチャットを打つたびに自動でキャッシュを更新するので、ポーリング間隔
+ * を長め（15 分）に抑えても表示は新鮮に保てる。429 を受けたらバックオフ
+ * 中はキャッシュ値（=直近の rate_limit_event 由来でも OK）を表示し続ける。
+ *
+ * 更新タイミング:
+ *   - プラグイン起動時に 1 回 fetch（コールドスタート）
+ *   - FETCH_INTERVAL_MS おきに API バックグラウンド更新（5h リセット追従）
+ *   - 60 秒おきにキャッシュ済みデータで残り時間を再描画
+ *   - チャット完了 → rate_limit_event がキャッシュ更新 → refreshSoon() で即描画
  */
 export class UsageStatusBar {
 	private plugin: ClaudePanelPlugin;
@@ -30,14 +36,15 @@ export class UsageStatusBar {
 	private tickIntervalId: number | null = null;
 	private lastFetchAt = 0;
 
-	// 5h 表示の更新は 5 分間隔で十分（5h ウィンドウは時間オーダーで動くので
-	// 10 分でも実用上は問題ないが、複数 PC 間で叩きすぎない範囲で押さえる）。
-	private static readonly FETCH_INTERVAL_MS = 10 * 60 * 1000;
+	// `rate_limit_event` が無料でキャッシュを更新してくれるので、API への
+	// 自前ポーリングは長めにできる。15 分間隔なら多端末で同じアカウントを
+	// 使っても 429 を踏みにくい。
+	private static readonly FETCH_INTERVAL_MS = 15 * 60 * 1000;
 	private static readonly TICK_INTERVAL_MS = 60 * 1000;
-	// チャット完了直後の使用量はほぼ前回と変わらないので、頻繁に refresh
-	// する価値が低い。複数 PC で同じアカウントを使うとき 429 を踏みやすく
-	// なるため 30 秒 → 2 分に伸ばしている。
-	private static readonly MIN_REFRESH_GAP_MS = 2 * 60 * 1000;
+	// 連続 fetch 抑制クールダウン。rate_limit_event 経由の refreshSoon は
+	// fetch 自体を呼ばない（キャッシュ表示の再描画だけ）ので、これは API
+	// fetch を実際に飛ばす経路にだけ効く。
+	private static readonly MIN_REFRESH_GAP_MS = 5 * 60 * 1000;
 
 	constructor(plugin: ClaudePanelPlugin) {
 		this.plugin = plugin;
@@ -71,6 +78,9 @@ export class UsageStatusBar {
 		this.plugin.registerInterval(tickId);
 		this.tickIntervalId = tickId;
 
+		// 既にキャッシュがあればそれで先に描画（コールドスタートの「…」を短縮）。
+		const cached = getCachedUsage();
+		if (cached) this.render(cached.data);
 		void this.refresh();
 	}
 
@@ -87,12 +97,28 @@ export class UsageStatusBar {
 		this.el = null;
 	}
 
-	/** 外部からの更新依頼。クールダウン中／バックオフ中なら何もしない。 */
+	/**
+	 * 外部から呼ばれる更新依頼（チャット完了時など）。
+	 *   - キャッシュが既に新鮮な utilization を持っていれば: クールダウン尊重
+	 *   - utilization 不明（rate_limit_event だけで API 値が無い）: クール
+	 *     ダウン無視して即時 fetch（429 バックオフは尊重）
+	 * 後者を入れている理由: ユーザがチャットを送ったタイミングは「最新状態を
+	 * 知りたい」意思の現れ。実用 % が出ていないなら遅延せずに 1 回試す。
+	 */
 	refreshSoon(): void {
 		if (!this.el) return;
-		const elapsed = Date.now() - this.lastFetchAt;
-		if (elapsed < UsageStatusBar.MIN_REFRESH_GAP_MS) return;
+		const cached = getCachedUsage();
+		if (cached) this.render(cached.data);
+
+		// 429 バックオフ中はどんな経路でも fetch しない。
 		if (Date.now() < getRateLimitedUntil()) return;
+
+		const haveUtilization = cached?.data.five_hour?.utilization != null;
+		if (haveUtilization) {
+			// 通常のクールダウンを適用（連続 fetch 抑制）
+			const elapsed = Date.now() - this.lastFetchAt;
+			if (elapsed < UsageStatusBar.MIN_REFRESH_GAP_MS) return;
+		}
 		void this.refresh();
 	}
 
@@ -118,16 +144,19 @@ export class UsageStatusBar {
 			this.render(usage);
 		} catch (err) {
 			if (!this.el) return;
-			// 429（レート制限）のときは直近のキャッシュ値をそのまま残す。
-			// 一時的な制限で表示が「—」に崩れるのを避け、バックオフが解けて
-			// から自然回復させる。それ以外のエラー（401・ネットワーク不通
-			// など）は状態が確実に分かったほうが良いのでエラー表示に切り替える。
+			// 429 のときはキャッシュ値（rate_limit_event 由来でも OK）を残す。
 			const cached = getCachedUsage();
 			if (
 				err instanceof UsageFetchError &&
 				err.status === 429 &&
 				cached
 			) {
+				this.render(cached.data);
+				return;
+			}
+			// それ以外（401、ネットワーク不通など）でもキャッシュがあれば
+			// それを優先表示。完全に何も無いときだけエラー表示にフォールバック。
+			if (cached) {
 				this.render(cached.data);
 				return;
 			}
@@ -155,10 +184,39 @@ export class UsageStatusBar {
 		if (data.five_hour) {
 			const remain = formatRemainLong(data.five_hour.resets_at);
 			tipLines.push(
-				`セッション: ${formatPct(data.five_hour)}` +
+				`セッション (5h): ${formatPct(data.five_hour)}` +
 					(remain ? `（${remain}）` : "")
 			);
 		}
+		if (data.seven_day) {
+			tipLines.push(`週間 (7d): ${formatPct(data.seven_day)}`);
+		}
+
+		// utilization が「—」のときは状況説明を加える。よくある理由:
+		//   1) Anthropic API がレートリミット中（30 分待つ）
+		//   2) コールドスタート直後で API 取得がまだ走っていない
+		// rate_limit_event は status="allowed" で利用率を含まないので、
+		// 実 % は API fetch でしか取れない。状態を明示してユーザを混乱
+		// させない。
+		const fiveHrUtil = data.five_hour?.utilization;
+		if (fiveHrUtil == null) {
+			const backoffEnd = getRateLimitedUntil();
+			tipLines.push("");
+			if (Date.now() < backoffEnd) {
+				const min = Math.max(
+					1,
+					Math.ceil((backoffEnd - Date.now()) / 60_000)
+				);
+				tipLines.push(
+					`使用率: Anthropic API レート制限中（あと ${min} 分待機）`
+				);
+			} else {
+				tipLines.push(
+					"使用率: API 取得待ち（次回チャット送信時に再試行します）"
+				);
+			}
+		}
+
 		tipLines.push("", "クリックで詳細");
 		this.el.title = tipLines.join("\n");
 	}
@@ -178,21 +236,20 @@ export class UsageStatusBar {
 	}
 }
 
-// プレフィックスにテキスト「Claude」ではなくアイコンを描く。リボンアイコン
-// と同じ `bot` を使うことで「Claude を表す印」として一貫させる。
 function renderPrefixIcon(host: HTMLElement): void {
 	const wrap = host.createSpan({ cls: "claude-panel-usage-sb-prefix" });
 	setIcon(wrap, "bot");
 }
 
-// 警告/危険の色は host（ステータスバー全体）に付ける。チップだけ色を変える
-// より、ピル全体を染めたほうが視覚的に強く、見落としにくい。
 function appendChip(
 	host: HTMLElement,
 	win: UsageWindow | null | undefined
 ): void {
 	const chip = host.createSpan({ cls: "claude-panel-usage-sb-chip" });
-	if (!win) {
+	if (!win || win.utilization == null) {
+		// utilization が未知のとき（rate_limit_event が status="allowed"
+		// で値を出さない & API もまだ取得できていない）は「—」を表示し、
+		// 偽の 0% を見せない。リセット時刻は別途出るのでカウントダウンは生きる。
 		chip.setText("—");
 		return;
 	}
@@ -203,11 +260,11 @@ function appendChip(
 }
 
 function formatPct(win: UsageWindow): string {
+	if (win.utilization == null) return "—";
 	const pct = clamp(win.utilization, 0, 100);
 	return `${Math.round(pct)}%`;
 }
 
-/** ステータスバー用の極短形式: "1h23m" / "42m" / "<1m" / "" */
 function formatRemainShort(iso: string | null | undefined): string | null {
 	if (!iso) return null;
 	const ms = Date.parse(iso) - Date.now();
@@ -220,7 +277,6 @@ function formatRemainShort(iso: string | null | undefined): string | null {
 	return `${h}h${m}m`;
 }
 
-/** ツールチップ用の長形式: "あと 1 時間 23 分でリセット" */
 function formatRemainLong(iso: string | null | undefined): string | null {
 	if (!iso) return null;
 	const ms = Date.parse(iso) - Date.now();

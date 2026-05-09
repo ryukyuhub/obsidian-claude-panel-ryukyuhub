@@ -23,8 +23,10 @@ export interface AuthStatus {
 }
 
 // /api/oauth/usage から返るレートリミットウィンドウ1つ分。
+// `utilization` は不明な場合 null（rate_limit_event が status="allowed" で
+// 利用率を含まないケース）。レンダラ側で null を「—」として描画する。
 export interface UsageWindow {
-	utilization: number;
+	utilization: number | null;
 	resets_at: string | null;
 }
 
@@ -157,11 +159,98 @@ function readOAuthToken(): Promise<string | null> {
 }
 
 /**
- * 直近の成功 fetch 結果を保持するプロセス内キャッシュ。
- * ステータスバーとモーダルで共有することで、モーダルを開くたびに新規
- * リクエストを発射するのを避ける。Obsidian を再起動すると消える。
+ * 直近の成功 fetch 結果（または `rate_limit_event` 由来の値）を保持する
+ * プロセス内キャッシュ。ステータスバーとモーダルで共有することで、モー
+ * ダルを開くたびに新規リクエストを発射するのを避ける。
+ *
+ * Obsidian リロード時のコールドスタートで「—」を表示しないよう、ディスク
+ * へも自動永続化する（`~/.claude-panel/usage-cache.json`）。読み込みは
+ * `loadCachedUsageFromDisk()` で起動時に 1 度行う。
  */
 let cachedUsage: { data: UsageData; fetchedAt: number } | null = null;
+
+const CACHE_FILE = path.join(os.homedir(), ".claude-panel", "usage-cache.json");
+
+/**
+ * ディスクからキャッシュを読み込む。プラグイン起動時に 1 度呼ぶ。
+ * ファイル不在・破損時は黙って null のまま（次の fetch / rate_limit_event
+ * で自然に埋まる）。
+ */
+export async function loadCachedUsageFromDisk(): Promise<void> {
+	try {
+		if (!fs.existsSync(CACHE_FILE)) return;
+		const raw = await fs.promises.readFile(CACHE_FILE, "utf8");
+		const parsed = JSON.parse(raw) as {
+			data?: UsageData;
+			fetchedAt?: number;
+		};
+		if (
+			parsed &&
+			typeof parsed.fetchedAt === "number" &&
+			parsed.data &&
+			typeof parsed.data === "object"
+		) {
+			// 旧バージョンが書いた虚偽の `utilization: 0` を除去する。
+			// 当該ターンに rate_limit_event だけ来た（=API 値が無い）場合、
+			// 旧コードは 0 を保存していた。これをそのまま信じると「0%」と
+			// 誤表示するので、value=0 はクリアして null 扱いにする。
+			cachedUsage = {
+				data: sanitizeLegacyZeros(parsed.data),
+				fetchedAt: parsed.fetchedAt,
+			};
+		}
+	} catch {
+		/* noop — 起動を妨げない */
+	}
+}
+
+function sanitizeLegacyZeros(data: UsageData): UsageData {
+	const out: UsageData = {};
+	for (const key of [
+		"five_hour",
+		"seven_day",
+		"seven_day_opus",
+		"seven_day_sonnet",
+	] as const) {
+		const w = data[key];
+		if (!w) continue;
+		// utilization === 0 は API が返した正規の 0% かもしれないが、
+		// 旧 applyRateLimitEvent のバグで書かれた 0 の可能性が高いので
+		// null 扱いに退避させる。次の API fetch / rate_limit_event で
+		// 正しい値が入ってくる。
+		out[key] = {
+			utilization: w.utilization === 0 ? null : w.utilization,
+			resets_at: w.resets_at ?? null,
+		};
+	}
+	return out;
+}
+
+/**
+ * キャッシュをディスクへ書き出す。fetchUsage 成功時と applyRateLimitEvent
+ * 内で自動呼び出し。複数フィールド更新を 1 回にまとめるため debounce する。
+ */
+let persistTimer: NodeJS.Timeout | null = null;
+function schedulePersistCache(): void {
+	if (persistTimer !== null) return;
+	persistTimer = setTimeout(() => {
+		persistTimer = null;
+		void persistCacheNow();
+	}, 500);
+}
+async function persistCacheNow(): Promise<void> {
+	if (!cachedUsage) return;
+	try {
+		await fs.promises.mkdir(path.dirname(CACHE_FILE), { recursive: true });
+		await fs.promises.writeFile(
+			CACHE_FILE,
+			JSON.stringify(cachedUsage),
+			"utf8"
+		);
+	} catch {
+		/* noop — 失敗してもメモリ上の状態は維持される */
+	}
+}
 
 /**
  * 429 を受けた直後の再リクエスト抑制ウィンドウ。`Date.now()` がこの値を
@@ -174,6 +263,64 @@ const DEFAULT_RATE_LIMIT_BACKOFF_MS = 30 * 60 * 1000;
 
 export function getCachedUsage(): { data: UsageData; fetchedAt: number } | null {
 	return cachedUsage;
+}
+
+/**
+ * Claude `--print` の stream-json から拾った rate_limit_event を
+ * 既存キャッシュにマージする。チャットを実行するたびに無料で取れる
+ * 新鮮値なので、API ポーリングの間を埋めて表示を up-to-date に保てる。
+ *
+ * 仕様:
+ *   - `resetsAt` は常にあるので必ず反映する
+ *   - `utilization` は CLI 側が閾値超過時のみ含める。値があれば反映、
+ *     無ければ既存キャッシュ値を維持（古くても完全に消すよりマシ）
+ *   - 該当ウィンドウのキャッシュエントリが無ければ新規作成
+ */
+export function applyRateLimitEvent(info: {
+	rateLimitType: string;
+	resetsAt: number;
+	utilization?: number;
+}): void {
+	const key = mapRateLimitTypeToWindow(info.rateLimitType);
+	if (!key) return;
+	const data: UsageData = cachedUsage?.data ?? {};
+	const existing = data[key] ?? null;
+	// utilization は閾値超過時のみ含まれる。無いときは「既存値」を保つ
+	// （古くても残す）。既存値も無ければ `null`（=「不明」）にする。
+	// 0 を入れると「0% 使用」と誤表示されるので避ける。
+	const utilization =
+		info.utilization != null
+			? clamp01(info.utilization) * 100
+			: existing?.utilization != null
+				? existing.utilization
+				: null;
+	const resets_at = new Date(info.resetsAt * 1000).toISOString();
+	(data as Record<string, UsageWindow | null | undefined>)[key] = {
+		utilization,
+		resets_at,
+	};
+	cachedUsage = { data, fetchedAt: Date.now() };
+	schedulePersistCache();
+}
+
+function mapRateLimitTypeToWindow(t: string): keyof UsageData | null {
+	switch (t) {
+		case "five_hour":
+			return "five_hour";
+		case "seven_day":
+			return "seven_day";
+		case "seven_day_opus":
+			return "seven_day_opus";
+		case "seven_day_sonnet":
+			return "seven_day_sonnet";
+		default:
+			return null;
+	}
+}
+
+function clamp01(n: number): number {
+	if (Number.isNaN(n)) return 0;
+	return Math.max(0, Math.min(1, n));
 }
 
 /** 現在 429 バックオフ中なら解除予定時刻、そうでなければ 0。 */
@@ -224,10 +371,39 @@ export async function fetchUsage(): Promise<UsageData> {
 		}
 		throw new UsageFetchError(humanizeUsageError(res.status, res.text), res.status);
 	}
-	const data = res.json as UsageData;
+	const data = normalizeUsageData(res.json as UsageData);
 	cachedUsage = { data, fetchedAt: Date.now() };
 	rateLimitedUntil = 0;
+	schedulePersistCache();
 	return data;
+}
+
+/**
+ * Anthropic 側がスケールを 0-1 で返すか 0-100 で返すかバージョン依存
+ * （VS Code 拡張 claude-usage-bar も両対応している）。`utilization > 1`
+ * なら 0-100 スケールとみなしてそのまま、それ以下なら 0-1 とみなして
+ * 100 倍する。クランプも併せて行う。
+ */
+function normalizeUsageData(data: UsageData): UsageData {
+	const out: UsageData = {};
+	for (const key of [
+		"five_hour",
+		"seven_day",
+		"seven_day_opus",
+		"seven_day_sonnet",
+	] as const) {
+		const w = data[key];
+		if (!w) continue;
+		const raw = w.utilization;
+		const pct =
+			raw == null
+				? null
+				: raw > 1
+					? Math.max(0, Math.min(100, raw))
+					: Math.max(0, Math.min(100, raw * 100));
+		out[key] = { utilization: pct, resets_at: w.resets_at ?? null };
+	}
+	return out;
 }
 
 /**

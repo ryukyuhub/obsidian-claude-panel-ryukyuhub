@@ -242,6 +242,12 @@ export class ChatRuntime {
 						this.lastUsage = usage;
 						this.host.onUsageChanged(this.lastUsage);
 					},
+					onRateLimit: (info) => {
+						// Claude が API 応答ヘッダから抽出した最新の rate limit。
+						// 追加 API コール無しで取れる新鮮値なので、即時にキャッシュ
+						// 反映してステータスバーを更新させる。
+						this.plugin.applyRateLimitEvent(info);
+					},
 					onError: (err) => {
 						errorMessage = err.message;
 						this.appendStreamingText(

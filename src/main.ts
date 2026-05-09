@@ -6,6 +6,11 @@ import {
 } from "./settings";
 import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
 import { UsageStatusBar } from "./usage-status-bar";
+import {
+	applyRateLimitEvent,
+	loadCachedUsageFromDisk,
+} from "./account-api";
+import type { RateLimitInfo } from "./agent";
 
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
@@ -23,6 +28,10 @@ export default class ClaudePanelPlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		await this.cleanupLegacyChatState();
+		// 直前セッションで保存しておいた使用状況キャッシュを復元。これで
+		// Obsidian リロード直後でも 5h/7d 表示が「—」にならず、API が 429
+		// でも前回値を出し続けられる（次の rate_limit_event で自動更新）。
+		await loadCachedUsageFromDisk();
 
 		this.registerView(
 			VIEW_TYPE_CLAUDE_PANEL,
@@ -121,6 +130,16 @@ export default class ClaudePanelPlugin extends Plugin {
 		this.usageStatusBar?.detach();
 		this.usageStatusBar = null;
 		await this.cleanupAttachments();
+	}
+
+	/**
+	 * ChatRuntime から `rate_limit_event` を受け取り、共有キャッシュに反映
+	 * してステータスバーを即時更新する。チャット実行のたびに 1〜2 回発火
+	 * する「無料の」最新値で、API ポーリングの間を埋めて表示を新鮮に保つ。
+	 */
+	applyRateLimitEvent(info: RateLimitInfo): void {
+		applyRateLimitEvent(info);
+		this.usageStatusBar?.refreshSoon();
 	}
 
 	/** 設定変更時にステータスバーの表示を切り替える。 */

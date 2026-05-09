@@ -43,6 +43,29 @@ interface AgentEvents {
 		req: PermissionRequest,
 		decide: (decision: PermissionDecision) => void
 	) => void;
+	/** Claude が API 応答ヘッダから抽出したレートリミット情報。
+	 *  `claude --print` の stream-json に `type: "rate_limit_event"` として
+	 *  出てくる。最低限 `resetsAt` と `rateLimitType` は必ず含まれ、閾値
+	 *  超過時には `utilization`（0.0〜1.0）も入る。 */
+	onRateLimit?: (info: RateLimitInfo) => void;
+}
+
+/**
+ * `claude --print` が stream-json で吐く rate_limit_event の中身。
+ * 値の有無はラン時の状態に依存（utilization は 75/90/95% 閾値超過時のみ）。
+ */
+export interface RateLimitInfo {
+	rateLimitType: "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet" | "overage" | string;
+	/** unix epoch 秒。Anthropic 側がリセットする時刻。 */
+	resetsAt: number;
+	/** "allowed" | "allowed_warning" | "blocked" など。 */
+	status: string;
+	/** 0.0〜1.0。閾値超過時のみ含まれる。 */
+	utilization?: number;
+	overageStatus?: string;
+	overageDisabledReason?: string;
+	isUsingOverage?: boolean;
+	surpassedThreshold?: number;
 }
 
 interface RunArgs {
@@ -187,6 +210,16 @@ function handleStreamLine(line: string, cb: StreamCallbacks): void {
 			} else if (block.type === "tool_use" && typeof block.name === "string") {
 				events.onToolUse(block.name, block.input);
 			}
+		}
+	} else if (parsed.type === "rate_limit_event") {
+		// `claude --print` は API 応答ヘッダから抽出した rate limit を
+		// stream に流してくる。utilization は閾値超過時のみ含まれるが、
+		// resetsAt は常に含まれる。これは API への追加コール無しで取れる
+		// 「無料の」最新値なので、ステータスバー側でキャッシュ更新に使う。
+		const info = (parsed as { rate_limit_info?: RateLimitInfo })
+			.rate_limit_info;
+		if (info && typeof info.rateLimitType === "string") {
+			events.onRateLimit?.(info);
 		}
 	} else if (parsed.type === "result") {
 		const r = parsed as ResultStreamMessage;
