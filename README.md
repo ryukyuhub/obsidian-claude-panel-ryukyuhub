@@ -1,8 +1,36 @@
-# Claude Panel for Obsidian
+# Claude Panel
 
 > **Provided by [琉球HUB株式会社 (Ryukyu HUB Inc.)](https://ryukyuhub.co.jp).**
 
-Claude Panel for Obsidian は、Obsidian の右サイドバーに [Claude Code](https://docs.claude.com/claude-code) のチャットパネルを表示するプラグインです。アクティブな Vault をワーキングディレクトリとして `claude` CLI をサブプロセスで起動し、ノートの読み書き・検索・コマンド実行までを Obsidian 内で完結できます。
+Claude Panel adds a right-sidebar chat panel powered by [Claude Code](https://docs.claude.com/claude-code) to Obsidian. It spawns the `claude` CLI as a subprocess with the active vault as its working directory, so reading, writing, searching, and running commands against your notes all happen inside Obsidian.
+
+> Desktop only. Requires the `claude` CLI to be installed and signed in (Claude Pro/Max subscription or an Anthropic API key).
+
+## Features
+
+- Streaming chat panel in the right sidebar, with tool-use pills and per-turn cost / duration
+- Active note is auto-mentioned as `@filename` on every turn (toggleable)
+- File picker for extra mentions; paste clipboard images directly into the composer
+- Editor / preview selection is captured automatically so you can ask "explain this" without copy/paste
+- Session is resumed via `claude --resume <session>` (Claude Code's auto-compaction stays active)
+- Account & usage panel — Claude plan, organization, rate-limit consumption (5h / 7d / Sonnet) in real time
+- Slash commands: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
+- Project-level MCP servers: drop a `.mcp.json` at the vault root and it is loaded automatically
+
+## Installation
+
+1. Install Node.js, then the Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
+2. Sign in once: `claude /login`
+3. Install this plugin from Obsidian → Settings → Community plugins (or sideload the latest GitHub release)
+4. Enable **Claude Panel** in Community plugins. The setting tab shows a setup-status block; if the CLI is not auto-detected, paste its absolute path there.
+
+See the Japanese sections below for OS-specific install commands (winget / brew) and troubleshooting.
+
+---
+
+# 日本語ドキュメント
+
+Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.claude.com/claude-code) のチャットパネルを表示するプラグインです。アクティブな Vault をワーキングディレクトリとして `claude` CLI をサブプロセスで起動し、ノートの読み書き・検索・コマンド実行までを Obsidian 内で完結できます。
 
 > デスクトップ専用です。事前に `claude` CLI のインストールと、Claude Code へのログイン（サブスクリプションまたは Anthropic API キー）が必要です。
 
@@ -79,7 +107,7 @@ claude /login
 
 1. [最新リリース](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases) から `claude-panel-ryukyuhub-<version>.zip` をダウンロード
 2. zip を解凍し、`claude-panel-ryukyuhub/` フォルダを `<your-vault>/.obsidian/plugins/` 直下に配置
-3. Obsidian → 設定 → コミュニティプラグイン → **Claude Panel for Obsidian** を有効化
+3. Obsidian → 設定 → コミュニティプラグイン → **Claude Panel** を有効化
 4. プラグイン設定を開くと先頭に「セットアップ状況」が表示されます。`claude` CLI が自動検出されない場合は CLI バイナリの絶対パスを入力してください（例: macOS なら `/usr/local/bin/claude`、Windows なら `C:\Users\<you>\AppData\Roaming\npm\claude.cmd`）
 
 > BRAT には対応していません — リリース成果物は zip 形式で配布しています。

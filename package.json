@@ -1,7 +1,7 @@
 {
   "name": "claude-panel-ryukyuhub",
   "version": "0.4.8",
-  "description": "Claude Panel for Obsidian — Obsidian の Vault に Claude を組み込む右サイドバーのチャットパネル。アクティブな Vault をワーキングディレクトリとして Claude Code を実行します。",
+  "description": "Right-sidebar chat panel powered by Claude Code. Runs the `claude` CLI as a subprocess with the active vault as the working directory.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

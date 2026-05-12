@@ -1,9 +1,9 @@
 {
   "id": "claude-panel-ryukyuhub",
-  "name": "Claude Panel for Obsidian",
+  "name": "Claude Panel",
   "version": "0.4.8",
   "minAppVersion": "1.4.5",
-  "description": "Obsidian の Vault に Claude を組み込む右サイドバーのチャットパネル。アクティブな Vault をワーキングディレクトリとして Claude Code をサブプロセス起動します。",
+  "description": "Right-sidebar chat panel powered by Claude Code. Runs the `claude` CLI as a subprocess with the active vault as the working directory, so you can read, write, search, and run commands on your notes without leaving Obsidian.",
   "author": "Ryukyu HUB Inc.",
   "authorUrl": "https://ryukyuhub.co.jp",
   "isDesktopOnly": true
