@@ -3,7 +3,7 @@
   "name": "Claude Panel",
   "version": "0.5.0",
   "minAppVersion": "1.4.5",
-  "description": "Right-sidebar chat panel powered by Claude Code. Runs the `claude` CLI as a subprocess with the active vault as the working directory, so you can read, write, search, and run commands on your notes without leaving Obsidian.",
+  "description": "Right-sidebar chat panel powered by Claude Code. Runs the `claude` CLI as a subprocess with the active vault as the working directory.",
   "author": "Ryukyu HUB Inc.",
   "authorUrl": "https://ryukyuhub.co.jp",
   "isDesktopOnly": true
