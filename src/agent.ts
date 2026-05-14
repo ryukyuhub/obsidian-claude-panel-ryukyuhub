@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import type { ClaudePanelSettings } from "./settings";
 import { buildEnv, needsShell, resolveClaudePath } from "./cli-resolver";
+import { t } from "./i18n";
 
 interface UsageInfo {
 	inputTokens: number;
@@ -399,9 +400,7 @@ export function listMcpServers(
 		const claudePath = resolveClaudePath(settings.claudePath);
 		if (!claudePath) {
 			reject(
-				new Error(
-					"`claude` CLI が見つかりません。プラグイン設定で絶対パスを指定してください。"
-				)
+				new Error(t("account.errClaudeCliNotFound"))
 			);
 			return;
 		}
@@ -445,9 +444,7 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		const claudePath = resolveClaudePath(settings.claudePath);
 		if (!claudePath) {
 			events.onError(
-				new Error(
-					"`claude` CLI が見つかりません。プラグイン設定で絶対パスを指定してください。"
-				)
+				new Error(t("account.errClaudeCliNotFound"))
 			);
 			resolve();
 			return;
@@ -582,7 +579,7 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 							}
 						: {
 								behavior: "deny" as const,
-								message: decision.message ?? "ユーザーが拒否しました。",
+								message: decision.message ?? t("chat.permUserDenied"),
 								interrupt: decision.interrupt ?? false,
 								toolUseID: toolUseId,
 							};
@@ -614,7 +611,7 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 				// よう自動 deny する。
 				decide({
 					allow: false,
-					message: "承認 UI が利用できないため拒否しました。",
+					message: t("agent.permissionUiUnavailable"),
 				});
 				return;
 			}

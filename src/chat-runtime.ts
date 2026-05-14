@@ -21,6 +21,7 @@ import {
 	setPermissionStatus,
 } from "./chat-message";
 import { loadLatestSessionMessages } from "./session-history";
+import { t } from "./i18n";
 
 /**
  * 会話ランタイム。チャット 1 ターンの送信〜受信〜パーミッション処理を
@@ -150,7 +151,7 @@ export class ChatRuntime {
 	restoreFromLatestSession(cwd: string): number {
 		const restored = loadLatestSessionMessages(cwd);
 		if (!restored) return 0;
-		this.flushPendingPermissions("会話を復元しました。");
+		this.flushPendingPermissions(t("chatRuntime.conversationRestored"));
 		this.messages = restored;
 		this.currentSessionId = null;
 		this.pendingContinue = true;
@@ -257,7 +258,7 @@ export class ChatRuntime {
 						errorMessage = err.message;
 						this.appendStreamingText(
 							assistantMsgId,
-							`\n\n**エラー:** ${err.message}`
+							t("chatRuntime.errorPrefix", err.message)
 						);
 					},
 				}
@@ -266,15 +267,15 @@ export class ChatRuntime {
 			await handle.promise;
 			const canceled = handle.canceled();
 			if (canceled) {
-				this.flushPendingPermissions("ユーザーが実行を中断しました。");
+				this.flushPendingPermissions(t("chatRuntime.runInterrupted"));
 				this.appendStreamingText(
 					assistantMsgId,
-					"\n\n_**[ユーザーが中断しました]**_"
+					t("chatRuntime.userInterruptedInline")
 				);
 			} else {
 				// 自然終了。残った pending（通常は発生しないがフェイルセーフ）
 				// はもう古いので、ここでまとめて Deny で flush しておく。
-				this.flushPendingPermissions("実行終了。");
+				this.flushPendingPermissions(t("chatRuntime.runFinished"));
 			}
 			// 永続履歴（今日/7日/今月）への記録は runOnce 単位で 1 回だけ。
 			// 中断時もそれまでに消費したトークンはアカウントに乗っているので
@@ -339,7 +340,7 @@ export class ChatRuntime {
 		// （Clear ボタンでメーターまで消えないようにユーザーから明確に
 		// 要望があったため）。セッション ID は破棄するので、次のターンは
 		// 新しい claude セッションで開始される。
-		this.flushPendingPermissions("会話をクリアしました。");
+		this.flushPendingPermissions(t("chatRuntime.conversationCleared"));
 		this.messages = [];
 		this.currentSessionId = null;
 		this.pendingContinue = false;
@@ -433,7 +434,7 @@ export class ChatRuntime {
 			// 通常起こらないが、CLI をハングさせないよう fail-closed で拒否しておく。
 			decide({
 				allow: false,
-				message: "アクティブなチャットメッセージがありません。",
+				message: t("chatRuntime.noActiveMessage"),
 			});
 			return;
 		}
@@ -468,7 +469,7 @@ export class ChatRuntime {
 	/** 未解決のパーミッションカードをすべてキャンセルする。CLI に
 	 *  Deny+interrupt を送り、UI 上のステータスを "denied" に更新する。
 	 *  cancel 処理および /clear から呼ばれる。 */
-	private flushPendingPermissions(reason = "実行を中断しました。"): void {
+	private flushPendingPermissions(reason = t("chatRuntime.interruptedDefault")): void {
 		for (const [toolUseId, decide] of this.pendingPermDecisions) {
 			decide({ allow: false, message: reason, interrupt: true });
 			const msg = this.findMessageWithPermission(toolUseId);

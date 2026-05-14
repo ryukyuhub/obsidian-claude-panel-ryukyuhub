@@ -14,6 +14,7 @@ import type {
 	SelectionRef,
 } from "./chat-message";
 import { formatTokens } from "./usage-history";
+import { t } from "./i18n";
 
 /**
  * チャットメッセージの DOM 描画レイヤー。`chat-message.ts` のデータモデルを
@@ -45,7 +46,12 @@ export function renderMessage(
 	const roleRow = host.createDiv({ cls: "claude-panel-msg-role" });
 	roleRow.createSpan({
 		cls: "claude-panel-msg-role-label",
-		text: msg.role === "user" ? "ユーザー" : msg.role === "assistant" ? "アシスタント" : msg.role,
+		text:
+			msg.role === "user"
+				? t("chat.roleUser")
+				: msg.role === "assistant"
+					? t("chat.roleAssistant")
+					: msg.role,
 	});
 	if (msg.role === "user" && msg.thinkingMode && msg.thinkingMode !== "off") {
 		roleRow.createSpan({
@@ -127,10 +133,10 @@ export function renderPermissionCard(
 		cls: "claude-panel-perm-title",
 		text:
 			part.status === "pending"
-				? "ツール実行の承認"
+				? t("chat.permPendingTitle")
 				: part.status === "approved"
-					? "承認済み"
-					: "拒否しました",
+					? t("chat.permApprovedTitle")
+					: t("chat.permDeniedTitle"),
 	});
 	header.createSpan({
 		cls: "claude-panel-perm-tool",
@@ -156,15 +162,15 @@ export function renderPermissionCard(
 		const actions = card.createDiv({ cls: "claude-panel-perm-actions" });
 		const allow = actions.createEl("button", {
 			cls: "claude-panel-perm-allow mod-cta",
-			text: "許可",
+			text: t("chat.permAllow"),
 		});
 		allow.onclick = () => onDecision(part.toolUseId, { allow: true });
 		const deny = actions.createEl("button", {
 			cls: "claude-panel-perm-deny",
-			text: "拒否",
+			text: t("chat.permDeny"),
 		});
 		deny.onclick = () =>
-			onDecision(part.toolUseId, { allow: false, message: "ユーザーが拒否しました。" });
+			onDecision(part.toolUseId, { allow: false, message: t("chat.permUserDenied") });
 	}
 }
 
@@ -340,8 +346,8 @@ function renderSelectionChip(parent: HTMLElement, sel: SelectionRef): void {
 	}
 	const range =
 		sel.lineCount > 1
-			? `L${sel.startLine} · ${sel.lineCount}行`
-			: `L${sel.startLine}`;
+			? t("chat.selRefRangeMulti", sel.startLine, sel.lineCount)
+			: t("chat.selRefRangeSingle", sel.startLine);
 	chip.createSpan({
 		cls: "claude-panel-selref-range",
 		text: range,
@@ -356,22 +362,24 @@ function renderResultFooter(
 	const footer = host.createDiv({ cls: "claude-panel-msg-footer" });
 	const duration =
 		r.durationMs >= 1000
-			? `${(r.durationMs / 1000).toFixed(1)}秒`
-			: `${r.durationMs}ms`;
+			? t("chat.footerDurationSec", (r.durationMs / 1000).toFixed(1))
+			: t("chat.footerDurationMs", r.durationMs);
 	const tokens = usage ? formatTokens(sumUsage(usage)) : null;
 	const tokensText = tokens ? ` · ${tokens} tokens` : "";
 	const cost = r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : "";
-	const text = `完了 · ${duration}${tokensText}${cost}`;
-	footer.setText(text);
+	footer.setText(t("chat.footerComplete", duration, tokensText, cost));
 	if (usage) {
 		// 内訳をホバーで見られるようにする。フッター行は混雑するので
 		// 4 種別の数値はツールチップに退避。
 		footer.setAttr(
 			"title",
-			`入力: ${usage.inputTokens.toLocaleString()}\n` +
-				`出力: ${usage.outputTokens.toLocaleString()}\n` +
-				`キャッシュ作成: ${usage.cacheCreationTokens.toLocaleString()}\n` +
-				`キャッシュ読込: ${usage.cacheReadTokens.toLocaleString()}`
+			t(
+				"chat.footerUsageTooltip",
+				usage.inputTokens.toLocaleString(),
+				usage.outputTokens.toLocaleString(),
+				usage.cacheCreationTokens.toLocaleString(),
+				usage.cacheReadTokens.toLocaleString()
+			)
 		);
 	}
 }
@@ -433,7 +441,7 @@ function renderToolDetails(parent: HTMLElement, toolName: string, input: unknown
 			// 場合だけ「変更 N / M」を残し、どの hunk か識別できるように。
 			renderDiffBlock(
 				parent,
-				edits.length > 1 ? `変更 ${idx + 1} / ${edits.length}` : null,
+				edits.length > 1 ? t("chatTool.changeOfN", idx + 1, edits.length) : null,
 				oldStr,
 				newStr
 			);
@@ -441,11 +449,11 @@ function renderToolDetails(parent: HTMLElement, toolName: string, input: unknown
 		return;
 	}
 	if (toolName === "Write" && typeof i.content === "string") {
-		renderPlainBlock(parent, "書き込む内容", i.content, "new");
+		renderPlainBlock(parent, t("chatTool.writeContent"), i.content, "new");
 		return;
 	}
 	if (toolName === "Bash" && typeof i.command === "string") {
-		renderPlainBlock(parent, "コマンド", i.command);
+		renderPlainBlock(parent, t("chatTool.bashCommand"), i.command);
 		if (typeof i.description === "string" && i.description.length > 0) {
 			parent.createDiv({
 				cls: "claude-panel-perm-reason",
@@ -458,12 +466,12 @@ function renderToolDetails(parent: HTMLElement, toolName: string, input: unknown
 		if (typeof i.cell_id === "string") {
 			parent.createDiv({
 				cls: "claude-panel-perm-reason",
-				text: `セル: ${i.cell_id}`,
+				text: t("chatTool.notebookCell", i.cell_id),
 			});
 		}
 		const oldSrc = typeof i.old_source === "string" ? i.old_source : "";
 		if (oldSrc) renderDiffBlock(parent, null, oldSrc, i.new_source);
-		else renderPlainBlock(parent, "書き込む内容", i.new_source, "new");
+		else renderPlainBlock(parent, t("chatTool.writeContent"), i.new_source, "new");
 		return;
 	}
 }
@@ -667,7 +675,7 @@ function clipDiff(lines: DiffLine[], max: number): DiffLine[] {
 	if (lines.length <= max) return lines;
 	return [
 		...lines.slice(0, max),
-		{ kind: "ellipsis", text: `… 他 ${lines.length - max} 行` },
+		{ kind: "ellipsis", text: t("chatTool.moreLines", lines.length - max) },
 	];
 }
 
@@ -675,7 +683,7 @@ function clipDiff(lines: DiffLine[], max: number): DiffLine[] {
 function clip(text: string, maxLines: number): string {
 	const lines = text.split("\n");
 	if (lines.length <= maxLines) return text;
-	return lines.slice(0, maxLines).join("\n") + `\n… 他 ${lines.length - maxLines} 行`;
+	return lines.slice(0, maxLines).join("\n") + "\n" + t("chatTool.moreLines", lines.length - maxLines);
 }
 
 function basename(p: string): string {

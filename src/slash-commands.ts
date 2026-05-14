@@ -10,6 +10,7 @@ import {
 } from "./settings";
 import { listMcpServers } from "./agent";
 import { diagnoseSessionLookup } from "./session-history";
+import { t } from "./i18n";
 
 /**
  * 入力欄に表示する候補のカテゴリ。バッジの色分けにも使う。
@@ -42,49 +43,49 @@ export interface SlashCommandSpec {
  * ここにも 1 行足す必要がある（CI で照合する仕組みは入れていない）。
  */
 export const SLASH_COMMANDS: SlashCommandSpec[] = [
-	{ name: "/clear", desc: "会話をクリア", category: "local" },
-	{ name: "/continue", desc: "前回セッションを再開（履歴も復元）", category: "local" },
-	{ name: "/help", desc: "コマンド一覧を表示", category: "local" },
-	{ name: "/model", desc: "モデルの表示 / 変更", category: "local" },
-	{ name: "/think", desc: "思考深度の表示 / 変更", category: "local" },
-	{ name: "/mcp", desc: "MCP サーバの状態を表示", category: "local" },
-	{ name: "/usage", desc: "アカウント・使用状況モーダル", category: "local" },
-	{ name: "/cost", desc: "/usage と同じ", category: "local" },
-	{ name: "/account", desc: "/usage と同じ", category: "local" },
-	{ name: "/config", desc: "プラグインの設定タブを開く", category: "local" },
-	{ name: "/compact", desc: "（自動圧縮の説明）", category: "local" },
-	{ name: "/exit", desc: "サイドバーパネルを閉じる", category: "local" },
-	{ name: "/quit", desc: "サイドバーパネルを閉じる", category: "local" },
+	{ name: "/clear", desc: t("slash.desc.clear"), category: "local" },
+	{ name: "/continue", desc: t("slash.desc.continue"), category: "local" },
+	{ name: "/help", desc: t("slash.desc.help"), category: "local" },
+	{ name: "/model", desc: t("slash.desc.model"), category: "local" },
+	{ name: "/think", desc: t("slash.desc.think"), category: "local" },
+	{ name: "/mcp", desc: t("slash.desc.mcp"), category: "local" },
+	{ name: "/usage", desc: t("slash.desc.usage"), category: "local" },
+	{ name: "/cost", desc: t("slash.desc.cost"), category: "local" },
+	{ name: "/account", desc: t("slash.desc.account"), category: "local" },
+	{ name: "/config", desc: t("slash.desc.config"), category: "local" },
+	{ name: "/compact", desc: t("slash.desc.compact"), category: "local" },
+	{ name: "/exit", desc: t("slash.desc.exit"), category: "local" },
+	{ name: "/quit", desc: t("slash.desc.quit"), category: "local" },
 
-	{ name: "/login", desc: "Claude Code にログイン", category: "repl-only" },
-	{ name: "/logout", desc: "ログアウト", category: "repl-only" },
-	{ name: "/agents", desc: "サブエージェント設定", category: "repl-only" },
-	{ name: "/permissions", desc: "ツール許可ルール", category: "repl-only" },
-	{ name: "/doctor", desc: "ヘルスチェック", category: "repl-only" },
-	{ name: "/upgrade", desc: "Claude Code を更新", category: "repl-only" },
+	{ name: "/login", desc: t("slash.desc.login"), category: "repl-only" },
+	{ name: "/logout", desc: t("slash.desc.logout"), category: "repl-only" },
+	{ name: "/agents", desc: t("slash.desc.agents"), category: "repl-only" },
+	{ name: "/permissions", desc: t("slash.desc.permissions"), category: "repl-only" },
+	{ name: "/doctor", desc: t("slash.desc.doctor"), category: "repl-only" },
+	{ name: "/upgrade", desc: t("slash.desc.upgrade"), category: "repl-only" },
 	{
 		name: "/migrate-installer",
-		desc: "インストール方式を移行",
+		desc: t("slash.desc.migrateInstaller"),
 		category: "repl-only",
 	},
-	{ name: "/release-notes", desc: "リリースノート", category: "repl-only" },
-	{ name: "/bug", desc: "バグ報告", category: "repl-only" },
+	{ name: "/release-notes", desc: t("slash.desc.releaseNotes"), category: "repl-only" },
+	{ name: "/bug", desc: t("slash.desc.bug"), category: "repl-only" },
 	{
 		name: "/terminal-setup",
-		desc: "ターミナル統合を設定",
+		desc: t("slash.desc.terminalSetup"),
 		category: "repl-only",
 	},
-	{ name: "/vim", desc: "Vim 風キーバインドを切替", category: "repl-only" },
+	{ name: "/vim", desc: t("slash.desc.vim"), category: "repl-only" },
 
-	{ name: "/init", desc: "CLAUDE.md を生成（CLI に転送）", category: "passthrough" },
+	{ name: "/init", desc: t("slash.desc.init"), category: "passthrough" },
 	{
 		name: "/review",
-		desc: "コードレビュー（CLI に転送）",
+		desc: t("slash.desc.review"),
 		category: "passthrough",
 	},
 	{
 		name: "/pr-comments",
-		desc: "PR コメント取得（CLI に転送）",
+		desc: t("slash.desc.prComments"),
 		category: "passthrough",
 	},
 ];
@@ -141,69 +142,59 @@ export function handleLocalSlashCommand(
 			return true;
 		case "/config":
 			ctx.openPluginSettings();
-			ctx.appendSystemMessage(
-				"プラグインの設定タブを開きました。モデル、Vault パス、CLI 引数などはこちらから変更できます。"
-			);
+			ctx.appendSystemMessage(t("slash.configOpened"));
 			return true;
 		case "/exit":
 		case "/quit":
 			ctx.closeView();
 			return true;
 		case "/login":
-			showTerminalOnlyNote(ctx, "/login", "Claude Code にログインする");
+			showTerminalOnlyNote(ctx, "/login", t("slash.purpose.login"));
 			return true;
 		case "/logout":
-			showTerminalOnlyNote(ctx, "/logout", "Claude Code からログアウトする");
+			showTerminalOnlyNote(ctx, "/logout", t("slash.purpose.logout"));
 			return true;
 		case "/compact":
-			ctx.appendSystemMessage(
-				[
-					"**`/compact` はこのプラグインでは不要です。**",
-					"",
-					"このプラグインは `claude --print --resume` でセッションを継続しており、",
-					"コンテキストウィンドウが埋まると Claude Code 側で自動的に圧縮されます。",
-					"会話を完全にリセットしたい場合は `/clear` を使ってください。",
-				].join("\n")
-			);
+			ctx.appendSystemMessage(t("slash.compactExplain"));
 			return true;
 		case "/agents":
-			showTerminalOnlyNote(ctx, "/agents", "サブエージェント設定を編集する");
+			showTerminalOnlyNote(ctx, "/agents", t("slash.purpose.agents"));
 			return true;
 		case "/permissions":
 			showTerminalOnlyNote(
 				ctx,
 				"/permissions",
-				"ツール許可ルールを編集する"
+				t("slash.purpose.permissions")
 			);
 			return true;
 		case "/doctor":
-			showTerminalOnlyNote(ctx, "/doctor", "Claude Code のヘルスチェック");
+			showTerminalOnlyNote(ctx, "/doctor", t("slash.purpose.doctor"));
 			return true;
 		case "/upgrade":
-			showTerminalOnlyNote(ctx, "/upgrade", "Claude Code を更新する");
+			showTerminalOnlyNote(ctx, "/upgrade", t("slash.purpose.upgrade"));
 			return true;
 		case "/migrate-installer":
 			showTerminalOnlyNote(
 				ctx,
 				"/migrate-installer",
-				"インストール方式を移行する"
+				t("slash.purpose.migrateInstaller")
 			);
 			return true;
 		case "/release-notes":
-			showTerminalOnlyNote(ctx, "/release-notes", "リリースノートを表示");
+			showTerminalOnlyNote(ctx, "/release-notes", t("slash.purpose.releaseNotes"));
 			return true;
 		case "/bug":
-			showTerminalOnlyNote(ctx, "/bug", "Anthropic にバグ報告する");
+			showTerminalOnlyNote(ctx, "/bug", t("slash.purpose.bug"));
 			return true;
 		case "/terminal-setup":
 			showTerminalOnlyNote(
 				ctx,
 				"/terminal-setup",
-				"ターミナル統合を設定する"
+				t("slash.purpose.terminalSetup")
 			);
 			return true;
 		case "/vim":
-			showTerminalOnlyNote(ctx, "/vim", "Vim 風キーバインドを切り替える");
+			showTerminalOnlyNote(ctx, "/vim", t("slash.purpose.vim"));
 			return true;
 		default:
 			return false;
@@ -218,28 +209,24 @@ export function handleLocalSlashCommand(
 function handleContinueCommand(ctx: SlashContext): void {
 	const cwd = ctx.getVaultPath();
 	if (!cwd) {
-		ctx.appendSystemMessage("Vault のパスを解決できません。");
+		ctx.appendSystemMessage(t("slash.vaultPathUnresolved"));
 		return;
 	}
 	const count = ctx.restoreFromLatestSession(cwd);
 	if (count === 0) {
 		const diag = diagnoseSessionLookup(cwd);
 		ctx.appendSystemMessage(
-			[
-				"再開できるセッションが見つかりません。",
-				"",
-				"**診断:**",
-				`- Vault パス: \`${diag.cwd}\``,
-				`- 探索先: \`${diag.encodedDir}\``,
-				`- フォルダ存在: ${diag.exists ? "はい" : "いいえ"}`,
-				`- JSONL ファイル数: ${diag.jsonlCount}`,
-			].join("\n")
+			t(
+				"slash.continue.notFound",
+				diag.cwd,
+				diag.encodedDir,
+				diag.exists,
+				diag.jsonlCount
+			)
 		);
 		return;
 	}
-	ctx.appendSystemMessage(
-		`前回セッションを復元しました（メッセージ ${count} 件）。次の送信で \`--continue\` 付きで再開します。`
-	);
+	ctx.appendSystemMessage(t("slash.continue.restored", count));
 }
 
 function showTerminalOnlyNote(
@@ -247,38 +234,28 @@ function showTerminalOnlyNote(
 	command: string,
 	purpose: string
 ): void {
-	ctx.appendSystemMessage(
-		[
-			`**\`${command}\` はインタラクティブモード（REPL）専用です。**`,
-			"",
-			`${purpose}には、ターミナルを開いて以下を実行してください:`,
-			"",
-			"```",
-			`claude ${command}`,
-			"```",
-		].join("\n")
-	);
+	ctx.appendSystemMessage(t("slash.terminalOnly", command, purpose));
 }
 
 function showHelp(ctx: SlashContext): void {
 	ctx.appendInteractive((c) => {
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: "ローカルコマンド（パネル内で完結）",
+			text: t("slash.help.localTitle"),
 		});
 		const list = c.createEl("ul", { cls: "claude-panel-sys-list" });
 		const items: [string, string][] = [
-			["/clear", "会話をクリア"],
-			["/continue", "前回セッションを再開（UI 履歴も `~/.claude/projects/...jsonl` から復元）"],
-			["/help", "このヘルプを表示"],
-			["/model [id]", "モデルの表示 / 変更"],
-			["/think [mode]", "思考深度の表示 / 変更"],
-			["/mcp", "設定済みの MCP サーバを表示"],
-			["/usage", "アカウント情報とレート制限の使用状況を表示"],
-			["/cost", "/usage と同じ（セッションのコスト・トークンを表示）"],
-			["/config", "プラグインの設定タブを開く"],
-			["/compact", "自動圧縮の説明（このプラグインでは手動操作不要）"],
-			["/exit, /quit", "サイドバーパネルを閉じる"],
+			["/clear", t("slash.help.itemClear")],
+			["/continue", t("slash.help.itemContinue")],
+			["/help", t("slash.help.itemHelp")],
+			["/model [id]", t("slash.help.itemModel")],
+			["/think [mode]", t("slash.help.itemThink")],
+			["/mcp", t("slash.help.itemMcp")],
+			["/usage", t("slash.help.itemUsage")],
+			["/cost", t("slash.help.itemCost")],
+			["/config", t("slash.help.itemConfig")],
+			["/compact", t("slash.help.itemCompact")],
+			["/exit, /quit", t("slash.help.itemExit")],
 		];
 		for (const [name, desc] of items) {
 			const li = list.createEl("li");
@@ -288,20 +265,20 @@ function showHelp(ctx: SlashContext): void {
 
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: "ターミナル案内のみ（REPL 専用コマンド）",
+			text: t("slash.help.replTitle"),
 		});
 		const replList = c.createEl("ul", { cls: "claude-panel-sys-list" });
 		const replItems: [string, string][] = [
-			["/login, /logout", "Claude Code の認証"],
-			["/agents", "サブエージェント設定"],
-			["/permissions", "ツール許可ルール"],
-			["/doctor", "ヘルスチェック"],
-			["/upgrade", "Claude Code 更新"],
-			["/migrate-installer", "インストール方式の移行"],
-			["/release-notes", "リリースノート"],
-			["/bug", "Anthropic にバグ報告"],
-			["/terminal-setup", "ターミナル統合設定"],
-			["/vim", "Vim 風キーバインド"],
+			["/login, /logout", t("slash.help.itemLogin")],
+			["/agents", t("slash.help.itemAgents")],
+			["/permissions", t("slash.help.itemPermissions")],
+			["/doctor", t("slash.help.itemDoctor")],
+			["/upgrade", t("slash.help.itemUpgrade")],
+			["/migrate-installer", t("slash.help.itemMigrateInstaller")],
+			["/release-notes", t("slash.help.itemReleaseNotes")],
+			["/bug", t("slash.help.itemBug")],
+			["/terminal-setup", t("slash.help.itemTerminalSetup")],
+			["/vim", t("slash.help.itemVim")],
 		];
 		for (const [name, desc] of replItems) {
 			const li = replList.createEl("li");
@@ -311,14 +288,10 @@ function showHelp(ctx: SlashContext): void {
 
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: "パススルー（Claude Code CLI に転送）",
+			text: t("slash.help.passthroughTitle"),
 		});
 		const note = c.createEl("div", { cls: "claude-panel-sys-note" });
-		note.setText(
-			"上記以外の /コマンド（例: /init, /review, /pr-comments など）はそのまま CLI に --print モードで渡されます。" +
-				".claude/commands/*.md で定義したユーザーコマンドも動作します。" +
-				"注意: TTY を要求する REPL 専用コマンドは print モードでは動かない場合があります。"
-		);
+		note.setText(t("slash.help.passthroughNote"));
 	});
 }
 
@@ -327,15 +300,13 @@ function handleModelCommand(ctx: SlashContext, arg: string): void {
 		ctx.plugin.settings.model = arg;
 		void ctx.plugin.saveSettings();
 		ctx.refreshControls();
-		ctx.appendSystemMessage(
-			`モデルを **${formatModelLabel(arg)}** に設定しました。`
-		);
+		ctx.appendSystemMessage(t("slash.model.set", formatModelLabel(arg)));
 		return;
 	}
 	ctx.appendInteractive((c) => {
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: `現在のモデル: ${formatModelLabel(ctx.plugin.settings.model)}`,
+			text: t("slash.model.current", formatModelLabel(ctx.plugin.settings.model)),
 		});
 		const choices = c.createDiv({ cls: "claude-panel-sys-choices" });
 		for (const m of MODEL_PRESETS) {
@@ -349,9 +320,7 @@ function handleModelCommand(ctx: SlashContext, arg: string): void {
 				ctx.plugin.settings.model = m;
 				await ctx.plugin.saveSettings();
 				ctx.refreshControls();
-				ctx.appendSystemMessage(
-					`モデルを **${formatModelLabel(m)}** に設定しました。`
-				);
+				ctx.appendSystemMessage(t("slash.model.set", formatModelLabel(m)));
 			};
 		}
 	});
@@ -363,20 +332,17 @@ function handleThinkCommand(ctx: SlashContext, arg: string): void {
 			ctx.plugin.settings.thinkingMode = arg as ThinkingMode;
 			void ctx.plugin.saveSettings();
 			ctx.refreshControls();
-			ctx.appendSystemMessage(`思考モードを **${arg}** に設定しました。`);
+			ctx.appendSystemMessage(t("slash.think.set", arg));
 		} else {
-			ctx.appendSystemMessage(
-				`不明な思考モード \`${arg}\`。有効な値: ${THINKING_MODES.map(
-					(v) => `\`${v}\``
-				).join(", ")}`
-			);
+			const valid = THINKING_MODES.map((v) => `\`${v}\``).join(", ");
+			ctx.appendSystemMessage(t("slash.think.unknown", arg, valid));
 		}
 		return;
 	}
 	ctx.appendInteractive((c) => {
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: `現在の思考モード: ${ctx.plugin.settings.thinkingMode}`,
+			text: t("slash.think.current", ctx.plugin.settings.thinkingMode),
 		});
 		const choices = c.createDiv({ cls: "claude-panel-sys-choices" });
 		for (const mode of THINKING_MODES) {
@@ -390,7 +356,7 @@ function handleThinkCommand(ctx: SlashContext, arg: string): void {
 				ctx.plugin.settings.thinkingMode = mode;
 				await ctx.plugin.saveSettings();
 				ctx.refreshControls();
-				ctx.appendSystemMessage(`思考モードを **${mode}** に設定しました。`);
+				ctx.appendSystemMessage(t("slash.think.set", mode));
 			};
 		}
 	});
@@ -464,22 +430,22 @@ function lookupScope(name: string, scopes: ScopeMap): McpScope {
 function scopeTooltip(scope: McpScope): string {
 	switch (scope) {
 		case "project":
-			return "<vault>/.mcp.json から（この Vault を編集するすべての人と共有）";
+			return t("slash.mcp.scopeTooltipProject");
 		case "local":
-			return "~/.claude.json の projects.<vault>.mcpServers から（Vault ごと・このマシン限定）";
+			return t("slash.mcp.scopeTooltipLocal");
 		case "user":
-			return "~/.claude.json の mcpServers から（グローバル・このマシン限定）";
+			return t("slash.mcp.scopeTooltipUser");
 		case "claude.ai":
-			return "Claude.ai アカウントが管理（自動提供）";
+			return t("slash.mcp.scopeTooltipClaudeAi");
 		default:
-			return "ローカル設定ファイル内に出所が見つかりません";
+			return t("slash.mcp.scopeTooltipUnknown");
 	}
 }
 
 function showMcpStatus(ctx: SlashContext): void {
 	const cwd = ctx.getVaultPath();
 	if (!cwd) {
-		ctx.appendSystemMessage("Vault のパスを解決できません。");
+		ctx.appendSystemMessage(t("slash.vaultPathUnresolved"));
 		return;
 	}
 
@@ -490,12 +456,12 @@ function showMcpStatus(ctx: SlashContext): void {
 	ctx.appendInteractive((c) => {
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: "MCP サーバ（ライブ）",
+			text: t("slash.mcp.title"),
 		});
 		resultArea = c.createDiv({ cls: "claude-panel-sys-block" });
 		resultArea.createEl("div", {
 			cls: "claude-panel-sys-note",
-			text: "`claude mcp list` で接続確認中…",
+			text: t("slash.mcp.checking"),
 		});
 	});
 
@@ -516,7 +482,7 @@ function showMcpStatus(ctx: SlashContext): void {
 			resultArea.empty();
 			resultArea.createEl("div", {
 				cls: "claude-panel-sys-note",
-				text: `エラー: ${(err as Error).message}`,
+				text: t("slash.mcp.error", (err as Error).message),
 			});
 		});
 }
@@ -558,7 +524,7 @@ function renderMcpListOutput(
 	if (!trimmedOut && !trimmedErr) {
 		host.createEl("div", {
 			cls: "claude-panel-sys-note",
-			text: "(`claude mcp list` からの出力はありません)",
+			text: t("slash.mcp.emptyOutput"),
 		});
 		return;
 	}
@@ -581,7 +547,11 @@ function renderMcpListOutput(
 		host.insertBefore(
 			Object.assign(document.createElement("div"), {
 				className: "claude-panel-sys-note",
-				textContent: `${okCount} / ${parsed.length} 接続中`,
+				textContent: t(
+					"slash.mcp.connectedCount",
+					okCount,
+					parsed.length
+				),
 			}),
 			list
 		);
@@ -634,7 +604,7 @@ function renderMcpListOutput(
 	if (exitCode !== 0) {
 		host.createEl("div", {
 			cls: "claude-panel-sys-note",
-			text: `(終了コード ${exitCode})`,
+			text: t("slash.mcp.exitCode", exitCode),
 		});
 	}
 }

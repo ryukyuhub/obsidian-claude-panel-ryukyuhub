@@ -3,6 +3,7 @@ import {
 	type SlashCategory,
 	type SlashCommandSpec,
 } from "./slash-commands";
+import { t } from "./i18n";
 
 /**
  * プロンプト textarea の上に浮かぶスラッシュコマンド候補ポップアップ。
@@ -190,14 +191,14 @@ export class SlashSuggest {
 function catLabel(cat: SlashCategory): string {
 	switch (cat) {
 		case "local":
-			return "ローカル";
+			return t("slash.category.local");
 		case "repl-only":
-			return "REPL";
+			return t("slash.category.replOnly");
 		case "passthrough":
-			return "CLI";
+			return t("slash.category.passthrough");
 		case "skill":
-			return "スキル";
+			return t("slash.category.skill");
 		case "user-command":
-			return "コマンド";
+			return t("slash.category.userCommand");
 	}
 }

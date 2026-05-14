@@ -36,6 +36,7 @@ import {
 	type MessageUsage,
 } from "./chat-message";
 import { renderMessage, renderToolPill } from "./chat-message-render";
+import { t } from "./i18n";
 
 
 export const VIEW_TYPE_CLAUDE_PANEL = "claude-panel-view";
@@ -85,7 +86,7 @@ export class ClaudePanelView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "Claude パネル";
+		return t("view.displayText");
 	}
 
 	getIcon(): string {
@@ -273,14 +274,19 @@ export class ClaudePanelView extends ItemView {
 		this.plugin.settings.model = next;
 		void this.plugin.saveSettings();
 		if (this.modelSelect) this.modelSelect.value = next;
-		new Notice(`モデル: ${formatModelLabel(next)}`);
+		new Notice(t("view.modelChangedNotice", formatModelLabel(next)));
 	}
 	commandToggleIncludeActive(): void {
 		const include = this.composer.toggleIncludeActive();
 		const target = this.composer.getActiveTargetLabel();
-		const state = include ? "含める" : "除外";
-		const label = target ? `「${target}」を` : "アクティブを";
-		new Notice(`${label}${state}`);
+		const state = include
+			? t("view.includeStateIncluded")
+			: t("view.includeStateExcluded");
+		new Notice(
+			target
+				? t("view.toggleActiveNoticeWithTarget", target, state)
+				: t("view.toggleActiveNoticeDefault", state)
+		);
 	}
 
 	// ============================================================
@@ -289,7 +295,7 @@ export class ClaudePanelView extends ItemView {
 
 	private renderHeader(root: HTMLElement): void {
 		const header = root.createDiv({ cls: "claude-panel-header" });
-		header.createEl("h3", { text: "Claude パネル" });
+		header.createEl("h3", { text: t("view.headerTitle") });
 
 		const meterItem = header.createDiv({
 			cls: "claude-panel-meter-item",
@@ -299,14 +305,14 @@ export class ClaudePanelView extends ItemView {
 		});
 		meterItem.createDiv({
 			cls: "claude-panel-meter-label",
-			text: "コンテキスト",
+			text: t("view.meterLabelContext"),
 		});
 		this.contextMeter = new ContextMeter(meterHost);
 		this.contextMeter.update(this.runtime?.getLastUsage() ?? null);
 
 		const accountBtn = header.createEl("button", {
 			cls: "claude-panel-icon-btn claude-panel-account-btn",
-			attr: { "aria-label": "アカウントと使用状況" },
+			attr: { "aria-label": t("view.accountBtnAria") },
 		});
 		setIcon(accountBtn, "user");
 		accountBtn.onclick = () =>
@@ -317,7 +323,7 @@ export class ClaudePanelView extends ItemView {
 			);
 
 		const clearBtn = header.createEl("button", {
-			text: "クリア",
+			text: t("view.clearBtn"),
 			cls: "claude-panel-clear",
 		});
 		clearBtn.onclick = () => this.clearConversation();
@@ -399,13 +405,13 @@ export class ClaudePanelView extends ItemView {
 
 		const actions = composer.createDiv({ cls: "claude-panel-actions" });
 		const attachBtn = actions.createEl("button", {
-			text: "添付",
+			text: t("view.attachBtn"),
 			cls: "claude-panel-attach",
 		});
 		attachBtn.onclick = () => void this.composer.openAttachPicker();
 
 		this.sendBtn = actions.createEl("button", {
-			text: "送信",
+			text: t("view.sendBtn"),
 			cls: "mod-cta claude-panel-send",
 		});
 		this.sendBtn.onclick = () => {
@@ -421,7 +427,7 @@ export class ClaudePanelView extends ItemView {
 
 		row.createSpan({
 			cls: "claude-panel-control-label",
-			text: "モデル",
+			text: t("view.controlLabelModel"),
 		});
 		const modelSelect = row.createEl("select", {
 			cls: "claude-panel-control-select",
@@ -449,7 +455,7 @@ export class ClaudePanelView extends ItemView {
 
 		row.createSpan({
 			cls: "claude-panel-control-label",
-			text: "思考",
+			text: t("view.controlLabelThinking"),
 		});
 		const thinkSelect = row.createEl("select", {
 			cls: "claude-panel-control-select",
@@ -466,13 +472,12 @@ export class ClaudePanelView extends ItemView {
 
 		row.createSpan({
 			cls: "claude-panel-control-label",
-			text: "Effort",
+			text: t("view.controlLabelEffort"),
 		});
 		const effortSelect = row.createEl("select", {
 			cls: "claude-panel-control-select",
 			attr: {
-				title:
-					"対応モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度。auto は CLI / ~/.claude/settings.json の既定値に委譲。Haiku は非対応のため指定は無視されます。",
+				title: t("view.effortTooltip"),
 			},
 		});
 		for (const e of EFFORT_LEVELS) {
@@ -486,7 +491,7 @@ export class ClaudePanelView extends ItemView {
 
 		row.createSpan({
 			cls: "claude-panel-control-label",
-			text: "承認",
+			text: t("view.controlLabelPermission"),
 		});
 		const permSelect = row.createEl("select", {
 			cls: "claude-panel-control-select",
@@ -568,44 +573,42 @@ export class ClaudePanelView extends ItemView {
 		const card = host.createDiv({ cls: "claude-panel-empty" });
 		card.createDiv({
 			cls: "claude-panel-empty-title",
-			text: "Claude パネルへようこそ",
+			text: t("view.emptyTitle"),
 		});
 		const body = card.createDiv({ cls: "claude-panel-empty-body" });
-		body.setText("セットアップを確認しています…");
+		body.setText(t("view.emptyCheckingSetup"));
 
 		void checkClaudeCli(this.plugin.settings.claudePath).then((status) => {
 			body.empty();
 			if (status.installed && status.loggedIn) {
-				body.setText(
-					"下の入力欄からメッセージを送信してください。`/help` でローカルコマンド一覧を表示できます。"
-				);
+				body.setText(t("view.emptyReady"));
 				return;
 			}
 			body.createDiv({
 				cls: "claude-panel-empty-warn",
 				text: !status.installed
-					? "Claude CLI が見つかりません。"
-					: "Claude CLI へのログインが必要です。",
+					? t("view.emptyCliMissing")
+					: t("view.emptyLoginRequired"),
 			});
 			const list = body.createEl("ol", { cls: "claude-panel-empty-steps" });
 			if (!status.installed) {
 				const step1 = list.createEl("li");
-				step1.createSpan({ text: "ターミナルで次を実行: " });
+				step1.createSpan({ text: t("view.emptyStepRunInTerminal") });
 				step1.createEl("code", {
 					text: "npm install -g @anthropic-ai/claude-code",
 				});
 				const step2 = list.createEl("li");
-				step2.createSpan({ text: "続けてログイン: " });
+				step2.createSpan({ text: t("view.emptyStepThenLogin") });
 				step2.createEl("code", { text: "claude /login" });
 			} else {
 				const step = list.createEl("li");
-				step.createSpan({ text: "ターミナルで次を実行: " });
+				step.createSpan({ text: t("view.emptyStepRunInTerminal") });
 				step.createEl("code", { text: "claude /login" });
 			}
 			const actions = body.createDiv({ cls: "claude-panel-empty-actions" });
 			const settingsBtn = actions.createEl("button", {
 				cls: "mod-cta",
-				text: "設定を開く",
+				text: t("view.emptyOpenSettings"),
 			});
 			settingsBtn.onclick = () => {
 				const setting = (this.app as any).setting;
@@ -613,7 +616,7 @@ export class ClaudePanelView extends ItemView {
 				setting?.openTabById?.(this.plugin.manifest.id);
 			};
 			const recheckBtn = actions.createEl("button", {
-				text: "再チェック",
+				text: t("view.emptyRecheck"),
 			});
 			recheckBtn.onclick = () => {
 				this.renderMessages();
@@ -681,11 +684,11 @@ export class ClaudePanelView extends ItemView {
 		if (busy) {
 			this.sendBtn.removeClass("mod-cta");
 			this.sendBtn.addClass("mod-warning");
-			this.sendBtn.setText("停止 (Esc)");
+			this.sendBtn.setText(t("view.stopBtn"));
 		} else {
 			this.sendBtn.removeClass("mod-warning");
 			this.sendBtn.addClass("mod-cta");
-			this.sendBtn.setText("送信");
+			this.sendBtn.setText(t("view.sendBtn"));
 		}
 		this.sendBtn.disabled = false;
 	}
@@ -781,7 +784,7 @@ export class ClaudePanelView extends ItemView {
 
 		const cwd = this.getVaultPath();
 		if (!cwd) {
-			new Notice("Vault のパスを解決できません（デスクトップ版のみ対応）。");
+			new Notice(t("view.vaultPathUnavailable"));
 			return;
 		}
 

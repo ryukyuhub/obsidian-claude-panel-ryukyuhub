@@ -16,6 +16,7 @@ Claude Panel adds a right-sidebar chat panel powered by [Claude Code](https://do
 - Account & usage panel — Claude plan, organization, rate-limit consumption (5h / 7d / Sonnet) in real time
 - Slash commands: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
 - Project-level MCP servers: drop a `.mcp.json` at the vault root and it is loaded automatically
+- UI follows Obsidian's language setting (English / 日本語)
 
 ## Installation
 
@@ -44,6 +45,7 @@ Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.
 - アカウント＆使用状況パネル — Claude プラン、組織、レートリミット消費（5時間／7日／Sonnet）をリアルタイム表示
 - スラッシュコマンド: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
 - プロジェクトレベルの MCP サーバー: Vault ルートに `.mcp.json` を置けば自動で読み込まれます
+- UI 言語は Obsidian の設定（English / 日本語）に追従
 
 ## インストール
 

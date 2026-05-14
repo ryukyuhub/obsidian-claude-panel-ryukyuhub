@@ -15,6 +15,7 @@ import {
 	type UsageBucket,
 	type UsageHistory,
 } from "./usage-history";
+import { t } from "./i18n";
 
 /**
  * モーダルを開いた時に「キャッシュ済みデータをそのまま使ってよい」と
@@ -48,7 +49,7 @@ export class AccountUsageModal extends Modal {
 		modalEl.addClass("claude-panel-account-modal");
 		contentEl.empty();
 		contentEl.createEl("h3", {
-			text: "アカウントと使用状況",
+			text: t("account.modalTitle"),
 			cls: "claude-panel-account-title",
 		});
 		this.bodyEl = contentEl.createDiv({
@@ -66,7 +67,7 @@ export class AccountUsageModal extends Modal {
 		this.bodyEl.empty();
 		this.bodyEl.createDiv({
 			cls: "claude-panel-account-loading",
-			text: "読み込み中…",
+			text: t("account.loading"),
 		});
 	}
 
@@ -123,7 +124,7 @@ export class AccountUsageModal extends Modal {
 		});
 		accountSection.createDiv({
 			cls: "claude-panel-account-section-label",
-			text: "アカウント",
+			text: t("account.sectionAccount"),
 		});
 		if (authResult.status === "fulfilled" && authResult.value.loggedIn) {
 			renderAuthRows(accountSection, authResult.value);
@@ -133,8 +134,8 @@ export class AccountUsageModal extends Modal {
 			});
 			note.setText(
 				authResult.status === "rejected"
-					? `認証ステータスを取得できません: ${authResult.reason?.message ?? authResult.reason}`
-					: "サインインしていません。ターミナルで `claude /login` を実行してください。"
+					? t("account.authFetchFailed", authResult.reason?.message ?? authResult.reason)
+					: t("account.notLoggedIn")
 			);
 		}
 
@@ -144,7 +145,7 @@ export class AccountUsageModal extends Modal {
 		});
 		usageSection.createDiv({
 			cls: "claude-panel-account-section-label",
-			text: "使用状況",
+			text: t("account.sectionUsage"),
 		});
 		if (usageResult.status === "fulfilled") {
 			const value = usageResult.value;
@@ -156,22 +157,20 @@ export class AccountUsageModal extends Modal {
 					cls: "claude-panel-account-note",
 				});
 				note.setText(
-					`${formatCacheAge(value.fetchedAt)} のキャッシュを表示しています。`
+					t("account.cacheNote", formatCacheAge(value.fetchedAt))
 				);
 			} else {
 				const note = usageSection.createDiv({
 					cls: "claude-panel-account-note",
 				});
-				note.setText(
-					"レート制限中のため最新の使用状況を取得できませんでした。しばらくしてから「更新」をクリックしてください。"
-				);
+				note.setText(t("account.rateLimitedNote"));
 			}
 		} else {
 			const note = usageSection.createDiv({
 				cls: "claude-panel-account-note",
 			});
 			note.setText(
-				`使用状況を取得できません: ${usageResult.reason?.message ?? usageResult.reason}`
+				t("account.usageFetchFailed", usageResult.reason?.message ?? usageResult.reason)
 			);
 		}
 
@@ -182,7 +181,7 @@ export class AccountUsageModal extends Modal {
 			});
 			histSection.createDiv({
 				cls: "claude-panel-account-section-label",
-				text: "ローカル累計（このプラグインが記録した分）",
+				text: t("account.sectionLocalTotal"),
 			});
 			renderHistoryRows(histSection, this.history);
 		}
@@ -192,21 +191,21 @@ export class AccountUsageModal extends Modal {
 			cls: "claude-panel-account-footer",
 		});
 		const link = footer.createEl("a", {
-			text: "claude.ai で使用状況を管理",
+			text: t("account.manageOnClaudeAi"),
 			href: "https://claude.ai/settings/usage",
 		});
 		link.setAttr("target", "_blank");
 		link.setAttr("rel", "noopener");
 
 		const refreshBtn = footer.createEl("button", {
-			text: "更新",
+			text: t("account.refresh"),
 			cls: "claude-panel-account-refresh",
 		});
 		// バックオフ中は「更新」を無効化。叩いても直ちに 429 を返すだけで、
 		// API への余計な負荷にもユーザの混乱の元にもなる。
 		if (rateLimited) {
 			refreshBtn.disabled = true;
-			refreshBtn.title = "レート制限中のため更新できません";
+			refreshBtn.title = t("account.refreshDisabledRateLimited");
 		}
 		refreshBtn.onclick = () => {
 			this.renderLoading();
@@ -225,11 +224,11 @@ function isUsageData(v: UsageData | UsageFallback): v is UsageData {
 
 function formatCacheAge(fetchedAt: number): string {
 	const diff = Date.now() - fetchedAt;
-	if (diff < 60_000) return "1 分未満前";
+	if (diff < 60_000) return t("account.cacheAgeLessThanMinute");
 	const minutes = Math.floor(diff / 60_000);
-	if (minutes < 60) return `${minutes} 分前`;
+	if (minutes < 60) return t("account.cacheAgeMinutes", minutes);
 	const hours = Math.floor(minutes / 60);
-	return `${hours} 時間前`;
+	return t("account.cacheAgeHours", hours);
 }
 
 export function openAccountUsageModal(
@@ -241,7 +240,7 @@ export function openAccountUsageModal(
 		new AccountUsageModal(app, settings, history).open();
 	} catch (err) {
 		new Notice(
-			`「アカウントと使用状況」を開けません: ${(err as Error).message}`
+			t("account.openModalFailed", (err as Error).message)
 		);
 	}
 }
@@ -249,10 +248,10 @@ export function openAccountUsageModal(
 function renderAuthRows(host: HTMLElement, status: AuthStatus): void {
 	const grid = host.createDiv({ cls: "claude-panel-account-grid" });
 	const rows: [string, string | undefined][] = [
-		["認証方式", formatAuthMethod(status.authMethod)],
-		["メール", status.email],
-		["組織", status.orgName],
-		["プラン", formatPlan(status.subscriptionType)],
+		[t("account.rowAuthMethod"), formatAuthMethod(status.authMethod)],
+		[t("account.rowEmail"), status.email],
+		[t("account.rowOrg"), status.orgName],
+		[t("account.rowPlan"), formatPlan(status.subscriptionType)],
 	];
 	for (const [label, value] of rows) {
 		if (!value) continue;
@@ -278,8 +277,8 @@ function renderHistoryRows(host: HTMLElement, history: UsageHistory): void {
 	const accountKey = history.getCurrentAccountKey();
 	const grid = host.createDiv({ cls: "claude-panel-account-grid" });
 	const rows: [string, UsageBucket][] = [
-		["今日", agg.today],
-		["今月", agg.thisMonth],
+		[t("account.historyToday"), agg.today],
+		[t("account.historyThisMonth"), agg.thisMonth],
 	];
 	for (const [label, bucket] of rows) {
 		const row = grid.createDiv({ cls: "claude-panel-account-row" });
@@ -294,11 +293,14 @@ function renderHistoryRows(host: HTMLElement, history: UsageHistory): void {
 		if (bucket.count > 0) {
 			value.setAttr(
 				"title",
-				`${bucket.count} ターン分\n` +
-					`入力: ${bucket.in.toLocaleString()}\n` +
-					`出力: ${bucket.out.toLocaleString()}\n` +
-					`キャッシュ作成: ${bucket.cacheCreate.toLocaleString()}\n` +
-					`キャッシュ読込: ${bucket.cacheRead.toLocaleString()}`
+				t(
+					"account.historyTooltip",
+					bucket.count,
+					bucket.in.toLocaleString(),
+					bucket.out.toLocaleString(),
+					bucket.cacheCreate.toLocaleString(),
+					bucket.cacheRead.toLocaleString()
+				)
 			);
 		}
 	}
@@ -306,21 +308,21 @@ function renderHistoryRows(host: HTMLElement, history: UsageHistory): void {
 		// アカウント解決中。集計値は全レコード（複数アカウント混在の可能性）。
 		host.createDiv({
 			cls: "claude-panel-account-note",
-			text: "アカウント情報を解決中… 表示値は全アカウント合算の可能性があります。",
+			text: t("account.historyResolving"),
 		});
 	}
 	host.createDiv({
 		cls: "claude-panel-account-note",
-		text: "このプラグインから送ったプロンプト分のみ。Claude.ai Web や他 CLI セッションは含まれません。7日間の正確な値は上の「週間（7日）」を参照してください。",
+		text: t("account.historyFootnote"),
 	});
 }
 
 function renderUsageRows(host: HTMLElement, data: UsageData): void {
 	const items: [string, UsageWindow | null | undefined][] = [
-		["セッション（5時間）", data.five_hour],
-		["週間（7日）", data.seven_day],
-		["週間 Opus", data.seven_day_opus],
-		["週間 Sonnet", data.seven_day_sonnet],
+		[t("account.windowFiveHour"), data.five_hour],
+		[t("account.windowSevenDay"), data.seven_day],
+		[t("account.windowSevenDayOpus"), data.seven_day_opus],
+		[t("account.windowSevenDaySonnet"), data.seven_day_sonnet],
 	];
 	let rendered = 0;
 	let anyMissingUtil = false;
@@ -333,7 +335,7 @@ function renderUsageRows(host: HTMLElement, data: UsageData): void {
 	if (rendered === 0) {
 		host.createDiv({
 			cls: "claude-panel-account-note",
-			text: "使用状況データはありません。",
+			text: t("account.noUsageData"),
 		});
 	}
 	if (anyMissingUtil) {
@@ -348,13 +350,9 @@ function renderUsageRows(host: HTMLElement, data: UsageData): void {
 				1,
 				Math.ceil((backoffEnd - Date.now()) / 60_000)
 			);
-			note.setText(
-				`使用率（%）は Anthropic API のレート制限中のため取得できません。あと ${min} 分後に「更新」をクリックしてください。`
-			);
+			note.setText(t("account.utilizationRateLimited", min));
 		} else {
-			note.setText(
-				"使用率（%）は API から取得します。「更新」をクリックすると最新値を取りにいきます。"
-			);
+			note.setText(t("account.utilizationFetchHint"));
 		}
 	}
 }
@@ -377,7 +375,7 @@ function renderUsageRow(
 			cls: "claude-panel-usage-pct",
 			text: "—",
 			attr: {
-				title: "API 取得待ち（チャットを 1 回送ると更新されます）",
+				title: t("account.utilizationPending"),
 			},
 		});
 		const reset = formatResetsIn(win.resets_at);
@@ -446,11 +444,11 @@ function formatResetsIn(iso: string | null | undefined): string | null {
 	const reset = Date.parse(iso);
 	if (!Number.isFinite(reset)) return null;
 	const ms = reset - Date.now();
-	if (ms <= 0) return "まもなくリセット";
+	if (ms <= 0) return t("account.resetSoon");
 	const minutes = Math.floor(ms / 60_000);
-	if (minutes < 60) return `${minutes} 分後にリセット`;
+	if (minutes < 60) return t("account.resetInMinutes", minutes);
 	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours} 時間後にリセット`;
+	if (hours < 24) return t("account.resetInHours", hours);
 	const days = Math.floor(hours / 24);
-	return `${days} 日後にリセット`;
+	return t("account.resetInDays", days);
 }

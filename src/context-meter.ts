@@ -1,4 +1,5 @@
 import type { MessageUsage } from "./chat-message";
+import { t } from "./i18n";
 
 /** 暫定でハードコード。現行 Claude 4.x モデルはすべて 200k がデフォルト。 */
 const CONTEXT_WINDOW_TOKENS = 200_000;
@@ -20,8 +21,16 @@ export class ContextMeter {
 		this.renderDonut(used / cap);
 
 		const tooltip = usage
-			? `コンテキスト: ${used.toLocaleString()} / ${cap.toLocaleString()} (${((used / cap) * 100).toFixed(0)}%)\n入力 ${usage.inputTokens.toLocaleString()} · キャッシュ ${(usage.cacheCreationTokens + usage.cacheReadTokens).toLocaleString()} · 出力 ${usage.outputTokens.toLocaleString()}`
-			: "コンテキスト — 使用データはまだありません";
+			? t(
+					"contextMeter.tooltip",
+					used.toLocaleString(),
+					cap.toLocaleString(),
+					((used / cap) * 100).toFixed(0),
+					usage.inputTokens.toLocaleString(),
+					(usage.cacheCreationTokens + usage.cacheReadTokens).toLocaleString(),
+					usage.outputTokens.toLocaleString()
+				)
+			: t("contextMeter.empty");
 		// aria-label のみを使う（Obsidian がツールチップとしてレンダリングする）。
 		// 同時に `title` も設定すると、Obsidian のツールチップとブラウザ標準の
 		// title 吹き出しが二重に表示されてしまう。

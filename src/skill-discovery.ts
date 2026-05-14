@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import type { SlashCategory, SlashCommandSpec } from "./slash-commands";
+import { t } from "./i18n";
 
 /**
  * `/` 入力時のサジェスト候補に混ぜる、動的に発見されるコマンド群を返す。
@@ -135,7 +136,7 @@ function scanCommandDir(
 		const name = (meta.name || fallbackName).trim();
 		out.push({
 			name: "/" + name,
-			desc: meta.description || "(ユーザーコマンド)",
+			desc: meta.description || t("skill.userCommandFallback"),
 			category,
 		});
 	}
@@ -151,7 +152,7 @@ function skillSpec(
 	const name = (meta.name || fallbackName).trim();
 	return {
 		name: "/" + name,
-		desc: meta.description || "(スキル)",
+		desc: meta.description || t("skill.skillFallback"),
 		category,
 	};
 }

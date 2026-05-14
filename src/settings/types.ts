@@ -80,6 +80,16 @@ export const NOTIFY_ON_COMPLETE_OPTIONS: NotifyOnComplete[] = [
 	"both",
 ];
 
+/**
+ * パネル UI の言語。`auto` は Obsidian 本体の言語設定
+ * (`localStorage.getItem("language")`) に追従する。Obsidian 全体は日本語に
+ * しつつパネルだけ英語、といった切替も可能にするため明示的な override も
+ * 提供する。
+ */
+export type UiLanguage = "auto" | "ja" | "en";
+
+export const UI_LANGUAGES: UiLanguage[] = ["auto", "ja", "en"];
+
 export interface ClaudePanelSettings {
 	claudePath: string;
 	model: string;
@@ -110,6 +120,8 @@ export interface ClaudePanelSettings {
 	 *  送信ボタンやモデル選択が隠れることがある。0 では現状の見た目を
 	 *  維持し、必要な人だけ値を上げて余白を確保できるようにする。 */
 	composerBottomPadding: number;
+	/** パネル UI の表示言語。`auto` で Obsidian の言語設定に追従する。 */
+	language: UiLanguage;
 }
 
 /** 通知音量スライダーの上下限（パーセント）。 */
@@ -143,4 +155,5 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	notifySoundVolume: 70,
 	notifySoundPath: "",
 	composerBottomPadding: 0,
+	language: "auto",
 };

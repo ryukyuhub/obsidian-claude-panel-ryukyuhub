@@ -5,6 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import type { ClaudePanelSettings } from "./settings";
 import { resolveClaudePath } from "./cli-resolver";
+import { t } from "./i18n";
 
 /**
  * Anthropic / Claude Code への API 呼び出し層。UI には依存しない純粋なデータ取得。
@@ -64,11 +65,7 @@ export function fetchAuthStatus(
 	return new Promise((resolve, reject) => {
 		const claudePath = resolveClaudePath(settings.claudePath);
 		if (!claudePath) {
-			reject(
-				new Error(
-					"`claude` CLI が見つかりません。プラグイン設定で絶対パスを指定してください。"
-				)
-			);
+			reject(new Error(t("account.errClaudeCliNotFound")));
 			return;
 		}
 		execFile(
@@ -86,7 +83,7 @@ export function fetchAuthStatus(
 				} catch (e) {
 					reject(
 						new Error(
-							`認証ステータスの JSON を解析できません: ${(e as Error).message}`
+							t("account.errAuthJsonParse", (e as Error).message)
 						)
 					);
 				}
@@ -347,9 +344,7 @@ export async function fetchUsage(): Promise<UsageData> {
 	}
 	const token = await readOAuthToken();
 	if (!token) {
-		throw new Error(
-			"Claude Code にサインインしていません。ターミナルで `claude /login` を実行してください。"
-		);
+		throw new Error(t("account.errNotLoggedInForUsage"));
 	}
 	// `anthropic-beta: oauth-2025-04-20` ヘッダーが必須。これがないと
 	// 有効な OAuth トークンを送っても 401 が返る（CLI 本体もこの
@@ -435,18 +430,18 @@ function parseRetryAfter(res: { headers?: Record<string, string>; text: string }
 
 function humanizeUsageError(status: number, body: string): string {
 	if (status === 401 || status === 403) {
-		return `Anthropic API が HTTP ${status} を返しました。OAuth トークンの有効期限が切れている可能性があります — ターミナルで \`claude /login\` を実行して更新してください。`;
+		return t("account.errUsageAuthHttp", status);
 	}
 	if (status === 429) {
 		// レスポンスボディに retry-after のヒントがあれば取り出して表示する。
 		const retry = extractRetryHint(body);
-		const suffix = retry ? ` ${retry}` : " 少し待ってから「更新」をクリックしてください。";
-		return `Anthropic API のレート制限に達しました (HTTP 429)。${suffix}`;
+		const suffix = retry ? ` ${retry}` : t("account.errUsageRateLimitedHintDefault");
+		return t("account.errUsageRateLimited", suffix);
 	}
 	if (status >= 500) {
-		return `Anthropic API のサーバエラー (HTTP ${status})。しばらくしてから再試行してください。`;
+		return t("account.errUsageServer", status);
 	}
-	return `Anthropic API が HTTP ${status} を返しました。`;
+	return t("account.errUsageGeneric", status);
 }
 
 function extractRetryHint(body: string): string | null {

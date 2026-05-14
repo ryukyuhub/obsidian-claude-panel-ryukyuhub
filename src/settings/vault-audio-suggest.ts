@@ -1,4 +1,5 @@
 import { App, FuzzySuggestModal, type DataAdapter } from "obsidian";
+import { t } from "../i18n";
 
 /** Vault 内ファイルピッカーで対象とする拡張子。Web Audio の decodeAudioData
  *  が扱える主要なフォーマットを並べる（実際に再生できるかはブラウザ依存だが、
@@ -65,8 +66,8 @@ export class VaultAudioFileSuggestModal extends FuzzySuggestModal<string> {
 		super(app);
 		this.setPlaceholder(
 			paths.length === 0
-				? "Vault 内に音声ファイルが見つかりません"
-				: "Vault 内の音声ファイルを検索…"
+				? t("audio.emptyPlaceholder")
+				: t("audio.searchPlaceholder")
 		);
 	}
 

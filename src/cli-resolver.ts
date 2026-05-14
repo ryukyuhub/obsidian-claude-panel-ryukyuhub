@@ -62,7 +62,9 @@ function getShadowBinDir(): string | null {
 	const dir = path.join(os.tmpdir(), "claude-panel-shadow-bin");
 	try {
 		fs.mkdirSync(dir, { recursive: true });
-		const script = "#!/bin/sh\n# claude-panel: ブラウザ起動を抑止する no-op スクリプト\nexit 0\n";
+		// Shell script content stays English — it is written to a temp file
+		// and only inspected by developers, not shown in any UI.
+		const script = "#!/bin/sh\n# claude-panel: no-op script that suppresses browser launches\nexit 0\n";
 		for (const name of ["open", "xdg-open"]) {
 			const p = path.join(dir, name);
 			fs.writeFileSync(p, script, { mode: 0o755 });

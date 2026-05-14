@@ -10,6 +10,7 @@ import {
 	pickFilesViaDialog,
 	savePastedImage,
 } from "./attachments";
+import { t } from "./i18n";
 
 /**
  * チャット入力エリアの「何を Claude に送るか」を所有するコンポーネント。
@@ -113,11 +114,9 @@ export class Composer {
 		}
 		if (added > 0) this.renderAttachments();
 		if (unresolvedCount > 0) {
-			new Notice(
-				`${unresolvedCount} 件のファイルパスを取得できませんでした（Electron 環境制約）。`
-			);
+			new Notice(t("composer.unresolvedPaths", unresolvedCount));
 		} else if (paths.length > 0 && added === 0) {
-			new Notice("選択されたファイルはすでに添付済みです。");
+			new Notice(t("composer.alreadyAttached"));
 		}
 	}
 
@@ -134,10 +133,10 @@ export class Composer {
 					this.attachments.push(savedPath);
 				}
 				this.renderAttachments();
-				new Notice(`貼り付け: ${savedPath}`);
+				new Notice(t("composer.pasted", savedPath));
 			} catch (err) {
 				new Notice(
-					`貼り付け画像の保存に失敗: ${(err as Error).message}`
+					t("composer.pasteFailed", (err as Error).message)
 				);
 			}
 		}
@@ -171,18 +170,19 @@ export class Composer {
 				const fileCount = this.listFolderFiles(folder.path).length;
 				const label = host.createSpan({
 					cls: "claude-panel-active-file-label",
-					text: "アクティブ:",
+					text: t("composer.activeLabel"),
 				});
-				label.title =
-					"フォルダパスを @メンションとして Claude に送ります（配下のファイルは Claude が必要に応じて読みます）";
+				label.title = t("composer.activeFolderTooltip");
 				const pathEl = host.createSpan({
 					cls: "claude-panel-active-file-path",
 					text: `${folder.path}/ ×${fileCount}`,
 				});
-				pathEl.title = `${folder.path} (${fileCount} ファイル)`;
+				pathEl.title = t("composer.folderFileCount", folder.path, fileCount);
 				const toggle = host.createEl("button", {
 					cls: "claude-panel-active-file-toggle",
-					text: this.includeActiveFile ? "✓ 含める" : "○ 除外",
+					text: this.includeActiveFile
+						? t("composer.toggleIncluded")
+						: t("composer.toggleExcluded"),
 				});
 				toggle.onclick = () => {
 					this.includeActiveFile = !this.includeActiveFile;
@@ -196,15 +196,15 @@ export class Composer {
 		if (!file) {
 			host.createSpan({
 				cls: "claude-panel-active-file-empty",
-				text: "アクティブファイルなし",
+				text: t("composer.noActiveFile"),
 			});
 			return;
 		}
 		const label = host.createSpan({
 			cls: "claude-panel-active-file-label",
-			text: "アクティブ:",
+			text: t("composer.activeLabel"),
 		});
-		label.title = "メッセージ送信のたびに @メンションとして Claude に送られます";
+		label.title = t("composer.activeFileTooltip");
 		const pathEl = host.createSpan({
 			cls: "claude-panel-active-file-path",
 			text: file.path,
@@ -212,7 +212,9 @@ export class Composer {
 		pathEl.title = file.path;
 		const toggle = host.createEl("button", {
 			cls: "claude-panel-active-file-toggle",
-			text: this.includeActiveFile ? "✓ 含める" : "○ 除外",
+			text: this.includeActiveFile
+				? t("composer.toggleIncluded")
+				: t("composer.toggleExcluded"),
 		});
 		toggle.onclick = () => {
 			this.includeActiveFile = !this.includeActiveFile;
@@ -238,15 +240,17 @@ export class Composer {
 		});
 		header.createSpan({
 			cls: "claude-panel-selection-label",
-			text: "選択範囲:",
+			text: t("composer.selectionLabel"),
 		});
 		header.createSpan({
 			cls: "claude-panel-selection-meta",
-			text: `${sel.lineCount} 行 · ${charCount} 文字 · L${sel.startLine}`,
+			text: t("composer.selectionMeta", sel.lineCount, charCount, sel.startLine),
 		});
 		const toggle = header.createEl("button", {
 			cls: "claude-panel-selection-toggle",
-			text: this.includeSelection ? "✓ 含める" : "○ 除外",
+			text: this.includeSelection
+				? t("composer.toggleIncluded")
+				: t("composer.toggleExcluded"),
 		});
 		toggle.onclick = () => {
 			this.includeSelection = !this.includeSelection;
@@ -259,7 +263,7 @@ export class Composer {
 		const firstLine = sel.text.split("\n")[0];
 		const truncated =
 			firstLine.length > 100 ? firstLine.slice(0, 100) + "…" : firstLine;
-		const tail = sel.lineCount > 1 ? ` ⋯ 他 ${sel.lineCount - 1} 行` : "";
+		const tail = sel.lineCount > 1 ? t("composer.selectionMoreLines", sel.lineCount - 1) : "";
 		preview.setText(truncated + tail);
 		preview.title = sel.text;
 	}
@@ -283,7 +287,7 @@ export class Composer {
 				const count = this.listFolderFiles(path).length;
 				chip.createSpan({
 					text: ` ×${count}`,
-					attr: { title: `${count} ファイル` },
+					attr: { title: t("composer.fileCount", count) },
 				});
 			}
 			const x = chip.createEl("button", { text: "×" });
@@ -368,7 +372,7 @@ export class Composer {
 			nodePath.isAbsolute(p) ? p.replace(/\\/g, "/") : p
 		);
 		const attachBlock = attachPaths.length
-			? `[添付パス — 必要に応じて Read / Glob ツールで読み込んでください]\n${attachPaths
+			? `[Attached paths — read on demand with the Read / Glob tools]\n${attachPaths
 					.map((p) => `- ${p}`)
 					.join("\n")}\n\n`
 			: "";
@@ -423,8 +427,10 @@ export class Composer {
 
 function formatSelectionBlock(sel: CapturedSelection | null): string {
 	if (!sel) return "";
+	// プロンプトの構造は言語非依存(英語ラベル)で送る。Claude が読むため、
+	// ユーザの Obsidian 言語設定とは独立。
 	const src = sel.filePath
-		? `（出典: \`${sel.filePath}\` L${sel.startLine}）`
+		? ` (source: \`${sel.filePath}\` L${sel.startLine})`
 		: "";
-	return `選択範囲${src}:\n\`\`\`\n${sel.text}\n\`\`\`\n\n`;
+	return `Selection${src}:\n\`\`\`\n${sel.text}\n\`\`\`\n\n`;
 }

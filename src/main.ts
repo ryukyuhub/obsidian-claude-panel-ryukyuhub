@@ -13,6 +13,7 @@ import {
 } from "./account-api";
 import type { RateLimitInfo } from "./agent";
 import type { MessageUsage } from "./chat-message";
+import { t, setLanguageOverride } from "./i18n";
 
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
@@ -31,6 +32,9 @@ export default class ClaudePanelPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		// ribbon / command を登録する前に i18n の override を適用しないと、
+		// ラベルが Obsidian 言語で固定されてしまう。
+		setLanguageOverride(this.settings.language);
 		await this.cleanupLegacyChatState();
 		this.usageHistory = new UsageHistory();
 		await this.usageHistory.load();
@@ -48,19 +52,19 @@ export default class ClaudePanelPlugin extends Plugin {
 			(leaf: WorkspaceLeaf) => new ClaudePanelView(leaf, this)
 		);
 
-		this.addRibbonIcon("bot", "Claude パネルを開く", () => {
+		this.addRibbonIcon("bot", t("ribbon.openPanel"), () => {
 			this.activateView();
 		});
 
 		this.addCommand({
 			id: "open-claude-panel",
-			name: "Claude パネルを開く",
+			name: t("command.openPanel"),
 			callback: () => this.activateView(),
 		});
 
 		this.addCommand({
 			id: "focus-claude-panel-input",
-			name: "Claude パネルの入力欄にフォーカス",
+			name: t("command.focusInput"),
 			callback: async () => {
 				await this.activateView();
 				const view = this.getView();
@@ -74,7 +78,7 @@ export default class ClaudePanelPlugin extends Plugin {
 		// コンテキスト外ではエディタ用として温存される。
 		this.addCommand({
 			id: "send-claude-panel-prompt",
-			name: "プロンプトを送信",
+			name: t("command.sendPrompt"),
 			checkCallback: (checking) => {
 				const view = this.getView();
 				if (!view) return false;
@@ -85,7 +89,7 @@ export default class ClaudePanelPlugin extends Plugin {
 
 		this.addCommand({
 			id: "cancel-claude-panel-run",
-			name: "実行中のエージェントを中断",
+			name: t("command.cancelAgent"),
 			checkCallback: (checking) => {
 				const view = this.getView();
 				if (!view) return false;
@@ -96,7 +100,7 @@ export default class ClaudePanelPlugin extends Plugin {
 
 		this.addCommand({
 			id: "clear-claude-panel-conversation",
-			name: "会話をクリア",
+			name: t("command.clearChat"),
 			checkCallback: (checking) => {
 				const view = this.getView();
 				if (!view) return false;
@@ -107,7 +111,7 @@ export default class ClaudePanelPlugin extends Plugin {
 
 		this.addCommand({
 			id: "cycle-claude-panel-model",
-			name: "モデルを順送り",
+			name: t("command.cycleModel"),
 			checkCallback: (checking) => {
 				const view = this.getView();
 				if (!view) return false;
@@ -118,7 +122,7 @@ export default class ClaudePanelPlugin extends Plugin {
 
 		this.addCommand({
 			id: "toggle-claude-panel-include-active",
-			name: "アクティブなファイル/フォルダを含めるをトグル",
+			name: t("command.toggleActiveFile"),
 			checkCallback: (checking) => {
 				const view = this.getView();
 				if (!view) return false;

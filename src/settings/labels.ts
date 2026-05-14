@@ -1,4 +1,5 @@
 import type { NotifyOnComplete, PermissionMode } from "./types";
+import { t } from "../i18n";
 
 /**
  * 設定値（enum）→ UI 表示文字列への変換関数群。
@@ -10,26 +11,26 @@ import type { NotifyOnComplete, PermissionMode } from "./types";
 export function notifyOnCompleteLabel(n: NotifyOnComplete): string {
 	switch (n) {
 		case "none":
-			return "なし";
+			return t("notify.none");
 		case "sound":
-			return "音のみ";
+			return t("notify.sound");
 		case "flash":
-			return "フラッシュのみ";
+			return t("notify.flash");
 		case "both":
-			return "音とフラッシュ";
+			return t("notify.both");
 	}
 }
 
 export function permissionModeLabel(m: PermissionMode): string {
 	switch (m) {
 		case "default":
-			return "編集前に確認";
+			return t("permission.default");
 		case "acceptEdits":
-			return "編集を自動承認";
+			return t("permission.acceptEdits");
 		case "bypassPermissions":
-			return "全ての確認をスキップ";
+			return t("permission.bypassPermissions");
 		case "plan":
-			return "プランモード";
+			return t("permission.plan");
 	}
 }
 
@@ -37,13 +38,13 @@ export function permissionModeLabel(m: PermissionMode): string {
 export function permissionModeTooltip(m: PermissionMode): string {
 	switch (m) {
 		case "default":
-			return "ツール（編集・Bash・MCP など）を実行するたびに承認を求めます。";
+			return t("permission.tooltip.default");
 		case "acceptEdits":
-			return "ファイル編集は自動承認。Bash や MCP などは引き続き確認します。";
+			return t("permission.tooltip.acceptEdits");
 		case "bypassPermissions":
-			return "確認なしで全てのツールを実行します。エージェントを信頼できるときのみ。";
+			return t("permission.tooltip.bypassPermissions");
 		case "plan":
-			return "プラン作成のみ。ツールは実行せず、提案だけを返します。";
+			return t("permission.tooltip.plan");
 	}
 }
 

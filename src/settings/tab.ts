@@ -16,9 +16,11 @@ import {
 	NOTIFY_VOLUME_MAX,
 	NOTIFY_VOLUME_MIN,
 	PERMISSION_MODES,
+	UI_LANGUAGES,
 	type EffortLevel,
 	type NotifyOnComplete,
 	type PermissionMode,
+	type UiLanguage,
 } from "./types";
 import {
 	formatModelLabel,
@@ -29,6 +31,7 @@ import {
 	VaultAudioFileSuggestModal,
 	listVaultAudioFiles,
 } from "./vault-audio-suggest";
+import { t, setLanguageOverride } from "../i18n";
 
 export class ClaudePanelSettingTab extends PluginSettingTab {
 	plugin: ClaudePanelPlugin;
@@ -56,7 +59,9 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				resolvedEl.removeClass("is-missing");
 				resolvedEl.createSpan({
 					cls: "claude-panel-resolved-label",
-					text: configured ? "✓ 解決済み:" : "✓ 自動検出:",
+					text: configured
+						? t("settings.resolved.labelResolved")
+						: t("settings.resolved.labelAutoDetected"),
 				});
 				resolvedEl.createEl("code", {
 					cls: "claude-panel-resolved-path-code",
@@ -68,22 +73,18 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				resolvedEl.createSpan({
 					cls: "claude-panel-resolved-label",
 					text: configured
-						? "✗ 指定されたパスに claude CLI が見つかりません"
-						: "✗ 自動検出対象の場所に claude CLI が見つかりません",
+						? t("settings.resolved.labelNotFoundConfigured")
+						: t("settings.resolved.labelNotFoundAuto"),
 				});
 			}
 		};
 
 		new Setting(containerEl)
-			.setName("claude CLI のパス")
-			.setDesc(
-				"任意。`claude` 実行ファイルへの絶対パスです。" +
-					"空欄の場合は次の場所を順に自動検出します: PATH、~/.local/bin、~/.claude/local、/usr/local/bin、/opt/homebrew/bin。" +
-					"既存の Claude Code サブスクリプションログインを利用するため、API キーは不要です。"
-			)
+			.setName(t("settings.claudePath.name"))
+			.setDesc(t("settings.claudePath.desc"))
 			.addText((text) =>
 				text
-					.setPlaceholder("/Users/you/.local/bin/claude")
+					.setPlaceholder(t("settings.claudePath.placeholder"))
 					.setValue(this.plugin.settings.claudePath)
 					.onChange(async (value) => {
 						this.plugin.settings.claudePath = value.trim();
@@ -98,15 +99,10 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		updateResolvedDisplay();
 
 		new Setting(containerEl)
-			.setName("MCP サーバーを無効化")
-			.setDesc(
-				"オンにすると、起動した `claude` CLI は ~/.claude.json とプロジェクトの .mcp.json を無視し、" +
-					"MCP サーバー無しで起動します。デフォルト: オフ（MCP 有効）。" +
-					"Serena などのサーバーが開こうとするブラウザポップアップは、" +
-					"PATH 上の `open`/`xdg-open` コマンドを上書きすることで別途ブロックされます。"
-			)
-			.addToggle((t) =>
-				t
+			.setName(t("settings.disableMcp.name"))
+			.setDesc(t("settings.disableMcp.desc"))
+			.addToggle((tg) =>
+				tg
 					.setValue(this.plugin.settings.disableMcpServers)
 					.onChange(async (v) => {
 						this.plugin.settings.disableMcpServers = v;
@@ -115,14 +111,8 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("ツール実行の承認モード")
-			.setDesc(
-				"Claude が Edit / Bash / MCP などのツールを呼び出す際の挙動。" +
-					"『Ask before edits』ではチャット内に Approve / Deny ボタンが表示されます。" +
-					"『Edit automatically』はファイル編集のみ自動で許可し、Bash や MCP は確認します。" +
-					"『Bypass permissions』は確認なしで実行します（旧バージョンの動作）。" +
-					"『Plan mode』はツール実行なしで計画のみ返します。"
-			)
+			.setName(t("settings.permissionMode.name"))
+			.setDesc(t("settings.permissionMode.desc"))
 			.addDropdown((dropdown) => {
 				for (const m of PERMISSION_MODES) {
 					dropdown.addOption(m, permissionModeLabel(m));
@@ -135,10 +125,8 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("モデル")
-			.setDesc(
-				"新規メッセージで使う Claude モデル。チャットパネル下部のドロップダウンからも変更できます。"
-			)
+			.setName(t("settings.model.name"))
+			.setDesc(t("settings.model.desc"))
 			.addDropdown((dropdown) => {
 				for (const m of MODEL_PRESETS) {
 					dropdown.addOption(m, formatModelLabel(m));
@@ -158,11 +146,8 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Effort（推論密度）")
-			.setDesc(
-				"対応モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度。`auto` は CLI/`~/.claude/settings.json` の既定値に委譲します。" +
-					"Haiku は Effort 非対応のため、指定しても無視されます。"
-			)
+			.setName(t("settings.effort.name"))
+			.setDesc(t("settings.effort.desc"))
 			.addDropdown((dropdown) => {
 				for (const e of EFFORT_LEVELS) {
 					dropdown.addOption(e, e);
@@ -175,11 +160,29 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("フォントサイズ")
-			.setDesc(
-				`チャットパネル全体の基準フォントサイズ (${FONT_SIZE_MIN}–${FONT_SIZE_MAX}px)。` +
-					"変更は即座にパネルへ反映されます。"
-			)
+			.setName(t("settings.language.name"))
+			.setDesc(t("settings.language.desc"))
+			.addDropdown((dropdown) => {
+				for (const lang of UI_LANGUAGES) {
+					dropdown.addOption(lang, t(`settings.language.option.${lang}`));
+				}
+				dropdown.setValue(this.plugin.settings.language);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.language = value as UiLanguage;
+					await this.plugin.saveSettings();
+					setLanguageOverride(this.plugin.settings.language);
+					// 設定タブ自身は即座に新言語で再描画する。チャットパネル
+					// 側は、ribbon / command の addCommand 時に確定したラベルや
+					// 既にレンダリング済みのチャットバブルが残るため、完全な
+					// 反映には Obsidian リロードが必要。Notice で案内する。
+					this.display();
+					new Notice(t("settings.language.restartHint"));
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(t("settings.fontSize.name"))
+			.setDesc(t("settings.fontSize.desc", FONT_SIZE_MIN, FONT_SIZE_MAX))
 			.addSlider((slider) =>
 				slider
 					.setLimits(FONT_SIZE_MIN, FONT_SIZE_MAX, 1)
@@ -194,7 +197,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.addExtraButton((btn) =>
 				btn
 					.setIcon("rotate-ccw")
-					.setTooltip("デフォルトに戻す")
+					.setTooltip(t("settings.resetToDefault"))
 					.onClick(async () => {
 						this.plugin.settings.fontSize =
 							DEFAULT_SETTINGS.fontSize;
@@ -205,11 +208,13 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("下端の余白")
+			.setName(t("settings.composerPadding.name"))
 			.setDesc(
-				`コンポーザーの下に追加で確保する余白 (${COMPOSER_BOTTOM_PADDING_MIN}–${COMPOSER_BOTTOM_PADDING_MAX}px)。` +
-					"テーマによっては Obsidian のステータスバーが右サイドバーの下端に被って" +
-					"送信ボタンやモデル選択が隠れることがあります。隠れて困るときだけ値を上げてください。"
+				t(
+					"settings.composerPadding.desc",
+					COMPOSER_BOTTOM_PADDING_MIN,
+					COMPOSER_BOTTOM_PADDING_MAX
+				)
 			)
 			.addSlider((slider) =>
 				slider
@@ -229,7 +234,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.addExtraButton((btn) =>
 				btn
 					.setIcon("rotate-ccw")
-					.setTooltip("デフォルトに戻す")
+					.setTooltip(t("settings.resetToDefault"))
 					.onClick(async () => {
 						this.plugin.settings.composerBottomPadding =
 							DEFAULT_SETTINGS.composerBottomPadding;
@@ -242,14 +247,11 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		this.renderNotificationSection(containerEl);
 
 		new Setting(containerEl)
-			.setName("ホットキー")
-			.setDesc(
-				"パネルを開く / 入力欄にフォーカス / 送信 / キャンセル / 会話クリア / モデル切替 などのコマンドは" +
-					"Obsidian 標準の『ホットキー』設定画面で自由にキーを割り当てられます。"
-			)
+			.setName(t("settings.hotkeys.name"))
+			.setDesc(t("settings.hotkeys.desc"))
 			.addButton((btn) =>
 				btn
-					.setButtonText("ホットキー設定を開く")
+					.setButtonText(t("settings.hotkeys.openBtn"))
 					.setCta()
 					.onClick(() => {
 						// Obsidian の設定モーダルは ID 指定で setting タブを開ける。
@@ -273,10 +275,10 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 	 *  画面側で誘導する。 */
 	private renderAboutSection(containerEl: HTMLElement): void {
 		const setting = new Setting(containerEl)
-			.setName("このプラグインについて")
-			.setDesc(`バージョン ${this.plugin.manifest.version}`);
+			.setName(t("settings.about.name"))
+			.setDesc(t("settings.about.desc", this.plugin.manifest.version));
 		setting.controlEl.createEl("a", {
-			text: "GitHub リポジトリ",
+			text: t("settings.about.repoLink"),
 			href: "https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases",
 			cls: "claude-panel-repo-link",
 			attr: { target: "_blank", rel: "noopener" },
@@ -293,12 +295,8 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 	 */
 	private renderNotificationSection(containerEl: HTMLElement): void {
 		new Setting(containerEl)
-			.setName("完了通知")
-			.setDesc(
-				"Claude の応答が完了したときの通知方式。" +
-					"フラッシュはパネル枠を一瞬光らせます。音は内蔵チャイム、または下で指定した音声ファイルを再生します。" +
-					"ユーザー自身がキャンセルしたランでは通知しません。"
-			)
+			.setName(t("settings.notify.completeName"))
+			.setDesc(t("settings.notify.completeDesc"))
 			.addDropdown((dropdown) => {
 				for (const n of NOTIFY_ON_COMPLETE_OPTIONS) {
 					dropdown.addOption(n, notifyOnCompleteLabel(n));
@@ -312,10 +310,13 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("通知音の音量")
+			.setName(t("settings.notify.volumeName"))
 			.setDesc(
-				`完了通知音の音量 (${NOTIFY_VOLUME_MIN}–${NOTIFY_VOLUME_MAX}%)。` +
-					"テストボタンで現在の設定（音量・ファイル）の組み合わせを試聴できます。"
+				t(
+					"settings.notify.volumeDesc",
+					NOTIFY_VOLUME_MIN,
+					NOTIFY_VOLUME_MAX
+				)
 			)
 			.addSlider((slider) =>
 				slider
@@ -330,7 +331,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.addExtraButton((btn) =>
 				btn
 					.setIcon("play")
-					.setTooltip("通知音をテスト再生")
+					.setTooltip(t("settings.notify.testTooltip"))
 					.onClick(() => {
 						this.plugin.getView()?.testNotificationSound();
 					})
@@ -338,7 +339,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.addExtraButton((btn) =>
 				btn
 					.setIcon("rotate-ccw")
-					.setTooltip("デフォルトに戻す")
+					.setTooltip(t("settings.resetToDefault"))
 					.onClick(async () => {
 						this.plugin.settings.notifySoundVolume =
 							DEFAULT_SETTINGS.notifySoundVolume;
@@ -348,15 +349,11 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("通知音ファイル")
-			.setDesc(
-				"通知に使う音声ファイル（mp3 / wav / ogg / m4a など）。" +
-					"Vault 内のファイルは相対パスとして保存され、Vault 同期で別環境に移っても追従します。" +
-					"空欄の場合は内蔵の短いチャイムを使います。"
-			)
+			.setName(t("settings.notify.soundFileName"))
+			.setDesc(t("settings.notify.soundFileDesc"))
 			.addText((text) =>
 				text
-					.setPlaceholder("（空欄 = 内蔵チャイム）")
+					.setPlaceholder(t("settings.notify.soundPlaceholder"))
 					.setValue(this.plugin.settings.notifySoundPath)
 					.onChange(async (value) => {
 						this.plugin.settings.notifySoundPath = value.trim();
@@ -366,7 +363,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.addExtraButton((btn) =>
 				btn
 					.setIcon("library")
-					.setTooltip("Vault 内のファイルから選択")
+					.setTooltip(t("settings.notify.pickFromVault"))
 					.onClick(async () => {
 						// `.obsidian/` 配下も拾うため、`vault.getFiles()` ではなく
 						// `adapter.list` で再帰スキャンしてからモーダルを開く。
@@ -387,7 +384,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.addExtraButton((btn) =>
 				btn
 					.setIcon("folder-open")
-					.setTooltip("OS のファイルダイアログから選択")
+					.setTooltip(t("settings.notify.pickFromOs"))
 					.onClick(async () => {
 						const result = await pickFilesViaDialog();
 						const picked = result.paths[0];
@@ -402,7 +399,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.addExtraButton((btn) =>
 				btn
 					.setIcon("x")
-					.setTooltip("クリア（内蔵チャイムに戻す）")
+					.setTooltip(t("settings.notify.clearSound"))
 					.onClick(async () => {
 						this.plugin.settings.notifySoundPath = "";
 						await this.plugin.saveSettings();
@@ -422,7 +419,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		const section = containerEl.createDiv({ cls: "claude-panel-setup" });
 		section.createEl("h3", {
 			cls: "claude-panel-setup-title",
-			text: "セットアップ状況",
+			text: t("settings.setup.title"),
 		});
 		const summaryEl = section.createDiv({ cls: "claude-panel-setup-summary" });
 		const stepsEl = section.createDiv({ cls: "claude-panel-setup-steps" });
@@ -437,7 +434,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			if (state === "loading") {
 				summaryEl.addClass("is-loading");
 				summaryEl.removeClass("is-ok", "is-warn", "is-error");
-				summaryEl.setText("確認中…");
+				summaryEl.setText(t("settings.setup.checking"));
 				return;
 			}
 
@@ -449,10 +446,10 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			summaryEl.toggleClass("is-error", !state.installed);
 			summaryEl.setText(
 				ok
-					? "✓ 利用可能です。"
+					? t("settings.setup.summaryOk")
 					: warn
-						? "⚠ もう少しでセットアップ完了です。"
-						: "✗ Claude CLI のセットアップが必要です。"
+						? t("settings.setup.summaryWarn")
+						: t("settings.setup.summaryError")
 			);
 
 			const step = (
@@ -483,13 +480,13 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			if (state.installed) {
 				step(
 					"ok",
-					`Claude CLI をインストール済み${state.version ? ` (v${state.version})` : ""}`,
+					t("settings.setup.stepInstalled", state.version ?? ""),
 					state.resolvedPath
 				);
 			} else {
 				step(
 					"error",
-					"Claude CLI が見つかりません",
+					t("settings.setup.stepNotFound"),
 					state.error || undefined
 				);
 			}
@@ -497,7 +494,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				if (state.loggedIn) {
 					step(
 						"ok",
-						"ログイン済み",
+						t("settings.setup.stepLoggedIn"),
 						[state.email, state.subscriptionType, state.authMethod]
 							.filter(Boolean)
 							.join(" · ")
@@ -505,8 +502,8 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				} else {
 					step(
 						"warn",
-						"ログインが必要です",
-						"ターミナルで `claude /login` を実行してください。"
+						t("settings.setup.stepLoginNeeded"),
+						t("settings.setup.stepLoginNeededDetail")
 					);
 				}
 			}
@@ -521,7 +518,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		actionsEl.empty();
 		const recheckBtn = actionsEl.createEl("button", {
 			cls: "claude-panel-setup-recheck mod-cta",
-			text: "再チェック",
+			text: t("settings.setup.recheck"),
 		});
 		const runCheck = async (): Promise<void> => {
 			recheckBtn.disabled = true;
@@ -549,52 +546,43 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 	private renderInstallGuide(host: HTMLElement): void {
 		host.createDiv({
 			cls: "claude-panel-setup-guide-title",
-			text: "インストール手順",
+			text: t("settings.setup.installTitle"),
 		});
 		const note = host.createDiv({ cls: "claude-panel-setup-guide-note" });
-		note.setText(
-			"OS に合わせて以下のコマンドをターミナルで実行してください。" +
-				"インストール後にこのタブの「再チェック」を押すと、自動検出されます。"
-		);
+		note.setText(t("settings.setup.installNote"));
 
 		// Windows: winget で前提（Node.js / Git / PowerShell 7）→ npm でインストール、まで提示。
 		// 標準同梱の PowerShell 5.1 ではブラウザ認証時の貼付に不具合があるため、
 		// PowerShell 7 への切替を最初から強く促している。
 		const winBlock = this.makeCodeBlock(
 			host,
-			"Windows（管理者権限の PowerShell で実行）",
+			t("settings.setup.installWinLabel"),
 			[
 				"winget install --id OpenJS.NodeJS.LTS",
 				"winget install --id Microsoft.PowerShell",
 				"npm install -g @anthropic-ai/claude-code",
 			].join("\n")
 		);
-		winBlock.setAttr(
-			"title",
-			"PowerShell 7 (pwsh) を入れてから新しいウィンドウで `claude /login` を実行してください。"
-		);
+		winBlock.setAttr("title", t("settings.setup.installWinTooltip"));
 
 		this.makeCodeBlock(
 			host,
-			"macOS（Terminal で実行 / Homebrew 必須）",
+			t("settings.setup.installMacLabel"),
 			["brew install node", "npm install -g @anthropic-ai/claude-code"].join("\n")
 		);
 
 		this.makeCodeBlock(
 			host,
-			"npm が既に使える環境（Linux ほか共通）",
+			t("settings.setup.installNpmLabel"),
 			"npm install -g @anthropic-ai/claude-code"
 		);
 
 		const tip = host.createDiv({ cls: "claude-panel-setup-guide-note" });
-		tip.setText(
-			"ヒント: 「npm: command not found」と出たら、Node.js が未インストールです。" +
-				"上記の OS 別コマンドの 1 行目から順に実行してください。"
-		);
+		tip.setText(t("settings.setup.installTip"));
 
 		const linkRow = host.createDiv({ cls: "claude-panel-setup-guide-links" });
 		const link = linkRow.createEl("a", {
-			text: "公式インストールガイド",
+			text: t("settings.setup.installOfficialGuide"),
 			href: "https://docs.claude.com/claude-code/quickstart",
 		});
 		link.setAttr("target", "_blank");
@@ -605,25 +593,22 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 	private renderLoginGuide(host: HTMLElement): void {
 		host.createDiv({
 			cls: "claude-panel-setup-guide-title",
-			text: "ログイン手順",
+			text: t("settings.setup.loginTitle"),
 		});
 		const note = host.createDiv({ cls: "claude-panel-setup-guide-note" });
-		note.setText(
-			"ターミナル（macOS は Terminal、Windows は PowerShell 7 / pwsh）で次のコマンドを実行し、" +
-				"画面の指示に従ってブラウザでログインしてください。Claude Pro / Max のサブスクリプションでも API キーでも利用できます。"
-		);
-		this.makeCodeBlock(host, "ログインコマンド", "claude /login");
+		note.setText(t("settings.setup.loginNote"));
+		this.makeCodeBlock(host, t("settings.setup.loginCmdLabel"), "claude /login");
 
 		// よくある失敗のリカバリ。Windows の PowerShell 5.1 ではコピペが崩れる
 		// ことが報告されているため、PowerShell 7 への切替を明示する。
 		const tips = host.createDiv({ cls: "claude-panel-setup-guide-note" });
-		tips.createEl("strong", { text: "うまくいかないとき:" });
+		tips.createEl("strong", { text: t("settings.setup.loginTroubleHeading") });
 		const ul = tips.createEl("ul");
 		ul.createEl("li", {
-			text: "ブラウザが自動で開かない場合は、表示された URL を選択コピーしてブラウザのアドレスバーに貼り付け、戻ってきた認証コードをターミナルに貼り戻してください。",
+			text: t("settings.setup.loginTroubleAutoOpen"),
 		});
 		ul.createEl("li", {
-			text: "Windows で認証コードの貼り付けが崩れる場合は、`winget install Microsoft.PowerShell` で PowerShell 7 (pwsh) を入れ、新しいウィンドウで `claude /login` をやり直してください。",
+			text: t("settings.setup.loginTroublePaste"),
 		});
 	}
 
@@ -648,14 +633,14 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		});
 		const copyBtn = row.createEl("button", {
 			cls: "claude-panel-setup-code-copy",
-			text: "コピー",
+			text: t("settings.setup.copyBtn"),
 		});
 		copyBtn.onclick = async () => {
 			try {
 				await navigator.clipboard.writeText(command);
-				new Notice("コピーしました");
+				new Notice(t("settings.setup.copyDone"));
 			} catch {
-				new Notice("コピーに失敗しました");
+				new Notice(t("settings.setup.copyFail"));
 			}
 		};
 		return wrap;
