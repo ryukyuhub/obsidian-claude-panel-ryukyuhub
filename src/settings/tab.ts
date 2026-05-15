@@ -171,11 +171,13 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					this.plugin.settings.language = value as UiLanguage;
 					await this.plugin.saveSettings();
 					setLanguageOverride(this.plugin.settings.language);
-					// 設定タブ自身は即座に新言語で再描画する。チャットパネル
-					// 側は、ribbon / command の addCommand 時に確定したラベルや
-					// 既にレンダリング済みのチャットバブルが残るため、完全な
-					// 反映には Obsidian リロードが必要。Notice で案内する。
+					// 設定タブ自身、および開いているチャットパネルの DOM を
+					// その場で再描画する。ribbon / コマンドパレットのラベルは
+					// `addRibbonIcon` / `addCommand` 時に Obsidian 側に確定し、
+					// 動的更新の API がないため、完全な反映には再読み込みが
+					// 必要 — Notice で案内する。
 					this.display();
+					this.plugin.getView()?.rebuildLocalizedUI();
 					new Notice(t("settings.language.restartHint"));
 				});
 			});

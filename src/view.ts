@@ -219,6 +219,44 @@ export class ClaudePanelView extends ItemView {
 	}
 
 	/**
+	 * 設定タブで表示言語を変更した直後に呼ばれ、ロケール文字列を含む
+	 * パネル DOM を再描画する。runtime / Composer / CompletionNotifier /
+	 * SelectionCapture などの状態オブジェクトは破棄せず、入力欄の下書きと
+	 * 実行中フラグも保ったまま、ヘッダ・コンポーザ・メッセージリストを
+	 * 新ロケールで作り直す。
+	 *
+	 * ribbon やコマンドパレットのラベルは `addRibbonIcon` / `addCommand`
+	 * 時に Obsidian 側に確定し、動的更新の API がないため、ここからは
+	 * 反映できない（restartHint で再読み込みを案内している）。
+	 */
+	rebuildLocalizedUI(): void {
+		const root = this.panelRoot();
+		if (!root) return;
+
+		// 再描画でロストすると体験を損なう状態を退避。
+		const draftText = this.inputEl?.value ?? "";
+
+		root.empty();
+		root.addClass("claude-panel-root");
+		this.applyFontSize(root);
+		this.applyComposerBottomPadding(root);
+
+		this.renderHeader(root);
+		this.messagesEl = root.createDiv({ cls: "claude-panel-messages" });
+		this.renderComposer(root);
+
+		if (this.inputEl) this.inputEl.value = draftText;
+
+		this.renderMessages();
+		this.composer.renderAll();
+		this.contextMeter?.update(this.runtime.getLastUsage());
+		this.selection.poll();
+
+		// 実行中ターンの最中に再描画された場合は Send ボタンを Stop 表示へ。
+		this.onBusyChanged(this.runtime.isBusy());
+	}
+
+	/**
 	 * `settings.fontSize` をパネルルートに CSS カスタムプロパティとして
 	 * 適用する。styles.css 側の cascade ルールが `--claude-panel-font-size`
 	 * を読み、`em` 単位で派生サイズ（small/medium）を決定するので、1つの
