@@ -1,198 +1,171 @@
 # Claude Panel
 
-> **Provided by [琉球HUB株式会社 (Ryukyu HUB Inc.)](https://ryukyuhub.co.jp).**
+> **Provided by [Ryukyu HUB Inc. (琉球HUB株式会社)](https://ryukyuhub.co.jp).**
 
 Claude Panel adds a right-sidebar chat panel powered by [Claude Code](https://docs.claude.com/claude-code) to Obsidian. It spawns the `claude` CLI as a subprocess with the active vault as its working directory, so reading, writing, searching, and running commands against your notes all happen inside Obsidian.
 
-> Desktop only. Requires the `claude` CLI to be installed and signed in (Claude Pro/Max subscription or an Anthropic API key).
+> Desktop only. Requires the `claude` CLI to be installed and signed in (Claude Pro / Max subscription, or an Anthropic API key).
+
+日本語の解説は [README.ja.md](README.ja.md) を参照してください。
 
 ## Features
 
 - Streaming chat panel in the right sidebar, with tool-use pills and per-turn cost / duration
 - Active note is auto-mentioned as `@filename` on every turn (toggleable)
-- File picker for extra mentions; paste clipboard images directly into the composer
+- File picker for additional mentions; paste clipboard images directly into the composer
 - Editor / preview selection is captured automatically so you can ask "explain this" without copy/paste
-- Session is resumed via `claude --resume <session>` (Claude Code's auto-compaction stays active)
-- Account & usage panel — Claude plan, organization, rate-limit consumption (5h / 7d / Sonnet) in real time
+- Sessions are resumed via `claude --resume <session>` (Claude Code's auto-compaction stays active)
+- Account & usage panel — Claude plan, organization, and rate-limit consumption (5h / 7d / Sonnet) in real time
 - Slash commands: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
 - Project-level MCP servers: drop a `.mcp.json` at the vault root and it is loaded automatically
 - UI follows Obsidian's language setting (English / 日本語)
 
 ## Installation
 
-1. Install Node.js, then the Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
-2. Sign in once: `claude /login`
-3. Install this plugin from Obsidian → Settings → Community plugins (or sideload the latest GitHub release)
-4. Enable **Claude Panel** in Community plugins. The setting tab shows a setup-status block; if the CLI is not auto-detected, paste its absolute path there.
+> **New to the Claude CLI?** Parts of this guide use a terminal. On Windows, open **PowerShell**; on macOS, open **Terminal**. Copy and paste each command block one line at a time. If a command says "not found," see [Troubleshooting](#troubleshooting) at the bottom.
 
-See the Japanese sections below for OS-specific install commands (winget / brew) and troubleshooting.
+### 1. Install prerequisites
 
----
+The `claude` CLI runs on Node.js. Install Node.js (and Git, plus PowerShell 7 on Windows) first.
 
-# 日本語ドキュメント
+#### Windows — install with `winget` (recommended)
 
-Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.claude.com/claude-code) のチャットパネルを表示するプラグインです。アクティブな Vault をワーキングディレクトリとして `claude` CLI をサブプロセスで起動し、ノートの読み書き・検索・コマンド実行までを Obsidian 内で完結できます。
-
-> デスクトップ専用です。事前に `claude` CLI のインストールと、Claude Code へのログイン（サブスクリプションまたは Anthropic API キー）が必要です。
-
-## 主な機能
-
-- 右サイドバーのチャットパネル（ストリーミング応答、ツール実行ピル、ターン毎のコスト・所要時間表示）
-- アクティブノートを毎回 `@filename` として自動メンション（オフ切り替え可）
-- ファイルピッカーから追加メンション、クリップボード画像をそのまま添付
-- エディタ／プレビューの選択範囲を取り込み、コピペなしで「ここを説明して」と質問可能
-- `claude --resume <session>` を内部で利用して会話コンテキストを維持（Claude Code の自動コンパクションも有効）
-- アカウント＆使用状況パネル — Claude プラン、組織、レートリミット消費（5時間／7日／Sonnet）をリアルタイム表示
-- スラッシュコマンド: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
-- プロジェクトレベルの MCP サーバー: Vault ルートに `.mcp.json` を置けば自動で読み込まれます
-- UI 言語は Obsidian の設定（English / 日本語）に追従
-
-## インストール
-
-> **Claude CLI を使っていない方へ**: 途中でターミナル（コマンドラインツール）を使います。Windows なら **PowerShell**、macOS なら **Terminal** を起動して、各コードブロックをコピー＆ペーストで 1 行ずつ実行してください。「コマンドが見つからない」場合の対処は末尾の[トラブルシューティング](#トラブルシューティング)にまとめています。
-
-### 1. 前提ソフトウェアをインストール
-
-`claude CLI` は Node.js 上で動作します。まず Node.js（と Git、Windows なら PowerShell 7）を入れてください。
-
-#### Windows — `winget` で一括導入（推奨）
-
-PowerShell を**管理者として実行**で開き、次の 3 行を順番に実行します:
+Open PowerShell **as Administrator** and run these three commands in order:
 
 ```powershell
 winget install --id OpenJS.NodeJS.LTS         # Node.js + npm
 winget install --id Git.Git                   # Git
-winget install --id Microsoft.PowerShell      # PowerShell 7（古い 5.1 では認証コードの貼付が崩れるため必須）
+winget install --id Microsoft.PowerShell      # PowerShell 7 (the older 5.1 mangles pasted auth codes)
 ```
 
-インストール後は **PowerShell を一度閉じて、新しい PowerShell 7 (`pwsh`) を開き直して** 以降の作業を続けてください（PATH の再読み込みが必要です）。
+After installation, **close PowerShell and re-open a fresh PowerShell 7 (`pwsh`) window** before continuing — the PATH needs to be reloaded.
 
-> `winget` が使えない古い Windows の場合は、各公式サイトから直接インストールしても同等です: [Node.js LTS](https://nodejs.org/) / [Git for Windows](https://git-scm.com/download/win) / [PowerShell 7](https://aka.ms/PSWindows)
+> If `winget` is unavailable on older Windows, you can install each tool directly from its official site: [Node.js LTS](https://nodejs.org/) / [Git for Windows](https://git-scm.com/download/win) / [PowerShell 7](https://aka.ms/PSWindows).
 
-#### macOS — `brew` で一括導入（推奨）
+#### macOS — install with `brew` (recommended)
 
-Terminal で実行:
+In Terminal:
 
 ```bash
-# Homebrew 未導入の場合のみ最初に実行：
+# Only run this line if Homebrew is not already installed:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Node.js（npm 同梱）と Git
+# Node.js (npm included) and Git
 brew install node git
 ```
 
-### 2. Claude Code CLI をインストール
+### 2. Install the Claude Code CLI
 
-OS 共通で 1 コマンドです:
+One command on every OS:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
 
-完了後 `claude --version` でバージョンが表示されれば OK です。
+Run `claude --version` afterwards. If it prints a version, you are good.
 
-> macOS のみ Homebrew Cask 経由でも導入できます: `brew install --cask claude-code`
+> On macOS you can also install via Homebrew Cask: `brew install --cask claude-code`.
 
-### 3. Claude にログイン
+### 3. Sign in to Claude
 
 ```bash
 claude /login
 ```
 
-ブラウザが自動で開き、Anthropic のログイン画面が表示されます。Claude Pro / Max のサブスクリプション、もしくは Anthropic API キーで認証してください。
+A browser opens to Anthropic's login screen. Sign in with your Claude Pro / Max subscription or your Anthropic API key.
 
-> **ブラウザが自動で開かない場合**: ターミナルに表示された `https://claude.ai/...` で始まる URL を選択コピーし、自分でブラウザのアドレスバーに貼り付けてください。ログイン後に画面に出る**認証コード**をコピーして、ターミナルに貼り戻せば完了です。
+> **If the browser does not open automatically:** copy the `https://claude.ai/...` URL printed in the terminal and paste it into your browser's address bar. After signing in, copy the **auth code** shown on the page and paste it back into the terminal.
 >
-> **Windows で認証コードの貼り付けが崩れる場合**: Windows 標準の PowerShell 5.1 にコピペの不具合があります。前述の `winget install Microsoft.PowerShell` で **PowerShell 7（pwsh）に切り替えて** から再実行してください。
+> **If pasting the auth code is mangled on Windows:** Windows' built-in PowerShell 5.1 has a known clipboard bug. Install PowerShell 7 with `winget install Microsoft.PowerShell` (see above) and retry in a fresh `pwsh` window.
 
-### 4. Obsidian プラグインを導入
+### 4. Install the Obsidian plugin
 
-1. [最新リリース](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases) から `claude-panel-ryukyuhub-<version>.zip` をダウンロード
-2. zip を解凍し、`claude-panel-ryukyuhub/` フォルダを `<your-vault>/.obsidian/plugins/` 直下に配置
-3. Obsidian → 設定 → コミュニティプラグイン → **Claude Panel** を有効化
-4. プラグイン設定を開くと先頭に「セットアップ状況」が表示されます。`claude` CLI が自動検出されない場合は CLI バイナリの絶対パスを入力してください（例: macOS なら `/usr/local/bin/claude`、Windows なら `C:\Users\<you>\AppData\Roaming\npm\claude.cmd`）
+1. Download `claude-panel-ryukyuhub-<version>.zip` from the [latest release](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases).
+2. Unzip it and place the resulting `claude-panel-ryukyuhub/` folder directly under `<your-vault>/.obsidian/plugins/`.
+3. In Obsidian, open Settings → Community plugins and enable **Claude Panel**.
+4. Open the plugin's setting tab. The top "Setup status" block shows whether the `claude` CLI was auto-detected. If not, paste the absolute path to the binary (for example `/usr/local/bin/claude` on macOS, or `C:\Users\<you>\AppData\Roaming\npm\claude.cmd` on Windows).
 
-> BRAT には対応していません — リリース成果物は zip 形式で配布しています。
+> BRAT is not supported — releases ship as a single zip rather than loose files at the release root.
 
-## トラブルシューティング
+## Troubleshooting
 
-### `claude: command not found` / `claude.exe' は内部または外部コマンドではありません`
-`npm install -g @anthropic-ai/claude-code` の直後はターミナルが PATH を再読み込みしていません。**ターミナルを一度閉じて開き直す** とほぼ解決します。それでも検出されない場合は、Obsidian の本プラグイン設定画面の「**claude CLI のパス**」に絶対パスを入力してください:
+### `claude: command not found` / `'claude.exe' is not recognized`
+Right after `npm install -g @anthropic-ai/claude-code`, your terminal has not picked up the new PATH. **Closing and re-opening the terminal** usually fixes it. If detection still fails, fill in the absolute path to the binary in the plugin's "claude CLI path" setting:
 
 - macOS (Intel): `/usr/local/bin/claude`
 - macOS (Apple Silicon, Homebrew): `/opt/homebrew/bin/claude`
-- macOS (npm global): `~/.nvm/versions/node/<ver>/bin/claude` など
+- macOS (npm global): something like `~/.nvm/versions/node/<ver>/bin/claude`
 - Windows (npm global): `C:\Users\<you>\AppData\Roaming\npm\claude.cmd`
 
-### Windows で認証コードの貼付が崩れる / 入力が空欄になる
-標準同梱の PowerShell 5.1 ターミナルにコピペの不具合があります。`winget install Microsoft.PowerShell` で **PowerShell 7 (`pwsh`)** を入れ、新しいウィンドウで `claude /login` をやり直してください。
+### Auth code paste is broken / input shows up blank on Windows
+The bundled PowerShell 5.1 has a clipboard bug. Install PowerShell 7 with `winget install Microsoft.PowerShell` and re-run `claude /login` in a fresh `pwsh` window.
 
-### ブラウザが自動で開かない（Windows / WSL / リモートデスクトップなど）
-ターミナルに表示された URL を手動でコピーしてブラウザのアドレスバーに貼り付け、認証後に表示される認証コードをターミナルに貼り戻してください。
+### The browser does not open (Windows / WSL / Remote Desktop / SSH)
+Copy the URL the terminal prints, paste it into a browser address bar manually, and paste the auth code that appears after sign-in back into the terminal.
 
-### `npm: command not found` / `npm は内部コマンドではありません`
-Node.js が未インストールです。[1. 前提ソフトウェアをインストール](#1-前提ソフトウェアをインストール) に戻り、`winget install OpenJS.NodeJS.LTS`（Windows）または `brew install node`（macOS）から実行してください。
+### `npm: command not found`
+Node.js is not installed. Go back to [Install prerequisites](#1-install-prerequisites) and run `winget install OpenJS.NodeJS.LTS` (Windows) or `brew install node` (macOS).
 
-### Obsidian でプラグインが起動しない / チャット送信時に失敗する
-プラグイン設定の「セットアップ状況」が **✓ 利用可能です** になっているか確認してください。 ✗ や ⚠ が出ているときは、その下に表示されるインストール／ログイン手順に従ってください。「再チェック」ボタンで状態を更新できます。
+### The plugin does not start, or chat fails to send
+Check that the "Setup status" block in the plugin's setting tab reads **✓ Available**. If it shows ✗ or ⚠, follow the install / login steps shown directly below it. The "Re-check" button refreshes the status.
 
-## 使い方
+## Usage
 
-- リボンアイコンをクリック、またはコマンドパレットで **Open Claude Panel** を実行してパネルを開きます
-- プロンプトを入力して `Enter`（または Send ボタン）で送信。`Esc` で実行中のターンを中断、`Shift+Enter` で改行
-- **Attach** ボタンから追加ノートをメンション、またはクリップボード画像をそのまま貼り付け
-- パネルヘッダーのユーザーアイコンから、Claude のアカウント情報とレートリミット消費状況を確認できます
+- Click the ribbon icon or run **Open Claude Panel** from the command palette to open the panel.
+- Type a prompt and press `Enter` (or click Send). `Esc` cancels the running turn; `Shift+Enter` inserts a newline.
+- Use the **Attach** button to mention additional notes, or paste a clipboard image straight into the composer.
+- Click the user icon in the panel header to see your Claude account info and current rate-limit consumption.
 
-## 開発
+## Development
 
 ```bash
 git clone https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub.git
 cd obsidian-claude-panel-ryukyuhub
 npm install
 cp esbuild.config.local.example.mjs esbuild.config.local.mjs
-# esbuild.config.local.mjs を編集して、VAULT_OUT_DIRS を自分の Vault のプラグインフォルダに向ける
-npm run dev      # esbuild の watch モード — main.js とアセットを Vault 内に直接書き出す
+# Edit esbuild.config.local.mjs and point VAULT_OUT_DIRS at your vault's plugin folder.
+npm run dev      # esbuild watch — writes main.js and assets straight into the vault
 ```
 
-ビルドは `main.js` / `manifest.json` / `styles.css` を、設定済みの Vault プラグインフォルダへ直接書き出すので、トグルOFF/ON（または [Hot Reload](https://github.com/pjeby/hot-reload) プラグイン）でリロードがすぐ反映されます。
+The build writes `main.js` / `manifest.json` / `styles.css` directly into your configured vault plugin folder, so toggling the plugin off/on (or using [Hot Reload](https://github.com/pjeby/hot-reload)) picks up changes instantly.
 
-`esbuild.config.local.mjs` は gitignore 対象なので、各開発者が自分のパスを保持します。ファイルを置かずに `OUT_DIR=...` を毎回渡しても構いません:
+`esbuild.config.local.mjs` is gitignored, so each developer keeps their own path. You can also skip the file and set `OUT_DIR=...` per invocation:
 
 ```bash
 OUT_DIR=/path/to/vault/.obsidian/plugins/claude-panel-ryukyuhub npm run dev
 ```
 
-どちらも未設定の場合は `./build/` にフォールバックします（CI のリリースパッケージング用）。
+When neither is set, the build falls back to `./build/` (used by the CI release packaging).
 
-テストスイートや lint 設定はありません。型チェックを厳密に行いたい場合は `npx tsc --noEmit` を実行してください。
+There is no test suite or lint config. For strict type checking, run `npx tsc --noEmit`.
 
-## アーキテクチャ
+## Architecture
 
-`src/` のファイル構成:
+Files under `src/`:
 
-- `main.ts` — `Plugin` のエントリ。View・リボンアイコン・コマンド・設定タブを登録
-- `view.ts` — サイドバー用 `ItemView`。チャット履歴、コンポーザー、添付ファイル、ペースト処理、プロンプト組み立て、ストリーミング描画を担当
-- `agent.ts` — サブプロセス層。`runAgent()` が `claude` を stream-json 入出力で起動し、JSON 行ごとに text / tool-use / result / error / usage イベントへディスパッチ
-- `chat-message.ts` — メッセージとパートの型、レンダラー。ツール実行は生 JSON ではなく装飾されたピルとして表示
-- `selection-capture.ts` — 250ms ポーリングでアクティブな markdown ビューの選択範囲（編集／プレビュー両対応）を取得。1.5秒の "handoff grace" でパネルクリック時にも選択を保持
-- `slash-commands.ts` — `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login` のローカルハンドラ。マッチしなかったスラッシュ入力は CLI に転送
-- `account-usage.ts` — アカウント＆使用状況モーダル。`claude auth status --json` と OAuth トークン（macOS は Keychain、Linux/Windows は `~/.claude/.credentials.json`）を読み、Anthropic OAuth usage エンドポイントを叩く
-- `file-picker.ts` — Attach ボタン用のファジーファイルピッカー
-- `settings.ts` — 設定の型、デフォルト値、設定タブ
+- `main.ts` — `Plugin` entry point. Registers the view, ribbon icon, commands, and setting tab.
+- `view.ts` — `ItemView` for the sidebar. Owns chat history, the composer, attachments, paste handling, prompt assembly, and the streaming render loop.
+- `agent.ts` — Subprocess layer. `runAgent()` spawns `claude` with stream-json I/O and dispatches each JSON line to text / tool-use / result / error / usage events.
+- `chat-message.ts` — Message and part types plus the renderer. Tool invocations are shown as styled pills rather than raw JSON.
+- `selection-capture.ts` — 250 ms polling loop that reads the active markdown view's selection (editor or preview). A 1.5 s "handoff grace" keeps the captured selection alive when the user clicks the panel.
+- `slash-commands.ts` — Local handlers for `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`. Unmatched slash input is forwarded to the CLI.
+- `account-usage.ts` — Account & usage modal. Reads `claude auth status --json` and the OAuth token (macOS Keychain; `~/.claude/.credentials.json` on Linux / Windows), then queries the Anthropic OAuth usage endpoint.
+- `file-picker.ts` — Fuzzy file picker for the Attach button.
+- `settings.ts` — Settings type, defaults, and the setting tab.
 
-サブプロセスは子環境から `ANTHROPIC_API_KEY` を除去するので、CLI は既存の Claude Code ログイン（サブスクリプション認証）を使います。また macOS / Linux では一時ディレクトリに no-op の `open` / `xdg-open` シェルスクリプトを置いて PATH の先頭に差し込み、ブラウザを起動するタイプの MCP サーバー（Serena の自動ダッシュボード等）の挙動を抑制します。Windows では代わりに `BROWSER=true` を渡しています。
+The subprocess strips `ANTHROPIC_API_KEY` from the child environment so the CLI reuses the existing Claude Code login (subscription auth). On macOS / Linux, no-op `open` / `xdg-open` shell scripts are placed in a temporary directory and prepended to `PATH` to suppress MCP servers that try to open a browser window on startup (e.g. Serena's auto-dashboard). On Windows the equivalent is achieved by setting `BROWSER=true`.
 
-## リリース
+## Release
 
-`v*` タグを push するとリリースが作成されます。[.github/workflows/release.yml](.github/workflows/release.yml) がビルドと zip 添付を自動化します。
+Pushing a semver tag triggers a release. [.github/workflows/release.yml](.github/workflows/release.yml) builds the plugin, attaches a zip, and emits GitHub artifact attestations for the release assets.
 
 ```bash
 npm version 0.1.8 -m "Release %s"
 git push --follow-tags
 ```
 
-`npm version` は `version-bump.mjs` を実行し、`manifest.json` と `versions.json` のバージョンを同期させます。
+`npm version` runs `version-bump.mjs`, which syncs the bumped version into `manifest.json` and `versions.json`.
 
-## ライセンス
+## License
 
-MIT — © 2026 [琉球HUB株式会社 (Ryukyu HUB Inc.)](https://ryukyuhub.co.jp). 詳細は [LICENSE](LICENSE) を参照。
+MIT — © 2026 [Ryukyu HUB Inc. (琉球HUB株式会社)](https://ryukyuhub.co.jp). See [LICENSE](LICENSE) for details.
