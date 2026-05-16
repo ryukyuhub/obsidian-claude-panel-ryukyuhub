@@ -38,8 +38,8 @@ export const EFFORT_LEVELS: EffortLevel[] = [
 ];
 
 export const MODEL_PRESETS: string[] = [
-	"claude-sonnet-4-5",
-	"claude-opus-4-5",
+	"claude-sonnet-4-6",
+	"claude-opus-4-7",
 	"claude-haiku-4-5",
 ];
 
@@ -140,7 +140,7 @@ export const COMPOSER_BOTTOM_PADDING_MAX = 80;
 
 export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	claudePath: "",
-	model: "claude-sonnet-4-5",
+	model: "claude-sonnet-4-6",
 	thinkingMode: "off",
 	effortLevel: "auto",
 	disableMcpServers: false,
