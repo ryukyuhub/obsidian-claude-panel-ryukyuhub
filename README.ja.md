@@ -78,12 +78,11 @@ claude /login
 
 ### 4. Obsidian プラグインを導入
 
-1. [最新リリース](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases) から `claude-panel-ryukyuhub-<version>.zip` をダウンロード
-2. zip を解凍し、`claude-panel-ryukyuhub/` フォルダを `<your-vault>/.obsidian/plugins/` 直下に配置
-3. Obsidian → 設定 → コミュニティプラグイン → **Claude Panel** を有効化
-4. プラグイン設定を開くと先頭に「セットアップ状況」が表示されます。`claude` CLI が自動検出されない場合は CLI バイナリの絶対パスを入力してください(例: macOS なら `/usr/local/bin/claude`、Windows なら `C:\Users\<you>\AppData\Roaming\npm\claude.cmd`)
+1. Obsidian → 設定 → コミュニティプラグイン → **新着プラグイン** から `Claude Panel` を検索して **インストール**
+2. コミュニティプラグイン一覧で **Claude Panel** を有効化
+3. プラグイン設定を開くと先頭に「セットアップ状況」が表示されます。`claude` CLI が自動検出されない場合は CLI バイナリの絶対パスを入力してください(例: macOS なら `/usr/local/bin/claude`、Windows なら `C:\Users\<you>\AppData\Roaming\npm\claude.cmd`)
 
-> BRAT には対応していません — リリース成果物は zip 形式で配布しています。
+> 開発版や先行リリースを試したい場合は [BRAT](https://github.com/TfTHacker/obsidian42-brat) で本リポジトリから直接インストールできます。
 
 ## トラブルシューティング
 

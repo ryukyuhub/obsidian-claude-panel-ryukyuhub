@@ -80,12 +80,11 @@ A browser opens to Anthropic's login screen. Sign in with your Claude Pro / Max 
 
 ### 4. Install the Obsidian plugin
 
-1. Download `claude-panel-ryukyuhub-<version>.zip` from the [latest release](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/releases).
-2. Unzip it and place the resulting `claude-panel-ryukyuhub/` folder directly under `<your-vault>/.obsidian/plugins/`.
-3. In Obsidian, open Settings → Community plugins and enable **Claude Panel**.
-4. Open the plugin's setting tab. The top "Setup status" block shows whether the `claude` CLI was auto-detected. If not, paste the absolute path to the binary (for example `/usr/local/bin/claude` on macOS, or `C:\Users\<you>\AppData\Roaming\npm\claude.cmd` on Windows).
+1. In Obsidian, open Settings → Community plugins → **Browse**, search for **Claude Panel**, and click **Install**.
+2. Enable **Claude Panel** in the Community plugins list.
+3. Open the plugin's setting tab. The top "Setup status" block shows whether the `claude` CLI was auto-detected. If not, paste the absolute path to the binary (for example `/usr/local/bin/claude` on macOS, or `C:\Users\<you>\AppData\Roaming\npm\claude.cmd` on Windows).
 
-> BRAT is not supported — releases ship as a single zip rather than loose files at the release root.
+> For sideloading or pre-release builds, [BRAT](https://github.com/TfTHacker/obsidian42-brat) can install the plugin straight from this repository.
 
 ## Troubleshooting
 
