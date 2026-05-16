@@ -1,6 +1,6 @@
 {
   "name": "claude-panel-ryukyuhub",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Right-sidebar chat panel powered by Claude Code. Runs the `claude` CLI as a subprocess with the active vault as the working directory.",
   "main": "main.js",
   "scripts": {
