@@ -336,15 +336,15 @@ export class ChatRuntime {
 	}
 
 	clear(): void {
-		// 表示中の会話だけクリアする。コンテキストドーナツの値は保持する
-		// （Clear ボタンでメーターまで消えないようにユーザーから明確に
-		// 要望があったため）。セッション ID は破棄するので、次のターンは
-		// 新しい claude セッションで開始される。
+		// セッション ID も lastUsage も破棄して、次のターンは完全に新しい
+		// claude セッション（コンテキストメーターも 0 から）で開始する。
 		this.flushPendingPermissions(t("chatRuntime.conversationCleared"));
 		this.messages = [];
 		this.currentSessionId = null;
 		this.pendingContinue = false;
+		this.lastUsage = null;
 		this.host.onMessagesChanged();
+		this.host.onUsageChanged(null);
 	}
 
 	/**
