@@ -1773,6 +1773,37 @@
 	flex-direction: column;
 }
 
+/* キュー登録された次ターンの 1 行表示。busy 中に追加プロンプトを
+   送ると textarea が空になる代わりにここに preview が出る。× で
+   キャンセル。 */
+.claude-panel-queued-strip {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	margin-bottom: 4px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.claude-panel-queued-strip.is-hidden {
+	display: none;
+}
+
+.claude-panel-queued-text {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.claude-panel-queued-cancel {
+	flex: 0 0 auto;
+}
+
 /* スラッシュコマンドのサジェスト popup。textarea の上に絶対配置で
    浮かぶ。スクロール可能。`is-hidden` で非表示。 */
 .claude-panel-suggest {

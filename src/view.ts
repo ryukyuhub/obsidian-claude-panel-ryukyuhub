@@ -8,7 +8,7 @@ import {
 } from "obsidian";
 import type ClaudePanelPlugin from "./main";
 import { checkClaudeCli } from "./agent";
-import { ChatRuntime } from "./chat-runtime";
+import { ChatRuntime, type ComposedMessage } from "./chat-runtime";
 import {
 	EFFORT_LEVELS,
 	MODEL_PRESETS,
@@ -75,6 +75,16 @@ export class ClaudePanelView extends ItemView {
 	// パーミッション / busy / 累計 usage を所有する。host インターフェース
 	// （= この view 自身）経由で DOM 更新と通知音を依頼する。
 	private runtime!: ChatRuntime;
+	// ターン実行中にユーザーが追加プロンプトを送信したときの「次のターン」
+	// 用キュー。現ターン完了時の onBusyChanged で発火する。スロット数は 1。
+	// 二度目の送信は上書き。Stop ボタン／× ボタン／ESC で破棄される。
+	private queuedTurn: {
+		text: string;
+		composed: ComposedMessage;
+		cwd: string;
+	} | null = null;
+	private queuedStrip!: HTMLElement;
+	private queuedTextEl!: HTMLElement;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ClaudePanelPlugin) {
 		super(leaf);
@@ -250,6 +260,8 @@ export class ClaudePanelView extends ItemView {
 		this.renderMessages();
 		this.composer.renderAll();
 		this.contextMeter?.update(this.runtime.getLastUsage());
+		this.refreshQueuedStrip();
+		this.refreshSendBtn();
 		this.selection.poll();
 
 		// 実行中ターンの最中に再描画された場合は Send ボタンを Stop 表示へ。
@@ -376,13 +388,30 @@ export class ClaudePanelView extends ItemView {
 	private renderComposer(root: HTMLElement): void {
 		const composer = root.createDiv({ cls: "claude-panel-composer" });
 
-		// レイアウト（上 → 下）: プロンプト textarea → アクティブファイル →
-		// 選択範囲 → 添付 → アクションボタン → モデル/Thinking コントロール。
-		// 入力欄を最上段に置き、参照系（含める/除外できる行）はその下に
-		// 並べる。selection/attachments は該当時のみ表示される。
+		// レイアウト（上 → 下）: キュー表示 → プロンプト textarea →
+		// アクティブファイル → 選択範囲 → 添付 → アクションボタン →
+		// モデル/Thinking コントロール。入力欄を最上段に置き、参照系
+		// （含める/除外できる行）はその下に並べる。selection/attachments
+		// は該当時のみ表示される。
 		// textarea とサジェスト popup を同じ relative 親に入れて、popup を
 		// 入力欄の真上にオーバレイする。composer 全体を relative にすると
 		// 他の絶対配置要素（モデルセレクト等）に影響するため避ける。
+
+		// キュー登録された次ターンの表示行。busy 中に送信したプロンプトを
+		// 1 件だけ保持し、× で取り消せる。未登録時は is-hidden で消す。
+		this.queuedStrip = composer.createDiv({
+			cls: "claude-panel-queued-strip is-hidden",
+		});
+		this.queuedTextEl = this.queuedStrip.createSpan({
+			cls: "claude-panel-queued-text",
+		});
+		const queuedCancelBtn = this.queuedStrip.createEl("button", {
+			cls: "claude-panel-queued-cancel clickable-icon",
+		});
+		setIcon(queuedCancelBtn, "x");
+		queuedCancelBtn.setAttr("aria-label", t("view.queuedCancelAria"));
+		queuedCancelBtn.onclick = () => this.cancelQueue();
+
 		const inputWrap = composer.createDiv({
 			cls: "claude-panel-input-wrap",
 		});
@@ -403,6 +432,7 @@ export class ClaudePanelView extends ItemView {
 		this.history = new PromptHistory(this.inputEl, () =>
 			this.runtime.getInputHistory()
 		);
+		this.inputEl.addEventListener("input", () => this.refreshSendBtn());
 		this.inputEl.addEventListener("keydown", (e) => {
 			// サジェスト popup が開いている場合は、popup のキーバインドを
 			// 優先させる（Enter で送信 / Up,Down で履歴より先に処理する）。
@@ -412,6 +442,7 @@ export class ClaudePanelView extends ItemView {
 				void this.send();
 			} else if (e.key === "Escape" && this.runtime.isBusy()) {
 				e.preventDefault();
+				this.cancelQueue();
 				this.runtime.cancel();
 			} else if (e.key === "ArrowUp" && this.history.cursorOnFirstLine()) {
 				e.preventDefault();
@@ -453,8 +484,15 @@ export class ClaudePanelView extends ItemView {
 			cls: "mod-cta claude-panel-send",
 		});
 		this.sendBtn.onclick = () => {
-			if (this.runtime.isBusy()) this.runtime.cancel();
-			else void this.send();
+			// textarea が空のときだけ「停止」として振る舞う。何か入力されて
+			// いれば busy でも送信（→ キュー登録）する。Stop は実行中の
+			// ターンとキューの両方を破棄する。
+			if (this.runtime.isBusy() && !this.inputEl.value.trim()) {
+				this.cancelQueue();
+				this.runtime.cancel();
+			} else {
+				void this.send();
+			}
 		};
 
 		this.renderModelThinkControls(composer);
@@ -717,18 +755,65 @@ export class ClaudePanelView extends ItemView {
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
-	/** 送信ボタンの見た目を busy に応じて切り替える。 */
+	/** busy 状態が変わったら送信ボタンを更新し、busy が解けた時に
+	 *  キュー登録された次ターンがあれば自動発火する。 */
 	onBusyChanged(busy: boolean): void {
-		if (busy) {
+		this.refreshSendBtn();
+		if (!busy && this.queuedTurn) {
+			const q = this.queuedTurn;
+			this.queuedTurn = null;
+			this.refreshQueuedStrip();
+			this.refreshSendBtn();
+			// onBusyChanged ハンドラのチェインを抜けてから runtime.send を
+			// 呼ぶ（再入を避け、UI が一度 idle 状態に落ち着いてから次が
+			// 走るようにする）。
+			queueMicrotask(() => {
+				void this.runtime.send(q.text, q.composed, q.cwd);
+			});
+		}
+	}
+
+	/** 送信ボタンのラベル／クラスを (busy, textarea が空か) に応じて切り替える。
+	 *  - !busy                    → 送信 (mod-cta)
+	 *  - busy かつ textarea が空   → 停止 (mod-warning)
+	 *  - busy かつ textarea に入力 → 次のターンへ (mod-cta)
+	 */
+	private refreshSendBtn(): void {
+		const busy = this.runtime?.isBusy() ?? false;
+		const hasText = this.inputEl?.value.trim().length > 0;
+		if (busy && !hasText) {
 			this.sendBtn.removeClass("mod-cta");
 			this.sendBtn.addClass("mod-warning");
 			this.sendBtn.setText(t("view.stopBtn"));
+		} else if (busy && hasText) {
+			this.sendBtn.removeClass("mod-warning");
+			this.sendBtn.addClass("mod-cta");
+			this.sendBtn.setText(t("view.queueBtn"));
 		} else {
 			this.sendBtn.removeClass("mod-warning");
 			this.sendBtn.addClass("mod-cta");
 			this.sendBtn.setText(t("view.sendBtn"));
 		}
 		this.sendBtn.disabled = false;
+	}
+
+	private refreshQueuedStrip(): void {
+		if (!this.queuedStrip || !this.queuedTextEl) return;
+		if (this.queuedTurn) {
+			const text = this.queuedTurn.text;
+			const preview = text.length > 60 ? `${text.slice(0, 60)}…` : text;
+			this.queuedTextEl.setText(t("view.queuedLabel", preview));
+			this.queuedStrip.removeClass("is-hidden");
+		} else {
+			this.queuedStrip.addClass("is-hidden");
+		}
+	}
+
+	private cancelQueue(): void {
+		if (!this.queuedTurn) return;
+		this.queuedTurn = null;
+		this.refreshQueuedStrip();
+		this.refreshSendBtn();
 	}
 
 	/** トークン使用量更新 → コンテキストメーターを駆動する。 */
@@ -757,8 +842,9 @@ export class ClaudePanelView extends ItemView {
 
 	private clearConversation(): void {
 		// 添付状態のクリアは Composer に委譲。会話履歴とセッション ID は
-		// runtime 側で破棄される。
+		// runtime 側で破棄される。キュー登録された次ターンも同時に捨てる。
 		this.composer.clearAttachments();
+		this.cancelQueue();
 		this.runtime.clear();
 	}
 
@@ -804,18 +890,25 @@ export class ClaudePanelView extends ItemView {
 	 * 送信ボタン／Enter キー／プラグインコマンドから呼ばれるエントリ。
 	 * view 側でユーザー入力を受け取り、スラッシュコマンドの早期インター
 	 * セプト・cwd 検証・composeMessage を済ませてから ChatRuntime に
-	 * 渡す。runtime は busy 中の二重実行を内部で弾く。
+	 * 渡す。busy 中なら「次のターン」としてキューに積み、現ターン完了時の
+	 * onBusyChanged で自動発火させる（スロット数 1、二度目の送信は上書き）。
 	 */
 	private async send(): Promise<void> {
-		if (this.runtime.isBusy()) return;
 		const text = this.inputEl.value.trim();
 		if (!text) return;
 
-		// スラッシュコマンドはローカルで処理して runtime には渡さない。
-		// /clear など UI 操作系はここで完結する。
+		const busy = this.runtime.isBusy();
+
+		// スラッシュコマンドは busy 中はブロックする（local も CLI 転送も
+		// 会話状態を変える可能性があるため、キューに積まずに案内だけ出す）。
 		if (text.startsWith("/")) {
+			if (busy) {
+				new Notice(t("view.slashBlockedBusy"));
+				return;
+			}
 			if (handleLocalSlashCommand(this.slashContext(), text)) {
 				this.inputEl.value = "";
+				this.refreshSendBtn();
 				return;
 			}
 		}
@@ -828,10 +921,20 @@ export class ClaudePanelView extends ItemView {
 
 		const composed = this.composer.composeMessage(text);
 
-		// runtime に渡す前に入力欄と添付をクリアする（UI 即時フィードバック）。
+		// runtime に渡す（あるいはキューに積む）前に入力欄と添付をクリア
+		// する（UI 即時フィードバック）。
 		this.inputEl.value = "";
 		this.composer.clearAttachments();
 
+		if (busy) {
+			this.queuedTurn = { text, composed, cwd };
+			this.refreshQueuedStrip();
+			this.refreshSendBtn();
+			new Notice(t("view.queuedNotice"));
+			return;
+		}
+
+		this.refreshSendBtn();
 		await this.runtime.send(text, composed, cwd);
 	}
 
