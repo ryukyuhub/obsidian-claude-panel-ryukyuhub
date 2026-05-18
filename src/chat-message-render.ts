@@ -36,7 +36,8 @@ export function renderMessage(
 	onPermissionDecision?: (
 		toolUseId: string,
 		decision: PermissionDecision
-	) => void
+	) => void,
+	onAskAnswer?: (answer: string) => void
 ): void {
 	host.empty();
 	host.addClass("claude-panel-msg");
@@ -77,9 +78,28 @@ export function renderMessage(
 	if (msg.interactive) {
 		msg.interactive(body);
 	} else {
-		for (const part of msg.parts) {
-			renderPart(body, part, app, owner, !!msg.streaming, onPermissionDecision);
+		// 散文中の yes/no 質問の自動 GUI フォールバックは「メッセージ最終の
+		// テキスト part」にだけ載せたい（途中の text → tool → text のような
+		// パターンで、ツール前の text 末尾を質問と誤認しないため）。
+		let lastTextIdx = -1;
+		for (let i = msg.parts.length - 1; i >= 0; i--) {
+			if (msg.parts[i].type === "text") {
+				lastTextIdx = i;
+				break;
+			}
 		}
+		msg.parts.forEach((part, idx) => {
+			renderPart(
+				body,
+				part,
+				app,
+				owner,
+				!!msg.streaming,
+				onPermissionDecision,
+				onAskAnswer,
+				idx === lastTextIdx && msg.role === "assistant" && !msg.streaming
+			);
+		});
 	}
 
 	if (msg.result) {
@@ -93,7 +113,9 @@ export function renderPart(
 	app: App,
 	owner: Component,
 	streaming: boolean,
-	onPermissionDecision?: (toolUseId: string, decision: PermissionDecision) => void
+	onPermissionDecision?: (toolUseId: string, decision: PermissionDecision) => void,
+	onAskAnswer?: (answer: string) => void,
+	yesNoFallbackEligible = false
 ): void {
 	if (part.type === "text") {
 		const span = body.createDiv({
@@ -103,10 +125,15 @@ export function renderPart(
 			span.textContent = part.text;
 		} else {
 			span.addClass("claude-panel-md");
-			void MarkdownRenderer.render(app, part.text, span, "", owner)
+			const partText = part.text;
+			void MarkdownRenderer.render(app, partText, span, "", owner)
 				.then(() => {
 					linkifyPaths(span, app);
 					highlightQuestions(span);
+					renderAskBlocks(span, onAskAnswer);
+					if (yesNoFallbackEligible) {
+						maybeRenderYesNoFallback(span, partText, onAskAnswer);
+					}
 				});
 		}
 	} else if (part.type === "tool") {
@@ -277,6 +304,389 @@ function highlightQuestions(host: HTMLElement): void {
 		}
 		text.replaceWith(fragment);
 	}
+}
+
+/**
+ * ストリーミング中の生テキストから `\`\`\`ask` フェンスを含む区間を取り除く。
+ * 確定後のマークダウン描画では `renderAskBlocks` が JSON を質問カードに
+ * 置き換えてくれるが、ストリーミング途中は文字列がプレーンテキストとして
+ * そのまま描画されるため、JSON が一瞬覗いてしまう。これを避けるため、
+ * 完成・未完成（閉じ \`\`\` 未到達）どちらの場合もブロックを丸ごと
+ * 表示から外す。マークダウン構造としての本来のテキストは parts に
+ * 保持されたまま、確定時の再描画でカードへ復元される。
+ */
+export function stripAskBlocksForStream(text: string): string {
+	let out = "";
+	let pos = 0;
+	while (pos < text.length) {
+		const startIdx = findAskFenceStart(text, pos);
+		if (startIdx === -1) {
+			out += text.slice(pos);
+			break;
+		}
+		// ブロック直前の余分な空白行は除く（ブロックが消える分の見た目を詰める）。
+		out += text.slice(pos, startIdx).replace(/\n+$/, "");
+		// 開始フェンス末尾の改行を探す。まだ到達していなければ未完のフェンス
+		// なので、そこから先は丸ごと隠してリターン。
+		const lineEnd = text.indexOf("\n", startIdx);
+		if (lineEnd === -1) break;
+		// 閉じ \`\`\` を探す。未到達ならブロック途中なので隠してリターン。
+		const closeIdx = text.indexOf("\n```", lineEnd);
+		if (closeIdx === -1) break;
+		pos = closeIdx + 4;
+		if (text[pos] === "\n") pos++;
+	}
+	return out;
+}
+
+function findAskFenceStart(text: string, fromIdx: number): number {
+	let i = fromIdx;
+	while (i < text.length) {
+		const idx = text.indexOf("```ask", i);
+		if (idx === -1) return -1;
+		// 行頭であること（テキスト先頭 or 直前が改行）。
+		if (idx !== 0 && text[idx - 1] !== "\n") {
+			i = idx + 1;
+			continue;
+		}
+		// `\`\`\`asking` のような語の途中マッチを弾く。
+		const after = text[idx + 6];
+		if (after === undefined || after === "\n" || after === " " || after === "\r" || after === "\t") {
+			return idx;
+		}
+		i = idx + 1;
+	}
+	return -1;
+}
+
+/**
+ * `\`\`\`ask` フェンスドコードブロックを検出し、クリック可能な質問 GUI に
+ * 差し替える。Claude にはシステムプロンプト付加文で「離散的な選択肢で
+ * 答えられる質問は `ask` 言語タグの JSON で出せ」と指示している
+ * （[src/agent.ts](src/agent.ts) を参照）。MarkdownRenderer を通った後は
+ * `<pre><code class="language-ask">...</code></pre>` の形になっているので、
+ * pre 要素ごと差し替える。`onAnswer` が未指定なら(履歴ロード時など)
+ * クリック不可のままパースだけして表示する。
+ * 置き換え後、`.claude-panel-messages` を最下部までスクロールし、サイド
+ * バーの隅で見ているユーザーが質問の存在を見落とさないようにする。
+ */
+function renderAskBlocks(
+	host: HTMLElement,
+	onAnswer?: (answer: string) => void
+): void {
+	const codes = Array.from(
+		host.querySelectorAll("pre > code.language-ask")
+	) as HTMLElement[];
+	let replaced = false;
+	for (const code of codes) {
+		const pre = code.parentElement;
+		if (!pre || pre.tagName !== "PRE") continue;
+		const raw = code.textContent ?? "";
+		const parsed = parseAskPayload(raw);
+		if (!parsed) continue;
+
+		const card = document.createElement("div");
+		card.className = "claude-panel-ask";
+
+		const q = document.createElement("div");
+		q.className = "claude-panel-ask-question";
+		q.textContent = parsed.question;
+		card.appendChild(q);
+
+		const slot = document.createElement("div");
+		slot.className = "claude-panel-ask-slot";
+		card.appendChild(slot);
+		renderAskOptions(slot, parsed, onAnswer);
+
+		pre.replaceWith(card);
+		replaced = true;
+	}
+	if (replaced) {
+		// MarkdownRenderer.render は非同期で、メッセージ全体を再描画する側
+		// （onMessageRerender）の同期的な scrollTop 設定はカード追加前に
+		// 走り終わっている。質問が画面外に置いていかれないよう、ここで
+		// 改めて messages スクロールを最下部へ寄せる。
+		const messagesEl = host.closest(
+			".claude-panel-messages"
+		) as HTMLElement | null;
+		if (messagesEl) {
+			messagesEl.scrollTop = messagesEl.scrollHeight;
+		}
+	}
+}
+
+/**
+ * 質問カード内の選択肢ボタン群を `slot` に描画する。`allowOther` が true なら
+ * 末尾に「その他…」ボタンを追加し、押下で同じスロットを記述入力 UI に
+ * 置き換える（戻ると同関数を呼び直して復元）。
+ */
+function renderAskOptions(
+	slot: HTMLElement,
+	parsed: AskPayload,
+	onAnswer?: (answer: string) => void
+): void {
+	slot.empty();
+	slot.className = "claude-panel-ask-slot claude-panel-ask-options";
+
+	for (const option of parsed.options) {
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "claude-panel-ask-option";
+		btn.textContent = option;
+		if (onAnswer) {
+			btn.onclick = (e) => {
+				e.preventDefault();
+				// 連打で複数回送信されないよう、選択直後にカード内の
+				// ボタンを全部無効化し、選択された方には is-selected を立てる。
+				const buttons = slot.querySelectorAll<HTMLButtonElement>(
+					".claude-panel-ask-option"
+				);
+				buttons.forEach((b) => (b.disabled = true));
+				btn.addClass("is-selected");
+				onAnswer(option);
+			};
+		} else {
+			btn.disabled = true;
+		}
+		slot.appendChild(btn);
+	}
+
+	if (parsed.allowOther && onAnswer) {
+		const otherBtn = document.createElement("button");
+		otherBtn.type = "button";
+		otherBtn.className =
+			"claude-panel-ask-option claude-panel-ask-option-other";
+		otherBtn.textContent = t("chat.askOtherButton");
+		otherBtn.onclick = (e) => {
+			e.preventDefault();
+			renderAskFreeText(slot, parsed, onAnswer);
+		};
+		slot.appendChild(otherBtn);
+	}
+}
+
+/**
+ * 「その他…」を押された後の記述入力 UI。Enter（IME 確定中は除く）で送信、
+ * Shift+Enter で改行、Esc / 戻るボタンで選択肢一覧に戻る。送信したら自身を
+ * 「ユーザーが入力した文字列」の is-selected ピルに置き換え、押下不可にする。
+ */
+function renderAskFreeText(
+	slot: HTMLElement,
+	parsed: AskPayload,
+	onAnswer: (answer: string) => void
+): void {
+	slot.empty();
+	slot.className = "claude-panel-ask-slot claude-panel-ask-freeform";
+
+	const ta = document.createElement("textarea");
+	ta.className = "claude-panel-ask-freeform-input";
+	ta.rows = 2;
+	ta.placeholder = t("chat.askOtherPlaceholder");
+	slot.appendChild(ta);
+
+	const actions = document.createElement("div");
+	actions.className = "claude-panel-ask-freeform-actions";
+	slot.appendChild(actions);
+
+	const backBtn = document.createElement("button");
+	backBtn.type = "button";
+	backBtn.className = "claude-panel-ask-freeform-cancel";
+	backBtn.textContent = t("chat.askOtherCancel");
+	backBtn.onclick = (e) => {
+		e.preventDefault();
+		renderAskOptions(slot, parsed, onAnswer);
+	};
+	actions.appendChild(backBtn);
+
+	const sendBtn = document.createElement("button");
+	sendBtn.type = "button";
+	sendBtn.className = "claude-panel-ask-freeform-submit mod-cta";
+	sendBtn.textContent = t("chat.askOtherSubmit");
+	actions.appendChild(sendBtn);
+
+	const submit = (): void => {
+		const value = ta.value.trim();
+		if (!value) {
+			ta.focus();
+			return;
+		}
+		slot.empty();
+		slot.className = "claude-panel-ask-slot claude-panel-ask-options";
+		const pill = document.createElement("button");
+		pill.type = "button";
+		pill.className = "claude-panel-ask-option is-selected";
+		pill.textContent = value;
+		pill.disabled = true;
+		slot.appendChild(pill);
+		onAnswer(value);
+	};
+
+	sendBtn.onclick = (e) => {
+		e.preventDefault();
+		submit();
+	};
+	ta.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+			e.preventDefault();
+			submit();
+		} else if (e.key === "Escape") {
+			e.preventDefault();
+			renderAskOptions(slot, parsed, onAnswer);
+		}
+	});
+
+	// 入力可能になった瞬間にフォーカスする。renderAskBlocks 全体は
+	// MarkdownRenderer の非同期 then チェインの中で走るので、要素は既に
+	// DOM へ挿入済み。focus は即時で問題ない。
+	ta.focus();
+}
+
+/**
+ * 散文中に yes/no で答えられる質問が紛れていたら、本文末尾に Yes/No ボタン
+ * の小カードを追加するフォールバック。Claude には ask ブロックで出すよう
+ * システムプロンプトで指示しているが、長い会話のなかでルールを忘れて散文
+ * のまま「…ますか?」と聞いてくるケースが頻発するため、クライアント側で
+ * 救済する。明示的な ask ブロックが含まれるテキストは素通り（カードと
+ * 二重に出さない）。
+ */
+function maybeRenderYesNoFallback(
+	container: HTMLElement,
+	partText: string,
+	onAnswer?: (answer: string) => void
+): void {
+	if (!onAnswer) return;
+	if (/```ask\b/.test(partText)) return;
+	const labels = detectYesNoQuestion(partText);
+	if (!labels) return;
+	renderYesNoCard(container, labels, onAnswer);
+	// 質問カードと同様、生成タイミングが scroll の後になるので最下部寄せを再要請。
+	const messagesEl = container.closest(
+		".claude-panel-messages"
+	) as HTMLElement | null;
+	if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+interface YesNoLabels {
+	yes: string;
+	no: string;
+}
+
+/**
+ * 散文の末尾文が yes/no で答えられる質問かを判定する。曖昧な疑問詞
+ * （何 / どう / なぜ など）を含む場合は open-ended なので除外する。
+ */
+function detectYesNoQuestion(text: string): YesNoLabels | null {
+	const trimmed = text.replace(/\s+$/, "");
+	if (!trimmed) return null;
+	const last = trimmed[trimmed.length - 1];
+	if (last !== "?" && last !== "？") return null;
+
+	// 末尾文だけを抽出する: 改行・句点・ピリオド・感嘆符のいずれかの直後を文頭とみなす。
+	const breakers = ["\n", "。", "！", "!", ".", "．"];
+	let sentStart = 0;
+	for (const ch of breakers) {
+		const idx = trimmed.lastIndexOf(ch);
+		if (idx > sentStart) sentStart = idx + 1;
+	}
+	let sentence = trimmed.slice(sentStart).trim();
+	// 箇条書きの行頭マーカーや markdown の強調を剥がしておく。
+	sentence = sentence
+		.replace(/^[-*+]\s+/, "")
+		.replace(/^\d+[.)]\s+/, "")
+		.replace(/^\*+/, "")
+		.replace(/\*+$/, "");
+	if (!sentence) return null;
+	if (sentence.length > 140) return null;
+
+	// 日本語: 末尾が「か?」「か？」
+	if (/か[?？]$/.test(sentence)) {
+		// 文中に疑問詞があるなら open-ended（「次は何をしますか?」など）として除外。
+		if (
+			/(何|なに|どう|どこ|いつ|誰|だれ|どの|なぜ|どれ|どんな|いくつ|いくら|どっち|どちら|いかが|なんで|どちら様)/.test(
+				sentence
+			)
+		) {
+			return null;
+		}
+		return { yes: "はい", no: "いいえ" };
+	}
+
+	// 英語: yes/no 助動詞で始まる疑問文。先頭が疑問詞（what など）の場合は弾く。
+	if (/^(what|where|when|who|whom|whose|which|why|how)\b/i.test(sentence)) {
+		return null;
+	}
+	const enLead =
+		/^(should|shall|do|does|did|can|could|will|would|may|might|must|is|are|was|were|have|has|had|am|want|need|ok|okay|isn't|aren't|wasn't|weren't|don't|doesn't|didn't|won't|wouldn't|shouldn't|couldn't|haven't|hasn't|hadn't|can't|mustn't)\b/i;
+	if (enLead.test(sentence)) {
+		return { yes: "Yes", no: "No" };
+	}
+	return null;
+}
+
+function renderYesNoCard(
+	container: HTMLElement,
+	labels: YesNoLabels,
+	onAnswer: (answer: string) => void
+): void {
+	const card = document.createElement("div");
+	card.className = "claude-panel-ask claude-panel-ask-yesno";
+
+	const slot = document.createElement("div");
+	slot.className = "claude-panel-ask-slot claude-panel-ask-options";
+	card.appendChild(slot);
+
+	const makeBtn = (text: string): HTMLButtonElement => {
+		const b = document.createElement("button");
+		b.type = "button";
+		b.className = "claude-panel-ask-option";
+		b.textContent = text;
+		b.onclick = (e) => {
+			e.preventDefault();
+			const buttons = slot.querySelectorAll<HTMLButtonElement>(
+				".claude-panel-ask-option"
+			);
+			buttons.forEach((x) => (x.disabled = true));
+			b.addClass("is-selected");
+			onAnswer(text);
+		};
+		return b;
+	};
+
+	slot.appendChild(makeBtn(labels.yes));
+	slot.appendChild(makeBtn(labels.no));
+
+	container.appendChild(card);
+}
+
+interface AskPayload {
+	question: string;
+	options: string[];
+	allowOther: boolean;
+}
+
+function parseAskPayload(raw: string): AskPayload | null {
+	const trimmed = raw.trim();
+	if (!trimmed) return null;
+	let obj: unknown;
+	try {
+		obj = JSON.parse(trimmed);
+	} catch {
+		return null;
+	}
+	if (typeof obj !== "object" || obj === null) return null;
+	const o = obj as Record<string, unknown>;
+	const question = typeof o.question === "string" ? o.question.trim() : "";
+	if (!question) return null;
+	if (!Array.isArray(o.options)) return null;
+	const options: string[] = [];
+	for (const v of o.options) {
+		if (typeof v !== "string") continue;
+		const s = v.trim();
+		if (s) options.push(s);
+	}
+	if (options.length === 0) return null;
+	const allowOther = o.allowOther === true;
+	return { question, options, allowOther };
 }
 
 export function renderToolPill(

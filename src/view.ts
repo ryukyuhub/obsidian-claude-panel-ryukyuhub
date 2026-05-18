@@ -35,7 +35,11 @@ import {
 	type ChatMessage,
 	type MessageUsage,
 } from "./chat-message";
-import { renderMessage, renderToolPill } from "./chat-message-render";
+import {
+	renderMessage,
+	renderToolPill,
+	stripAskBlocksForStream,
+} from "./chat-message-render";
 import { t } from "./i18n";
 
 
@@ -633,8 +637,14 @@ export class ClaudePanelView extends ItemView {
 		}
 		for (const msg of messages) {
 			const host = this.messagesEl.createDiv();
-			renderMessage(host, msg, this.app, this, (toolUseId, decision) =>
-				this.runtime.applyPermissionDecision(toolUseId, decision)
+			renderMessage(
+				host,
+				msg,
+				this.app,
+				this,
+				(toolUseId, decision) =>
+					this.runtime.applyPermissionDecision(toolUseId, decision),
+				(answer) => this.sendAskAnswer(answer)
 			);
 		}
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -715,17 +725,31 @@ export class ClaudePanelView extends ItemView {
 	// ============================================================
 
 	/** ストリーミング中のメッセージにテキストチャンクを追記する DOM 高速パッチ。
-	 *  最後の text-part span に textContent を append し、再描画を避ける。 */
+	 *  parts 側で最後の text part を引き、`\`\`\`ask` ブロックを抑制した
+	 *  フィルタ済みテキストを span に流し込む。確定時の再描画
+	 *  （onMessageRerender → MarkdownRenderer + renderAskBlocks）で
+	 *  ブロックは質問カードに置き換わるため、最終結果はそちらが正となる。 */
 	onStreamingText(msg: ChatMessage, chunk: string): void {
+		// chunk は parts に既に反映済み。差分を独自に DOM へ流すと
+		// `\`\`\`ask` をまたぐ断片が現れて見づらいので、part の累積から
+		// フィルタ済みテキストを 1 回だけ流し直す。
+		void chunk;
 		const body = this.getMessageBody(msg.id);
 		if (!body) return;
-		const last = body.lastElementChild as HTMLElement | null;
-		if (last && last.classList.contains("claude-panel-msg-text-part")) {
-			last.textContent = (last.textContent || "") + chunk;
-		} else {
-			const span = body.createDiv({ cls: "claude-panel-msg-text-part" });
-			span.textContent = chunk;
+		let lastTextPart = "";
+		for (let i = msg.parts.length - 1; i >= 0; i--) {
+			const p = msg.parts[i];
+			if (p.type === "text") {
+				lastTextPart = p.text;
+				break;
+			}
 		}
+		const displayText = stripAskBlocksForStream(lastTextPart);
+		let last = body.lastElementChild as HTMLElement | null;
+		if (!last || !last.classList.contains("claude-panel-msg-text-part")) {
+			last = body.createDiv({ cls: "claude-panel-msg-text-part" });
+		}
+		last.textContent = displayText;
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
@@ -748,8 +772,14 @@ export class ClaudePanelView extends ItemView {
 			`[data-msg-id="${msg.id}"]`
 		) as HTMLElement | null;
 		if (host) {
-			renderMessage(host, msg, this.app, this, (toolUseId, decision) =>
-				this.runtime.applyPermissionDecision(toolUseId, decision)
+			renderMessage(
+				host,
+				msg,
+				this.app,
+				this,
+				(toolUseId, decision) =>
+					this.runtime.applyPermissionDecision(toolUseId, decision),
+				(answer) => this.sendAskAnswer(answer)
 			);
 		}
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -884,6 +914,31 @@ export class ClaudePanelView extends ItemView {
 		if (!setting) return;
 		setting.open();
 		setting.openTabById(this.plugin.manifest.id);
+	}
+
+	/**
+	 * 質問 GUI（`\`\`\`ask` ブロックから描かれるボタン群）でユーザーがクリック
+	 * した選択肢を、次のユーザーメッセージとして送信する。textarea 側の下書き
+	 * は触らない（ユーザーが別のことを書いている最中かもしれないため）。
+	 * busy 中は send() と同じく次ターンキューへ積む。
+	 */
+	private sendAskAnswer(answer: string): void {
+		const text = answer.trim();
+		if (!text) return;
+		const cwd = this.getVaultPath();
+		if (!cwd) {
+			new Notice(t("view.vaultPathUnavailable"));
+			return;
+		}
+		const composed = this.composer.composeMessage(text);
+		if (this.runtime.isBusy()) {
+			this.queuedTurn = { text, composed, cwd };
+			this.refreshQueuedStrip();
+			this.refreshSendBtn();
+			new Notice(t("view.queuedNotice"));
+			return;
+		}
+		void this.runtime.send(text, composed, cwd);
 	}
 
 	/**

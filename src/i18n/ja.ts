@@ -135,6 +135,10 @@ export const ja = {
 		selRefRangeMulti: (start: number, lines: number) =>
 			`L${start} · ${lines}行`,
 		selRefRangeSingle: (start: number) => `L${start}`,
+		askOtherButton: "その他…",
+		askOtherPlaceholder: "自由に入力…",
+		askOtherSubmit: "送信",
+		askOtherCancel: "戻る",
 	},
 	chatTool: {
 		changeOfN: (i: number, n: number) => `変更 ${i} / ${n}`,

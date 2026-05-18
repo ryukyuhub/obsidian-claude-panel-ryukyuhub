@@ -97,7 +97,33 @@ const SYSTEM_PROMPT_APPENDIX =
 	"Use MCP tools ONLY when the user explicitly asks for the corresponding capability " +
 	"(e.g. 'use serena to ...', 'search the web with ...', 'check via mcp ...'). " +
 	"For routine vault edits, prefer built-in Read/Edit/Write/Glob/Grep/Bash. " +
-	"Never call MCP tools just to inspect or 'see what's available'.";
+	"Never call MCP tools just to inspect or 'see what's available'." +
+	"\n\n[Asking the user a question with discrete choices]\n" +
+	"When you would otherwise ask the user a question whose natural answer is one " +
+	"of a small set of discrete options (typically 2-5 mutually-exclusive choices), " +
+	"emit it as a fenced code block with the language tag `ask` containing a JSON " +
+	"object of shape `{\"question\": string, \"options\": string[], \"allowOther\"?: boolean}`. " +
+	"The host UI renders this as clickable buttons; the user's click is sent back " +
+	"to you as their next message. Set `allowOther: true` when the listed options " +
+	"may not cover every reasonable answer — the host will show an additional " +
+	"\"その他…\" button that expands into a free-text input on the spot. Do NOT " +
+	"include a literal \"その他\" / \"Other\" entry in the `options` array; rely on " +
+	"`allowOther` for that. Example:\n" +
+	"```ask\n" +
+	"{\"question\": \"Which approach should I take?\", \"options\": [\"Refactor in place\", \"Extract a helper\", \"Leave as-is\"], \"allowOther\": true}\n" +
+	"```\n" +
+	"Keep each option short (a few words to one short line). Do NOT use this for " +
+	"open-ended or free-text questions — just ask in prose. Place the block at the " +
+	"end of your message, after any explanation. Emit at most one `ask` block per " +
+	"turn.\n" +
+	"Yes/no questions are a special case: whenever you would ask the user a " +
+	"question whose natural answer is yes or no (e.g. \"進めてよいですか?\", " +
+	"\"Should I commit this?\", \"このまま続行しますか?\"), you MUST emit an " +
+	"`ask` block instead of asking in prose alone. Use `[\"はい\", \"いいえ\"]` " +
+	"when the surrounding conversation is in Japanese, and `[\"Yes\", \"No\"]` " +
+	"when it is in English. Do not set `allowOther` on a yes/no question — if a " +
+	"\"maybe\" answer is meaningful, write it out as a third option (e.g. " +
+	"\"あとで\" / \"Defer\") rather than using free text.";
 
 let _emptyMcpConfigPath: string | null = null;
 function getEmptyMcpConfigPath(): string {

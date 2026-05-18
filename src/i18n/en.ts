@@ -135,6 +135,10 @@ export const en: Messages = {
 		selRefRangeMulti: (start: number, lines: number) =>
 			`L${start} · ${lines} lines`,
 		selRefRangeSingle: (start: number) => `L${start}`,
+		askOtherButton: "Other…",
+		askOtherPlaceholder: "Type your answer…",
+		askOtherSubmit: "Send",
+		askOtherCancel: "Back",
 	},
 	chatTool: {
 		changeOfN: (i: number, n: number) => `Change ${i} / ${n}`,

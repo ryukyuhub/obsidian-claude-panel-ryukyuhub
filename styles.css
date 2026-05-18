@@ -787,6 +787,144 @@
 	white-space: pre-wrap;
 }
 
+/* ----- 質問 GUI（```ask フェンスドコードブロックから描かれるカード） -----
+   Claude が選択肢付きの質問を投げてきたとき、JSON を表示する代わりに
+   「質問文 + クリッカブルなオプションボタン群」のカードに差し替える。
+   サイドバーの幅に合わせてボタンは縦積み（パネルは概ね狭いため横並びは
+   折り返しが多発する）。クリック後は全ボタン disabled、選択肢は accent。 */
+.claude-panel-ask {
+	margin: 8px 0;
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: color-mix(
+		in srgb,
+		var(--interactive-accent) 6%,
+		var(--background-secondary)
+	);
+}
+.claude-panel-ask-question {
+	font-weight: 600;
+	font-size: 1.02em;
+	margin-bottom: 10px;
+	color: var(--text-normal);
+}
+.claude-panel-ask-options {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.claude-panel-ask-option {
+	width: 100%;
+	text-align: left;
+	padding: 8px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.95em;
+	line-height: 1.4;
+	cursor: pointer;
+	transition: background 80ms ease, border-color 80ms ease;
+}
+.claude-panel-ask-option:hover:not(:disabled) {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+.claude-panel-ask-option:disabled {
+	cursor: default;
+	opacity: 0.6;
+}
+.claude-panel-ask-option.is-selected {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+	opacity: 1;
+}
+/* 「その他…」ボタンは離散選択ではなく入力を起動する別系統なので、
+   見た目を破線ボーダー + ミュート色にして他の選択肢と区別する。 */
+.claude-panel-ask-option-other {
+	border-style: dashed;
+	color: var(--text-muted);
+}
+.claude-panel-ask-option-other:hover:not(:disabled) {
+	color: var(--text-normal);
+}
+/* 「その他…」展開後のインライン記述入力。slot に options から
+   freeform へクラスを差し替えるだけで切り替わる構造。 */
+.claude-panel-ask-freeform {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.claude-panel-ask-freeform-input {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 8px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-family: inherit;
+	font-size: 0.95em;
+	line-height: 1.4;
+	resize: vertical;
+	min-height: 2.4em;
+}
+.claude-panel-ask-freeform-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+}
+.claude-panel-ask-freeform-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+}
+.claude-panel-ask-freeform-actions button {
+	padding: 4px 14px;
+	border-radius: 4px;
+	font-size: 12px;
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+}
+.claude-panel-ask-freeform-cancel {
+	background: transparent;
+	color: var(--text-muted);
+}
+.claude-panel-ask-freeform-cancel:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+.claude-panel-ask-freeform-submit {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+.claude-panel-ask-freeform-submit:hover {
+	background: var(--interactive-accent-hover, var(--interactive-accent));
+}
+/* 散文中の yes/no 質問を救うフォールバックカード。質問文は本文側に
+   既にあるので省略し、ボタン 2 つを横並びで小さめに置く。
+   選択肢式カードと違って padding を絞り、本文の続きに見える程度の
+   接続感にする。 */
+.claude-panel-ask-yesno {
+	padding: 8px;
+	margin-top: 4px;
+	background: color-mix(
+		in srgb,
+		var(--interactive-accent) 4%,
+		var(--background-secondary)
+	);
+}
+.claude-panel-ask-yesno .claude-panel-ask-options {
+	flex-direction: row;
+	gap: 8px;
+}
+.claude-panel-ask-yesno .claude-panel-ask-option {
+	flex: 1;
+	text-align: center;
+}
+
 /* ----- ユーザーメッセージ上の参照チップ（メンション + 選択範囲） ----- */
 
 .claude-panel-refs {
