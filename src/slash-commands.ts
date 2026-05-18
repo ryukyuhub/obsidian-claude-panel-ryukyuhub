@@ -465,6 +465,16 @@ function showMcpStatus(ctx: SlashContext): void {
 		});
 	});
 
+	// `claude mcp list` 完了で初期描画より縦が伸びるため、結果反映後に
+	// メッセージリストを最下部へ寄せる。`appendInteractive` 時点の
+	// 自動スクロールでは「checking…」分しかカバーされない。
+	const scrollToBottom = (): void => {
+		const messagesEl = resultArea?.closest(
+			".claude-panel-messages"
+		) as HTMLElement | null;
+		if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+	};
+
 	void listMcpServers(ctx.plugin.settings, cwd)
 		.then((result) => {
 			if (!resultArea) return;
@@ -476,6 +486,7 @@ function showMcpStatus(ctx: SlashContext): void {
 				result.exitCode,
 				scopes
 			);
+			scrollToBottom();
 		})
 		.catch((err) => {
 			if (!resultArea) return;
@@ -484,6 +495,7 @@ function showMcpStatus(ctx: SlashContext): void {
 				cls: "claude-panel-sys-note",
 				text: t("slash.mcp.error", (err as Error).message),
 			});
+			scrollToBottom();
 		});
 }
 
