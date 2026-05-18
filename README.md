@@ -6,7 +6,7 @@ Claude Panel adds a right-sidebar chat panel powered by [Claude Code](https://do
 
 > Desktop only. Requires the `claude` CLI to be installed and signed in (Claude Pro / Max subscription, or an Anthropic API key).
 
-日本語の解説は [README.ja.md](README.ja.md) を参照してください。
+日本語の解説は [README.ja.md](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/README.ja.md) を参照してください。
 
 ## Features
 
@@ -158,7 +158,7 @@ The subprocess strips `ANTHROPIC_API_KEY` from the child environment so the CLI 
 
 ## Release
 
-Pushing a semver tag triggers a release. [.github/workflows/release.yml](.github/workflows/release.yml) builds the plugin, attaches a zip, and emits GitHub artifact attestations for the release assets.
+Pushing a semver tag triggers a release. [.github/workflows/release.yml](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/.github/workflows/release.yml) builds the plugin, attaches a zip, and emits GitHub artifact attestations for the release assets.
 
 ```bash
 npm version 0.1.8 -m "Release %s"
@@ -169,4 +169,4 @@ git push --follow-tags
 
 ## License
 
-MIT — © 2026 [Ryukyu HUB Inc. (琉球HUB株式会社)](https://ryukyuhub.co.jp). See [LICENSE](LICENSE) for details.
+MIT — © 2026 [Ryukyu HUB Inc. (琉球HUB株式会社)](https://ryukyuhub.co.jp). See [LICENSE](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/LICENSE) for details.

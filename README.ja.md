@@ -156,7 +156,7 @@ OUT_DIR=/path/to/vault/.obsidian/plugins/claude-panel-ryukyuhub npm run dev
 
 ## リリース
 
-semver タグを push するとリリースが作成されます。[.github/workflows/release.yml](.github/workflows/release.yml) がビルドと zip 添付を自動化します。
+semver タグを push するとリリースが作成されます。[.github/workflows/release.yml](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/.github/workflows/release.yml) がビルドと zip 添付を自動化します。
 
 ```bash
 npm version 0.1.8 -m "Release %s"
@@ -167,4 +167,4 @@ git push --follow-tags
 
 ## ライセンス
 
-MIT — © 2026 [琉球HUB株式会社 (Ryukyu HUB Inc.)](https://ryukyuhub.co.jp). 詳細は [LICENSE](LICENSE) を参照。
+MIT — © 2026 [琉球HUB株式会社 (Ryukyu HUB Inc.)](https://ryukyuhub.co.jp). 詳細は [LICENSE](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/LICENSE) を参照。
