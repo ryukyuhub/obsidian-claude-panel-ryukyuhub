@@ -10,10 +10,12 @@ Claude Panel adds a right-sidebar chat panel powered by [Claude Code](https://do
 
 ## Features
 
-- Streaming chat panel in the right sidebar, with tool-use pills and per-turn cost / duration
-- Active note is auto-mentioned as `@filename` on every turn (toggleable)
+- Streaming chat panel in the right sidebar, with tool-use pills and per-turn cost / duration / token usage
+- Active note or active folder is auto-mentioned as `@filename` on every turn (toggleable)
 - File picker for additional mentions; paste clipboard images directly into the composer
 - Editor / preview selection is captured automatically so you can ask "explain this" without copy/paste
+- Discrete-choice questions render as clickable buttons; yes/no questions in prose are auto-detected and rendered as a Yes/No picker too
+- Turn completion is signaled by a sound chime and a brief panel flash (configurable in settings)
 - Sessions are resumed via `claude --resume <session>` (Claude Code's auto-compaction stays active)
 - Account & usage panel — Claude plan, organization, and rate-limit consumption (5h / 7d / Sonnet) in real time
 - Slash commands: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
