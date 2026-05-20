@@ -277,6 +277,18 @@
 	word-break: break-all;
 }
 
+/* 「保存先」関連設定を「Vault に保存」トグルのサブ設定として、字下げ +
+   左レールでネスト表示する（トグルカードにぶら下がって見えるようにする）。 */
+.claude-panel-attachment-suboptions {
+	margin: -4px 0 18px 20px;
+	padding-left: 12px;
+	border-left: 2px solid var(--background-modifier-border);
+}
+
+.claude-panel-attachment-suboptions .setting-item {
+	border-top: none;
+}
+
 /* ============================================================
    Claude Panel — サイドバーのチャットパネル
    ============================================================ */
@@ -2117,6 +2129,30 @@
 
 .claude-panel-send {
 	min-width: 80px;
+}
+
+/* 添付ボタン + 「Vault に保存」チェックボックスを左寄せで 1 グループに。 */
+.claude-panel-actions-left {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.claude-panel-save-toggle {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.claude-panel-save-toggle input {
+	margin: 0;
+	cursor: pointer;
 }
 
 /* ---------- 6. フッターコントロール（モデル / Think） ---------- */

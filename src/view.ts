@@ -477,11 +477,29 @@ export class ClaudePanelView extends ItemView {
 		this.composer.mount({ activeFileEl, selectionEl, attachmentsEl });
 
 		const actions = composer.createDiv({ cls: "claude-panel-actions" });
-		const attachBtn = actions.createEl("button", {
+		const actionsLeft = actions.createDiv({
+			cls: "claude-panel-actions-left",
+		});
+		const attachBtn = actionsLeft.createEl("button", {
 			text: t("view.attachBtn"),
 			cls: "claude-panel-attach",
 		});
 		attachBtn.onclick = () => void this.composer.openAttachPicker();
+
+		// 添付ボタンの隣の「Vault に保存」チェックボックス。初期状態は
+		// プラグイン設定由来で、Composer が構築時に取り込んでいる。ここでの
+		// トグルは一時的で、プラグイン設定 `saveAttachmentsToVault` は変えない。
+		const saveToggle = actionsLeft.createEl("label", {
+			cls: "claude-panel-save-toggle",
+		});
+		saveToggle.title = t("view.saveToVaultTooltip");
+		const saveCheckbox = saveToggle.createEl("input", {
+			attr: { type: "checkbox" },
+		});
+		saveCheckbox.checked = this.composer.getSaveToVault();
+		saveCheckbox.onchange = () =>
+			this.composer.setSaveToVault(saveCheckbox.checked);
+		saveToggle.createSpan({ text: t("view.saveToVaultToggle") });
 
 		this.sendBtn = actions.createEl("button", {
 			text: t("view.sendBtn"),

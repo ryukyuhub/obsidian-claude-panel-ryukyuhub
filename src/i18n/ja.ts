@@ -53,6 +53,10 @@ export const ja = {
 			`${lines} 行 · ${chars} 文字 · L${startLine}`,
 		selectionMoreLines: (n: number) => ` ⋯ 他 ${n} 行`,
 		fileCount: (n: number) => `${n} ファイル`,
+		savedToVault: (n: number) =>
+			`${n} 件のファイルを Vault 内に保存しました。`,
+		copyFailed: (n: number) =>
+			`${n} 件のファイルを Vault にコピーできませんでした。`,
 	},
 	account: {
 		modalTitle: "アカウントと使用状況",
@@ -164,6 +168,11 @@ export const ja = {
 		accountBtnAria: "アカウントと使用状況",
 		clearBtn: "クリア",
 		attachBtn: "添付",
+		saveToVaultToggle: "Vault に保存",
+		saveToVaultTooltip:
+			"オンにすると、添付・貼り付けたファイルを Vault 内（設定で指定した保存先）に保存します。" +
+			"オフのときは従来どおり、貼り付け画像は一時フォルダ・添付ファイルは元の絶対パス参照になります。" +
+			"初期状態はプラグイン設定で変更できます。",
 		sendBtn: "送信",
 		stopBtn: "停止 (Esc)",
 		queueBtn: "次のターンへ",
@@ -239,6 +248,39 @@ export const ja = {
 			desc:
 				"対応モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度。`auto` は CLI/`~/.claude/settings.json` の既定値に委譲します。" +
 				"Haiku は Effort 非対応のため、指定しても無視されます。",
+		},
+		saveAttachments: {
+			name: "添付ファイルを Vault 内に保存",
+			desc:
+				"オンにすると、添付・貼り付けたファイルを Vault 内に保存します。" +
+				"オフのときは、貼り付け画像はプラグインの一時フォルダに置かれ（Obsidian 終了時に削除）、" +
+				"添付したファイルは元の絶対パスのまま参照されます。" +
+				"この値はチャットパネルの「Vault に保存」チェックボックスの初期状態になります。",
+		},
+		attachmentLocation: {
+			name: "添付ファイルの保存先",
+			desc:
+				"「添付ファイルを Vault 内に保存」が有効なときの保存先の決め方。" +
+				"アクティブファイル基準のモードでアクティブファイルが無い場合は Vault ルートに保存します。",
+			option: {
+				activeFileFolder: "アクティブファイルと同じ階層",
+				vaultPath: "Vault 内の指定したパス",
+				activeFileSubfolder: "アクティブファイル隣の指定フォルダ",
+			},
+		},
+		attachmentVaultPath: {
+			name: "保存先パス（Vault 内）",
+			desc:
+				"保存先を「Vault 内の指定したパス」にしたときの保存先フォルダ（Vault 相対）。" +
+				"空欄のときは Vault ルートに保存します。",
+			placeholder: "attachments",
+		},
+		attachmentSubfolder: {
+			name: "サブフォルダ名",
+			desc:
+				"保存先を「アクティブファイル隣の指定フォルダ」にしたときの、" +
+				"アクティブファイルと同じ階層に作るサブフォルダの名前。空欄のときは attachments を使います。",
+			placeholder: "attachments",
 		},
 		language: {
 			name: "表示言語",

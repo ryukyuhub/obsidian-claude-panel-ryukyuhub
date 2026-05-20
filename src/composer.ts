@@ -6,10 +6,14 @@ import type { CapturedSelection, SelectionCapture } from "./selection-capture";
 import type { SelectionRef } from "./chat-message";
 import type { EffortLevel, ThinkingMode } from "./settings";
 import {
+	copyFileToVault,
 	extractPastedImages,
 	pickFilesViaDialog,
+	resolveAttachmentDir,
 	savePastedImage,
+	savePastedImageToVault,
 } from "./attachments";
+import { toVaultRelativeIfInside } from "./notify-sound-source";
 import { t } from "./i18n";
 
 /**
@@ -31,6 +35,10 @@ export class Composer {
 	private selection: SelectionCapture;
 
 	private attachments: string[] = []; // Vault 相対 or OS 絶対パス
+	// 添付・貼り付けたファイルを Vault 内に保存するか。パネルの「Vault に
+	// 保存」チェックボックスと同期する一時状態。初期値はプラグイン設定
+	// `saveAttachmentsToVault` 由来だが、トグルしても設定は書き換えない。
+	private saveToVault: boolean;
 	private includeActiveFile = true;
 	// 直近にファイルエクスプローラーでクリックされたフォルダ。
 	// 設定されている間はアクティブファイルの自動メンションを置き換える。
@@ -51,6 +59,7 @@ export class Composer {
 		this.app = app;
 		this.plugin = plugin;
 		this.selection = selection;
+		this.saveToVault = plugin.settings.saveAttachmentsToVault;
 	}
 
 	mount(hosts: {
@@ -86,6 +95,17 @@ export class Composer {
 		return this.includeActiveFile;
 	}
 
+	/** パネルの「Vault に保存」チェックボックスの現在値。 */
+	getSaveToVault(): boolean {
+		return this.saveToVault;
+	}
+
+	/** パネルの「Vault に保存」チェックボックスの値を反映する。一時状態
+	 *  なので、プラグイン設定 `saveAttachmentsToVault` は書き換えない。 */
+	setSaveToVault(value: boolean): void {
+		this.saveToVault = value;
+	}
+
 	/** トグルコマンドの通知メッセージ用に「対象パス」を返す。 */
 	getActiveTargetLabel(): string | null {
 		if (this.activeFolderPath) return `${this.activeFolderPath}/`;
@@ -105,17 +125,48 @@ export class Composer {
 
 	async openAttachPicker(): Promise<void> {
 		const { paths, unresolvedCount } = await pickFilesViaDialog();
+		// 「Vault に保存」が ON のときは、Vault 外ファイルを Vault 内へ
+		// コピーする。保存先はピッカーを閉じた時点のアクティブファイル基準。
+		const toVault = this.saveToVault;
+		const dir = toVault
+			? resolveAttachmentDir(this.app, this.plugin.settings)
+			: "";
 		let added = 0;
+		let copied = 0;
+		let copyFailed = 0;
 		for (const p of paths) {
-			if (!this.attachments.includes(p)) {
-				this.attachments.push(p);
+			let attachPath = p;
+			if (toVault) {
+				// 既に Vault 配下のファイルはコピーせず相対パスで参照する。
+				const rel = toVaultRelativeIfInside(p, this.app);
+				if (rel !== p) {
+					attachPath = rel;
+				} else {
+					try {
+						attachPath = await copyFileToVault(this.app, dir, p);
+						copied++;
+					} catch (err) {
+						console.warn(
+							"[claude-panel] copy attachment failed",
+							p,
+							err
+						);
+						copyFailed++;
+						continue;
+					}
+				}
+			}
+			if (!this.attachments.includes(attachPath)) {
+				this.attachments.push(attachPath);
 				added++;
 			}
 		}
 		if (added > 0) this.renderAttachments();
+		if (copied > 0) new Notice(t("composer.savedToVault", copied));
+		if (copyFailed > 0) new Notice(t("composer.copyFailed", copyFailed));
 		if (unresolvedCount > 0) {
 			new Notice(t("composer.unresolvedPaths", unresolvedCount));
-		} else if (paths.length > 0 && added === 0) {
+		} else if (paths.length > 0 && added === 0 && copyFailed === 0) {
 			new Notice(t("composer.alreadyAttached"));
 		}
 	}
@@ -125,10 +176,21 @@ export class Composer {
 		if (images.length === 0) return;
 		// バイナリ文字列が textarea に貼り付けられないよう抑止する。
 		e.preventDefault();
-		const folder = this.plugin.getAttachmentFolder();
+		// 「Vault に保存」が ON なら設定どおりの Vault 内フォルダへ、OFF なら
+		// プラグインの一時フォルダ（unload 時に掃除される）へ書き出す。
+		const toVault = this.saveToVault;
+		const dir = toVault
+			? resolveAttachmentDir(this.app, this.plugin.settings)
+			: "";
 		for (const img of images) {
 			try {
-				const savedPath = await savePastedImage(this.app, folder, img);
+				const savedPath = toVault
+					? await savePastedImageToVault(this.app, dir, img)
+					: await savePastedImage(
+							this.app,
+							this.plugin.getAttachmentFolder(),
+							img
+						);
 				if (!this.attachments.includes(savedPath)) {
 					this.attachments.push(savedPath);
 				}

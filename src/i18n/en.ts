@@ -53,6 +53,10 @@ export const en: Messages = {
 		selectionMoreLines: (n: number) =>
 			` ⋯ +${n} more line${n === 1 ? "" : "s"}`,
 		fileCount: (n: number) => `${n} file${n === 1 ? "" : "s"}`,
+		savedToVault: (n: number) =>
+			`Saved ${n} file${n === 1 ? "" : "s"} inside the vault.`,
+		copyFailed: (n: number) =>
+			`Could not copy ${n} file${n === 1 ? "" : "s"} to the vault.`,
 	},
 	account: {
 		modalTitle: "Account & Usage",
@@ -164,6 +168,11 @@ export const en: Messages = {
 		accountBtnAria: "Account & Usage",
 		clearBtn: "Clear",
 		attachBtn: "Attach",
+		saveToVaultToggle: "Save to vault",
+		saveToVaultTooltip:
+			"When on, attached and pasted files are saved inside the vault (at the destination set in settings). " +
+			"When off, pasted images go to a temporary folder and attached files keep their original absolute path. " +
+			"The default state can be changed in the plugin settings.",
 		sendBtn: "Send",
 		stopBtn: "Stop (Esc)",
 		queueBtn: "Queue next",
@@ -239,6 +248,39 @@ export const en: Messages = {
 			desc:
 				"Reasoning depth for supported models (Sonnet 4.6 / Opus 4.6, etc.). `auto` defers to the CLI / `~/.claude/settings.json` default. " +
 				"Haiku does not support effort, so the value is ignored.",
+		},
+		saveAttachments: {
+			name: "Save attachments inside the vault",
+			desc:
+				"When on, attached and pasted files are saved inside the vault. " +
+				"When off, pasted images go to the plugin's temporary folder (removed when Obsidian quits), " +
+				"and attached files are referenced by their original absolute path. " +
+				"This value becomes the initial state of the \"Save to vault\" checkbox in the chat panel.",
+		},
+		attachmentLocation: {
+			name: "Attachment save location",
+			desc:
+				"Where attachments go when \"Save attachments inside the vault\" is enabled. " +
+				"For active-file-relative modes, files fall back to the vault root when there is no active file.",
+			option: {
+				activeFileFolder: "Same folder as the active file",
+				vaultPath: "A specified path inside the vault",
+				activeFileSubfolder: "A named folder next to the active file",
+			},
+		},
+		attachmentVaultPath: {
+			name: "Save path (inside the vault)",
+			desc:
+				"Destination folder (vault-relative) used when the location is set to \"A specified path inside the vault\". " +
+				"Leave blank to save to the vault root.",
+			placeholder: "attachments",
+		},
+		attachmentSubfolder: {
+			name: "Subfolder name",
+			desc:
+				"Name of the subfolder created next to the active file when the location is set to " +
+				"\"A named folder next to the active file\". Defaults to \"attachments\" when blank.",
+			placeholder: "attachments",
 		},
 		language: {
 			name: "Display language",

@@ -90,6 +90,28 @@ export type UiLanguage = "auto" | "ja" | "en";
 
 export const UI_LANGUAGES: UiLanguage[] = ["auto", "ja", "en"];
 
+/**
+ * 添付ファイルを Vault 内に保存する際の、保存先フォルダの決め方。
+ *
+ * - `activeFileFolder`    — 現在アクティブなファイルと同じフォルダ。
+ * - `vaultPath`           — `attachmentVaultPath` で指定した Vault 内の固定パス。
+ * - `activeFileSubfolder` — アクティブファイルと同じ階層に作る、
+ *                           `attachmentSubfolderName` で指定した名前のサブフォルダ。
+ *
+ * アクティブファイル基準のモードでアクティブファイルが無い場合は、いずれも
+ * Vault ルートにフォールバックする。
+ */
+export type AttachmentSaveLocation =
+	| "activeFileFolder"
+	| "vaultPath"
+	| "activeFileSubfolder";
+
+export const ATTACHMENT_SAVE_LOCATIONS: AttachmentSaveLocation[] = [
+	"activeFileFolder",
+	"vaultPath",
+	"activeFileSubfolder",
+];
+
 export interface ClaudePanelSettings {
 	claudePath: string;
 	model: string;
@@ -122,6 +144,18 @@ export interface ClaudePanelSettings {
 	composerBottomPadding: number;
 	/** パネル UI の表示言語。`auto` で Obsidian の言語設定に追従する。 */
 	language: UiLanguage;
+	/** 添付・貼り付けたファイルを Vault 内に保存するかどうか。チャット
+	 *  パネルの「Vault に保存」チェックボックスの初期状態にもなる。
+	 *  チェックボックス側のトグルは一時的で、この設定値は書き換えない。 */
+	saveAttachmentsToVault: boolean;
+	/** `saveAttachmentsToVault` が ON のときの、保存先フォルダの決め方。 */
+	attachmentSaveLocation: AttachmentSaveLocation;
+	/** `attachmentSaveLocation` が `vaultPath` のときの保存先（Vault 相対）。
+	 *  空文字のときは Vault ルートに保存する。 */
+	attachmentVaultPath: string;
+	/** `attachmentSaveLocation` が `activeFileSubfolder` のときの
+	 *  サブフォルダ名。空文字のときは `attachments` を使う。 */
+	attachmentSubfolderName: string;
 }
 
 /** 通知音量スライダーの上下限（パーセント）。 */
@@ -156,4 +190,10 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	notifySoundPath: "",
 	composerBottomPadding: 0,
 	language: "auto",
+	// 既定は OFF（従来動作を維持）。貼り付け画像はプラグインの一時フォルダ、
+	// 添付ファイルは元の絶対パス参照のまま。ユーザーが必要に応じて ON にする。
+	saveAttachmentsToVault: false,
+	attachmentSaveLocation: "activeFileFolder",
+	attachmentVaultPath: "attachments",
+	attachmentSubfolderName: "attachments",
 };

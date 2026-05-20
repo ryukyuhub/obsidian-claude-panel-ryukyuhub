@@ -5,6 +5,7 @@ import { resolveClaudePath } from "../cli-resolver";
 import { pickFilesViaDialog } from "../attachments";
 import { toVaultRelativeIfInside } from "../notify-sound-source";
 import {
+	ATTACHMENT_SAVE_LOCATIONS,
 	COMPOSER_BOTTOM_PADDING_MAX,
 	COMPOSER_BOTTOM_PADDING_MIN,
 	DEFAULT_SETTINGS,
@@ -17,6 +18,7 @@ import {
 	NOTIFY_VOLUME_MIN,
 	PERMISSION_MODES,
 	UI_LANGUAGES,
+	type AttachmentSaveLocation,
 	type EffortLevel,
 	type NotifyOnComplete,
 	type PermissionMode,
@@ -159,6 +161,8 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				});
 			});
 
+		this.renderAttachmentSection(containerEl);
+
 		new Setting(containerEl)
 			.setName(t("settings.language.name"))
 			.setDesc(t("settings.language.desc"))
@@ -285,6 +289,92 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			cls: "claude-panel-repo-link",
 			attr: { target: "_blank", rel: "noopener" },
 		});
+	}
+
+	/**
+	 * 添付ファイルまわりの設定を描画する。「Vault に保存」トグルと、その
+	 * サブ設定（保存先の決め方ドロップダウン + 選択モードに応じた補助入力欄）
+	 * を出す。保存先関連はトグル直下の字下げコンテナにまとめ、トグルに
+	 * ぶら下がるサブ設定であることを視覚的に示す。補助入力欄の出し分けは
+	 * ドロップダウン変更時に `display()` で再描画して行う。
+	 */
+	private renderAttachmentSection(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName(t("settings.saveAttachments.name"))
+			.setDesc(t("settings.saveAttachments.desc"))
+			.addToggle((tg) =>
+				tg
+					.setValue(this.plugin.settings.saveAttachmentsToVault)
+					.onChange(async (v) => {
+						this.plugin.settings.saveAttachmentsToVault = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// 保存先関連は「Vault に保存」トグルのサブ設定として、字下げした
+		// コンテナにまとめてネスト表示する。
+		const sub = containerEl.createDiv({
+			cls: "claude-panel-attachment-suboptions",
+		});
+
+		new Setting(sub)
+			.setName(t("settings.attachmentLocation.name"))
+			.setDesc(t("settings.attachmentLocation.desc"))
+			.addDropdown((dropdown) => {
+				for (const loc of ATTACHMENT_SAVE_LOCATIONS) {
+					dropdown.addOption(
+						loc,
+						t(`settings.attachmentLocation.option.${loc}`)
+					);
+				}
+				dropdown.setValue(
+					this.plugin.settings.attachmentSaveLocation
+				);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.attachmentSaveLocation =
+						value as AttachmentSaveLocation;
+					await this.plugin.saveSettings();
+					// 選択モードに対応する補助入力欄に切り替えるため再描画。
+					this.display();
+				});
+			});
+
+		const location = this.plugin.settings.attachmentSaveLocation;
+		if (location === "vaultPath") {
+			new Setting(sub)
+				.setName(t("settings.attachmentVaultPath.name"))
+				.setDesc(t("settings.attachmentVaultPath.desc"))
+				.addText((text) =>
+					text
+						.setPlaceholder(
+							t("settings.attachmentVaultPath.placeholder")
+						)
+						.setValue(this.plugin.settings.attachmentVaultPath)
+						.onChange(async (value) => {
+							this.plugin.settings.attachmentVaultPath =
+								value.trim();
+							await this.plugin.saveSettings();
+						})
+				);
+		} else if (location === "activeFileSubfolder") {
+			new Setting(sub)
+				.setName(t("settings.attachmentSubfolder.name"))
+				.setDesc(t("settings.attachmentSubfolder.desc"))
+				.addText((text) =>
+					text
+						.setPlaceholder(
+							t("settings.attachmentSubfolder.placeholder")
+						)
+						.setValue(
+							this.plugin.settings.attachmentSubfolderName
+						)
+						.onChange(async (value) => {
+							this.plugin.settings.attachmentSubfolderName =
+								value.trim();
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 	}
 
 	/**
