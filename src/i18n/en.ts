@@ -249,6 +249,14 @@ export const en: Messages = {
 				"Reasoning depth for supported models (Sonnet 4.6 / Opus 4.6, etc.). `auto` defers to the CLI / `~/.claude/settings.json` default. " +
 				"Haiku does not support effort, so the value is ignored.",
 		},
+		includeActiveDefault: {
+			name: "Include the active file / folder by default",
+			desc:
+				"When on, the active file (or folder) is included in the prompt " +
+				"when the chat panel opens. " +
+				"When off, it starts excluded. " +
+				"Either way you can flip it per turn with the \"Include / Exclude\" toggle in the panel.",
+		},
 		saveAttachments: {
 			name: "Save attachments inside the vault",
 			desc:

@@ -39,7 +39,9 @@ export class Composer {
 	// 保存」チェックボックスと同期する一時状態。初期値はプラグイン設定
 	// `saveAttachmentsToVault` 由来だが、トグルしても設定は書き換えない。
 	private saveToVault: boolean;
-	private includeActiveFile = true;
+	// 初期値はプラグイン設定 `includeActiveByDefault` 由来。パネル内の
+	// トグルは一時状態で、設定値は書き換えない。
+	private includeActiveFile: boolean;
 	// 直近にファイルエクスプローラーでクリックされたフォルダ。
 	// 設定されている間はアクティブファイルの自動メンションを置き換える。
 	// ファイル選択（file-open）が発生したら view 側でクリアされる。
@@ -60,6 +62,7 @@ export class Composer {
 		this.plugin = plugin;
 		this.selection = selection;
 		this.saveToVault = plugin.settings.saveAttachmentsToVault;
+		this.includeActiveFile = plugin.settings.includeActiveByDefault;
 	}
 
 	mount(hosts: {

@@ -117,6 +117,11 @@ export interface ClaudePanelSettings {
 	model: string;
 	thinkingMode: ThinkingMode;
 	effortLevel: EffortLevel;
+	/** チャットパネルを開いた時／会話をクリアした時に、アクティブ
+	 *  ファイル（またはフォルダ）をプロンプトに含めた状態で始めるか。
+	 *  パネル内の「含める／除外」トグルの初期値になる。トグル操作は
+	 *  一時的で、この設定値は書き換えない。 */
+	includeActiveByDefault: boolean;
 	disableMcpServers: boolean;
 	permissionMode: PermissionMode;
 	/** チャットパネルの基準フォントサイズ（px）。パネルルート要素の
@@ -177,6 +182,9 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	model: "claude-sonnet-4-6",
 	thinkingMode: "off",
 	effortLevel: "auto",
+	// 既定は ON（従来動作を維持）。アクティブファイル／フォルダは
+	// 含めた状態でパネルが開く。
+	includeActiveByDefault: true,
 	disableMcpServers: false,
 	// 既定は明示的なプロンプト（"default"）。0.1.8 以前は
 	// `bypassPermissions` をハードコードしており、agent が ~/.claude.json

@@ -161,6 +161,18 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				});
 			});
 
+		new Setting(containerEl)
+			.setName(t("settings.includeActiveDefault.name"))
+			.setDesc(t("settings.includeActiveDefault.desc"))
+			.addToggle((tg) =>
+				tg
+					.setValue(this.plugin.settings.includeActiveByDefault)
+					.onChange(async (v) => {
+						this.plugin.settings.includeActiveByDefault = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
 		this.renderAttachmentSection(containerEl);
 
 		new Setting(containerEl)
