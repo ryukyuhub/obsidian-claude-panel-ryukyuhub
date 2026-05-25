@@ -25,52 +25,58 @@ import { t } from "./i18n";
  * 読み、未指定時はディレクトリ名 / ファイル名にフォールバックする。
  */
 export function discoverDynamicCommands(cwd: string | null): SlashCommandSpec[] {
-	const out: SlashCommandSpec[] = [];
-	const seen = new Set<string>();
-	const push = (spec: SlashCommandSpec) => {
-		if (seen.has(spec.name)) return;
-		seen.add(spec.name);
-		out.push(spec);
-	};
+	// プラグイン解決が想定外のスキーマに遭遇しても composer の描画を
+	// 道連れにしないよう、全体を try/catch で覆って空配列にフォールバックする。
+	try {
+		const out: SlashCommandSpec[] = [];
+		const seen = new Set<string>();
+		const push = (spec: SlashCommandSpec) => {
+			if (seen.has(spec.name)) return;
+			seen.add(spec.name);
+			out.push(spec);
+		};
 
-	if (cwd) {
+		if (cwd) {
+			for (const s of scanSkillRoot(
+				path.join(cwd, ".claude", "skills"),
+				"skill"
+			))
+				push(s);
+			for (const s of scanCommandDir(
+				path.join(cwd, ".claude", "commands"),
+				"user-command"
+			))
+				push(s);
+		}
+
+		const home = os.homedir();
 		for (const s of scanSkillRoot(
-			path.join(cwd, ".claude", "skills"),
+			path.join(home, ".claude", "skills"),
 			"skill"
 		))
 			push(s);
 		for (const s of scanCommandDir(
-			path.join(cwd, ".claude", "commands"),
+			path.join(home, ".claude", "commands"),
 			"user-command"
 		))
 			push(s);
+
+		// 有効化されたプラグイン / マーケットプレースを走査。
+		// settings.json の enabledPlugins は `<plugin>@<marketplace>` 形式。
+		for (const root of resolveEnabledPluginRoots(home, cwd)) {
+			for (const s of scanSkillRoot(path.join(root, "skills"), "skill"))
+				push(s);
+			for (const s of scanCommandDir(
+				path.join(root, "commands"),
+				"user-command"
+			))
+				push(s);
+		}
+
+		return out;
+	} catch {
+		return [];
 	}
-
-	const home = os.homedir();
-	for (const s of scanSkillRoot(
-		path.join(home, ".claude", "skills"),
-		"skill"
-	))
-		push(s);
-	for (const s of scanCommandDir(
-		path.join(home, ".claude", "commands"),
-		"user-command"
-	))
-		push(s);
-
-	// 有効化されたプラグイン / マーケットプレースを走査。
-	// settings.json の enabledPlugins は `<plugin>@<marketplace>` 形式。
-	for (const root of resolveEnabledPluginRoots(home, cwd)) {
-		for (const s of scanSkillRoot(path.join(root, "skills"), "skill"))
-			push(s);
-		for (const s of scanCommandDir(
-			path.join(root, "commands"),
-			"user-command"
-		))
-			push(s);
-	}
-
-	return out;
 }
 
 /**
@@ -161,9 +167,17 @@ function skillSpec(
  * 有効化されたプラグインのルートディレクトリ一覧を返す。
  *
  * `~/.claude/settings.json` と `<vault>/.claude/settings.json` の双方の
- * `enabledPlugins`（`<plugin>@<marketplace>: true`）を読み、各マーケット
- * プレースの `marketplace.json` から該当プラグインの `source`（マーケット
- * プレース基準の相対パス）を解決して、絶対パスのプラグインルートに変換する。
+ * `enabledPlugins`（`<plugin>@<marketplace>: true`）を読み、各キーを
+ * 以下の順で絶対パスに解決する:
+ *
+ *   1. `~/.claude/plugins/installed_plugins.json` の `installPath`
+ *      （Claude Code がインストール時に書き込むキャノニカルな所在。
+ *        marketplace.json の `source` がオブジェクト形式 — リモート git
+ *        プラグイン、例: `{source:"url", url, sha}` — のときは、コードは
+ *        marketplace ディレクトリ配下ではなく cache 配下に clone される
+ *        ため、ここでしか正しく解決できない）
+ *   2. フォールバックとして marketplace.json の `source` を相対パス解決
+ *      （ローカル marketplace の `source: "./"` などの旧来形式向け）
  *
  * marketplace.json は `<marketplace>/.claude-plugin/marketplace.json` に
  * 置かれる新形式と、ルート直下に置かれる旧形式の両方を試す。
@@ -176,9 +190,18 @@ function resolveEnabledPluginRoots(
 	if (enabled.size === 0) return [];
 
 	const marketplacesBase = path.join(home, ".claude", "plugins", "marketplaces");
+	const installed = readInstalledPlugins(home);
 	const out: string[] = [];
 
 	for (const key of enabled) {
+		// (1) installed_plugins.json の installPath を最優先。
+		const installPath = pickInstallPath(installed, key);
+		if (installPath && safeIsDir(installPath)) {
+			out.push(installPath);
+			continue;
+		}
+
+		// (2) marketplace.json の source を解決するフォールバック経路。
 		const at = key.lastIndexOf("@");
 		if (at < 0) continue;
 		const pluginName = key.slice(0, at);
@@ -187,15 +210,50 @@ function resolveEnabledPluginRoots(
 		if (!safeIsDir(marketplaceRoot)) continue;
 
 		const def = readMarketplaceJson(marketplaceRoot);
-		const plugins: Array<{ name?: string; source?: string }> =
+		const plugins: Array<Record<string, unknown>> =
 			(def?.plugins as Array<Record<string, unknown>>) || [];
 		const match = plugins.find((p) => p?.name === pluginName);
-		const source = (match?.source as string | undefined) ?? "./";
+		const rawSource = match?.source;
+		// source がオブジェクト形式（リモート git プラグイン）の場合は
+		// (1) で解決済みのはず。(1) で解決できなかったまま落ちてきたら
+		// 静かにスキップする — path.resolve に object を渡すと TypeError。
+		if (typeof rawSource !== "string" && rawSource !== undefined) continue;
+		const source = rawSource ?? "./";
 		const pluginRoot = path.resolve(marketplaceRoot, source);
 		if (safeIsDir(pluginRoot)) out.push(pluginRoot);
 	}
 
 	return out;
+}
+
+/**
+ * `~/.claude/plugins/installed_plugins.json` の `plugins` マップを返す。
+ * スキーマ:
+ *   { version: 2, plugins: { "<name>@<marketplace>": Array<{ installPath, scope, ... }> } }
+ * 同一キーに複数エントリがあるのは scope 違い（user / project / local）。
+ */
+function readInstalledPlugins(
+	home: string
+): Record<string, Array<{ installPath?: string }>> {
+	const data = safeReadJson(
+		path.join(home, ".claude", "plugins", "installed_plugins.json")
+	);
+	const plugins = (data as { plugins?: unknown } | null)?.plugins;
+	if (!plugins || typeof plugins !== "object") return {};
+	return plugins as Record<string, Array<{ installPath?: string }>>;
+}
+
+function pickInstallPath(
+	installed: Record<string, Array<{ installPath?: string }>>,
+	key: string
+): string | null {
+	const entries = installed[key];
+	if (!Array.isArray(entries)) return null;
+	for (const e of entries) {
+		const p = e?.installPath;
+		if (typeof p === "string" && p) return p;
+	}
+	return null;
 }
 
 function collectEnabledPluginKeys(
