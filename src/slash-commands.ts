@@ -8,7 +8,7 @@ import {
 	formatModelLabel,
 	type ThinkingMode,
 } from "./settings";
-import { listMcpServers } from "./agent";
+import { listMcpServers, runClaudeSubcommand } from "./agent";
 import { diagnoseSessionLookup } from "./session-history";
 import { t } from "./i18n";
 
@@ -49,6 +49,7 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
 	{ name: "/model", desc: t("slash.desc.model"), category: "local" },
 	{ name: "/think", desc: t("slash.desc.think"), category: "local" },
 	{ name: "/mcp", desc: t("slash.desc.mcp"), category: "local" },
+	{ name: "/plugin", desc: t("slash.desc.plugin"), category: "local" },
 	{ name: "/usage", desc: t("slash.desc.usage"), category: "local" },
 	{ name: "/cost", desc: t("slash.desc.cost"), category: "local" },
 	{ name: "/account", desc: t("slash.desc.account"), category: "local" },
@@ -134,6 +135,9 @@ export function handleLocalSlashCommand(
 			return true;
 		case "/mcp":
 			showMcpStatus(ctx);
+			return true;
+		case "/plugin":
+			handlePluginCommand(ctx, arg);
 			return true;
 		case "/usage":
 		case "/account":
@@ -251,6 +255,7 @@ function showHelp(ctx: SlashContext): void {
 			["/model [id]", t("slash.help.itemModel")],
 			["/think [mode]", t("slash.help.itemThink")],
 			["/mcp", t("slash.help.itemMcp")],
+			["/plugin [...]", t("slash.help.itemPlugin")],
 			["/usage", t("slash.help.itemUsage")],
 			["/cost", t("slash.help.itemCost")],
 			["/config", t("slash.help.itemConfig")],
@@ -497,6 +502,111 @@ function showMcpStatus(ctx: SlashContext): void {
 			});
 			scrollToBottom();
 		});
+}
+
+/**
+ * `/plugin [...args]` を `claude plugin [...args]` に転送する薄いラッパ。
+ * 引数なしのときは `list` を補う。REPL モードの `/plugin` は --print では
+ * 動かないため、ここで自前のサブプロセスとして起動して結果を pre で描画。
+ */
+function handlePluginCommand(ctx: SlashContext, arg: string): void {
+	const cwd = ctx.getVaultPath();
+	if (!cwd) {
+		ctx.appendSystemMessage(t("slash.vaultPathUnresolved"));
+		return;
+	}
+
+	const pluginArgs = arg.trim() ? arg.trim().split(/\s+/) : ["list"];
+	const display = pluginArgs.join(" ");
+
+	let resultArea: HTMLElement | null = null;
+
+	ctx.appendInteractive((c) => {
+		c.createEl("div", {
+			cls: "claude-panel-sys-title",
+			text: t("slash.plugin.title", display),
+		});
+		resultArea = c.createDiv({ cls: "claude-panel-sys-block" });
+		resultArea.createEl("div", {
+			cls: "claude-panel-sys-note",
+			text: t("slash.plugin.running", display),
+		});
+	});
+
+	const scrollToBottom = (): void => {
+		const messagesEl = resultArea?.closest(
+			".claude-panel-messages"
+		) as HTMLElement | null;
+		if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+	};
+
+	void runClaudeSubcommand(ctx.plugin.settings, cwd, [
+		"plugin",
+		...pluginArgs,
+	])
+		.then((result) => {
+			if (!resultArea) return;
+			resultArea.empty();
+			renderPluginOutput(
+				resultArea,
+				result.stdout,
+				result.stderr,
+				result.exitCode
+			);
+			scrollToBottom();
+		})
+		.catch((err) => {
+			if (!resultArea) return;
+			resultArea.empty();
+			resultArea.createEl("div", {
+				cls: "claude-panel-sys-note",
+				text: t("slash.plugin.error", (err as Error).message),
+			});
+			scrollToBottom();
+		});
+}
+
+function renderPluginOutput(
+	host: HTMLElement,
+	stdout: string,
+	stderr: string,
+	exitCode: number
+): void {
+	const trimmedOut = stdout.trim();
+	const trimmedErr = stderr.trim();
+
+	if (!trimmedOut && !trimmedErr) {
+		host.createEl("div", {
+			cls: "claude-panel-sys-note",
+			text: t("slash.plugin.emptyOutput"),
+		});
+		return;
+	}
+
+	if (trimmedOut) {
+		const pre = host.createEl("pre", {
+			cls: "claude-panel-sys-mcp-output",
+		});
+		pre.createEl("code", { text: trimmedOut });
+	}
+
+	if (trimmedErr) {
+		host.createEl("div", {
+			cls: "claude-panel-sys-subtitle",
+			text: "stderr",
+		});
+		const pre = host.createEl("pre", {
+			cls: "claude-panel-sys-mcp-output",
+		});
+		pre.createEl("code", { text: trimmedErr });
+	}
+
+	if (exitCode !== 0) {
+		host.createEl("div", {
+			cls: "claude-panel-sys-note",
+			text: t("slash.plugin.exitCode", exitCode),
+		});
+	}
 }
 
 interface ParsedMcpServer {

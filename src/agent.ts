@@ -287,7 +287,7 @@ export interface RunHandle {
 	canceled: () => boolean;
 }
 
-interface McpListResult {
+export interface SubprocessResult {
 	stdout: string;
 	stderr: string;
 	exitCode: number;
@@ -414,24 +414,23 @@ export function checkClaudeCli(configured: string): Promise<CliStatus> {
 }
 
 /**
- * `claude mcp list` を実行して出力をキャプチャする。設定ファイルを直接
- * 読むのと違い、CLI から見た各 MCP サーバの *実際の* 接続ステータスを
- * 取得できる。
+ * `claude <args...>` をワンショットで起動して stdout/stderr/exitCode を
+ * 集める汎用ヘルパ。`--print` の会話セッションとは独立したサブプロセス
+ * として走る（`claude mcp list`, `claude plugin install ...` など）。
  */
-export function listMcpServers(
+export function runClaudeSubcommand(
 	settings: ClaudePanelSettings,
-	cwd: string
-): Promise<McpListResult> {
+	cwd: string,
+	args: string[]
+): Promise<SubprocessResult> {
 	return new Promise((resolve, reject) => {
 		const claudePath = resolveClaudePath(settings.claudePath);
 		if (!claudePath) {
-			reject(
-				new Error(t("account.errClaudeCliNotFound"))
-			);
+			reject(new Error(t("account.errClaudeCliNotFound")));
 			return;
 		}
 		try {
-			const child = spawn(claudePath, ["mcp", "list"], {
+			const child = spawn(claudePath, args, {
 				cwd,
 				env: buildEnv(claudePath),
 				stdio: ["ignore", "pipe", "pipe"],
@@ -455,6 +454,18 @@ export function listMcpServers(
 			reject(err instanceof Error ? err : new Error(String(err)));
 		}
 	});
+}
+
+/**
+ * `claude mcp list` を実行して出力をキャプチャする。設定ファイルを直接
+ * 読むのと違い、CLI から見た各 MCP サーバの *実際の* 接続ステータスを
+ * 取得できる。
+ */
+export function listMcpServers(
+	settings: ClaudePanelSettings,
+	cwd: string
+): Promise<SubprocessResult> {
+	return runClaudeSubcommand(settings, cwd, ["mcp", "list"]);
 }
 
 export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
