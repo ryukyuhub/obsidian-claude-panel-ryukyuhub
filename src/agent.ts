@@ -296,10 +296,14 @@ export interface RunHandle {
 	promise: Promise<void>;
 	cancel: () => void;
 	canceled: () => boolean;
-	/** 進行中の生成を中断し、続けて新しいユーザーメッセージを同じ stdin に
-	 *  書き込む。CLI は同一セッションでそのまま次ターンを生成する。stdin
-	 *  が既に閉じられている／canceled の場合は no-op で false を返す。 */
-	inject: (prompt: string) => boolean;
+	/** 進行中の生成を中断し、CLI が「中断 result」を emit して
+	 *  アシスタントターンを正しく閉じるのを await してから、新しい
+	 *  ユーザーメッセージを同じ stdin に書き込む。同一セッションで
+	 *  次ターンが続く。stdin 閉鎖済み／canceled の場合は false を
+	 *  返す。中断 result が 2 秒以内に来なかった場合もフォールバックで
+	 *  user メッセージを書き込む (CLI 実装によっては result を
+	 *  emit しないため)。 */
+	inject: (prompt: string) => Promise<boolean>;
 }
 
 export interface SubprocessResult {
@@ -487,13 +491,12 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 	const { prompt, cwd, settings } = args;
 	let canceled = false;
 	let child: ReturnType<typeof spawn> | null = null;
-	// 割り込み (inject) 進行中フラグ。interrupt control_request を送った
-	// 直後に CLI が返してくる「中断された result」イベントでは stdin を
-	// 閉じない — 続けて新ユーザーメッセージを書き込むため。新メッセージが
-	// 書かれたら false に戻り、その新ターンの完了 result で通常通り stdin
-	// を閉じる。inject が onResult ラッパから参照されるため、関数スコープに
-	// 置く。
-	let interruptInFlight = false;
+	// 割り込み (inject) で「中断 result」を待っている間に保持するレゾルバ。
+	// non-null のとき、次に来る result イベントは中断 result と判定し、
+	// stdin を閉じず・events.onResult にも転送せず破棄して、レゾルバを
+	// resolve する (inject の await が進行)。null のときは通常の result
+	// として処理する。
+	let interruptAckResolver: (() => void) | null = null;
 	// view へ転送済みかつ判定が戻っていない CLI パーミッションリクエスト。
 	// cancel 後の遅延判定をショートサーキットするために使う（閉じた stdin
 	// に書くと例外になるため）。
@@ -698,14 +701,18 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		const eventsWithEnd: AgentEvents = {
 			...events,
 			onResult: (info) => {
-				if (interruptInFlight) {
+				if (interruptAckResolver) {
 					// この result は inject() による中断 result。
 					// events.onResult に転送しない: activeAssistantId は既に
 					// 新メッセージへ移っているため、転送すると中断ターンの
 					// 所要時間／コスト／usage が新メッセージのフッターに
 					// 一瞬反映されてしまう。中断メッセージにフッターは出ない
 					// ことになるが、「中断」バッジが状態を示すので許容する。
-					interruptInFlight = false;
+					// resolver を呼ぶことで inject() の await が進み、
+					// 新 user メッセージが書き込まれる。
+					const resolve = interruptAckResolver;
+					interruptAckResolver = null;
+					resolve();
 					return;
 				}
 				events.onResult(info);
@@ -772,6 +779,14 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 	const cancel = (): void => {
 		if (canceled) return;
 		canceled = true;
+		// inject() が中断 result を await している場合、ここで resolver を
+		// 解放しないと await が永遠に解けない (子プロセス kill 後に result
+		// は来ないため)。
+		if (interruptAckResolver) {
+			const resolve = interruptAckResolver;
+			interruptAckResolver = null;
+			resolve();
+		}
 		pendingPermissions.clear();
 		if (child && !child.killed) {
 			try {
@@ -791,13 +806,20 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		}
 	};
 
-	const inject = (newPrompt: string): boolean => {
+	const inject = async (newPrompt: string): Promise<boolean> => {
 		if (canceled) return false;
 		if (!child || child.killed) return false;
 		const stdin = child.stdin;
 		if (!stdin || stdin.writableEnded) return false;
-		// 1) 進行中生成を中断する control_request。
-		interruptInFlight = true;
+
+		// 1) 中断 result を待つための Promise を仕掛ける。先に仕掛けてから
+		//    書き込むことで、stdin.write が同期的に完了した直後に届く
+		//    result イベントを取りこぼさない。
+		const ack = new Promise<void>((resolve) => {
+			interruptAckResolver = resolve;
+		});
+
+		// 2) 進行中生成を中断する control_request。
 		try {
 			stdin.write(
 				JSON.stringify({
@@ -807,10 +829,40 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 				}) + "\n"
 			);
 		} catch {
-			interruptInFlight = false;
+			interruptAckResolver = null;
 			return false;
 		}
-		// 2) 新しい user メッセージ。CLI は同一セッション ID で次ターンを生成する。
+
+		// 3) CLI が中断 result を emit してアシスタントターンを「stop_reason
+		//    付きで」閉じるのを待つ。これを待たずに次の user メッセージを
+		//    書くと、API 側で会話履歴が「stop_reason 無しの assistant + user」
+		//    という不正な並びになり、 ede_diagnostic
+		//    (result_type=user last_content_type=n/a stop_reason=null)
+		//    エラーで応答が破壊される。
+		//    2 秒のタイムアウトはフェイルセーフ: CLI 実装が将来変わって
+		//    interrupt が result を出さない可能性に備える。
+		let timedOut = false;
+		await Promise.race([
+			ack,
+			new Promise<void>((resolve) =>
+				setTimeout(() => {
+					timedOut = true;
+					resolve();
+				}, 2000)
+			),
+		]);
+		if (timedOut && interruptAckResolver) {
+			// タイムアウト経路では resolver を自分で外す (後の result が
+			// 中断 result と誤判定されないように)。
+			interruptAckResolver = null;
+		}
+
+		// 4) ここで再度ガード: await 中に cancel/kill されている可能性がある。
+		if (canceled) return false;
+		if (!child || child.killed) return false;
+		if (stdin.writableEnded) return false;
+
+		// 5) 新しい user メッセージ。CLI は同一セッション ID で次ターンを生成する。
 		try {
 			stdin.write(
 				JSON.stringify({
@@ -824,14 +876,8 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 				}) + "\n"
 			);
 		} catch {
-			interruptInFlight = false;
 			return false;
 		}
-		// interruptInFlight は true のまま返す。CLI から非同期で届く
-		// 「中断された result」イベントを onResult ラッパーが捕まえて
-		// flag をクリアする (one-shot 動作)。同期的にここで false に戻すと、
-		// 非同期の result 到着時には既に false になっていて stdin が閉じ、
-		// 続く新ターンの応答が読めなくなる。
 		return true;
 	};
 

@@ -377,7 +377,7 @@ export class ChatRuntime {
 
 			this.host.onWarmup();
 
-			const ok = run.inject(composed.fullPrompt);
+			const ok = await run.inject(composed.fullPrompt);
 			if (!ok) {
 				// CLI subprocess が既に死んでいる／stdin 閉鎖。現在の run の
 				// 自然終了を待ってから (busy が false に戻る) 新規 send() で
