@@ -43,6 +43,7 @@ export function renderMessage(
 	host.addClass("claude-panel-msg");
 	host.addClass(`claude-panel-msg-${msg.role}`);
 	host.setAttr("data-msg-id", msg.id);
+	host.toggleClass("is-interrupted", !!msg.interrupted);
 
 	const roleRow = host.createDiv({ cls: "claude-panel-msg-role" });
 	roleRow.createSpan({
@@ -66,6 +67,13 @@ export function renderMessage(
 			cls: "claude-panel-effort-badge",
 			text: msg.effortLevel,
 			attr: { title: `Effort: ${msg.effortLevel}` },
+		});
+	}
+	if (msg.role === "assistant" && msg.interrupted) {
+		roleRow.createSpan({
+			cls: "claude-panel-interrupted-badge",
+			text: t("chat.interruptedBadge"),
+			attr: { title: t("chat.interruptedBadge") },
 		});
 	}
 
