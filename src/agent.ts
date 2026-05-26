@@ -296,6 +296,10 @@ export interface RunHandle {
 	promise: Promise<void>;
 	cancel: () => void;
 	canceled: () => boolean;
+	/** 進行中の生成を中断し、続けて新しいユーザーメッセージを同じ stdin に
+	 *  書き込む。CLI は同一セッションでそのまま次ターンを生成する。stdin
+	 *  が既に閉じられている／canceled の場合は no-op で false を返す。 */
+	inject: (prompt: string) => boolean;
 }
 
 export interface SubprocessResult {
@@ -483,6 +487,13 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 	const { prompt, cwd, settings } = args;
 	let canceled = false;
 	let child: ReturnType<typeof spawn> | null = null;
+	// 割り込み (inject) 進行中フラグ。interrupt control_request を送った
+	// 直後に CLI が返してくる「中断された result」イベントでは stdin を
+	// 閉じない — 続けて新ユーザーメッセージを書き込むため。新メッセージが
+	// 書かれたら false に戻り、その新ターンの完了 result で通常通り stdin
+	// を閉じる。inject が onResult ラッパから参照されるため、関数スコープに
+	// 置く。
+	let interruptInFlight = false;
 	// view へ転送済みかつ判定が戻っていない CLI パーミッションリクエスト。
 	// cancel 後の遅延判定をショートサーキットするために使う（閉じた stdin
 	// に書くと例外になるため）。
@@ -688,6 +699,14 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 			...events,
 			onResult: (info) => {
 				events.onResult(info);
+				if (interruptInFlight) {
+					// この result は inject() による中断 result。一度だけ
+					// 消費してフラグを下ろし、stdin は開けたまま新ターンを
+					// 待つ。続く新ターン完了時の result では flag は既に
+					// false なので、通常通り stdin が閉じる。
+					interruptInFlight = false;
+					return;
+				}
 				try {
 					childRef.stdin?.end();
 				} catch {
@@ -770,5 +789,49 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		}
 	};
 
-	return { promise, cancel, canceled: () => canceled };
+	const inject = (newPrompt: string): boolean => {
+		if (canceled) return false;
+		if (!child || child.killed) return false;
+		const stdin = child.stdin;
+		if (!stdin || stdin.writableEnded) return false;
+		// 1) 進行中生成を中断する control_request。
+		interruptInFlight = true;
+		try {
+			stdin.write(
+				JSON.stringify({
+					type: "control_request",
+					request_id: randomRequestId(),
+					request: { subtype: "interrupt" },
+				}) + "\n"
+			);
+		} catch {
+			interruptInFlight = false;
+			return false;
+		}
+		// 2) 新しい user メッセージ。CLI は同一セッション ID で次ターンを生成する。
+		try {
+			stdin.write(
+				JSON.stringify({
+					type: "user",
+					session_id: "",
+					parent_tool_use_id: null,
+					message: {
+						role: "user",
+						content: [{ type: "text", text: newPrompt }],
+					},
+				}) + "\n"
+			);
+		} catch {
+			interruptInFlight = false;
+			return false;
+		}
+		// interruptInFlight は true のまま返す。CLI から非同期で届く
+		// 「中断された result」イベントを onResult ラッパーが捕まえて
+		// flag をクリアする (one-shot 動作)。同期的にここで false に戻すと、
+		// 非同期の result 到着時には既に false になっていて stdin が閉じ、
+		// 続く新ターンの応答が読めなくなる。
+		return true;
+	};
+
+	return { promise, cancel, canceled: () => canceled, inject };
 }
