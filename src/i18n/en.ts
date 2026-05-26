@@ -37,6 +37,8 @@ export const en: Messages = {
 		alreadyAttached: "The selected file is already attached.",
 		pasted: (path: string) => `Pasted: ${path}`,
 		pasteFailed: (msg: string) => `Failed to save pasted image: ${msg}`,
+		pendingPaste: (name: string) =>
+			`${name} (will be saved on send)`,
 		activeLabel: "Active:",
 		activeFolderTooltip:
 			"Sends the folder path as an @-mention. Claude reads files inside on demand.",

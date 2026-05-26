@@ -38,6 +38,8 @@ export const ja = {
 		alreadyAttached: "選択されたファイルはすでに添付済みです。",
 		pasted: (path: string) => `貼り付け: ${path}`,
 		pasteFailed: (msg: string) => `貼り付け画像の保存に失敗: ${msg}`,
+		pendingPaste: (name: string) =>
+			`${name}（送信時に保存されます）`,
 		activeLabel: "アクティブ:",
 		activeFolderTooltip:
 			"フォルダパスを @メンションとして Claude に送ります（配下のファイルは Claude が必要に応じて読みます）",
@@ -273,7 +275,7 @@ export const ja = {
 			option: {
 				activeFileFolder: "アクティブファイルと同じ階層",
 				vaultPath: "Vault 内の指定したパス",
-				activeFileSubfolder: "アクティブファイル隣の指定フォルダ",
+				activeFileSubfolder: "アクティブファイルと同じ階層の指定フォルダ",
 			},
 		},
 		attachmentVaultPath: {
@@ -286,7 +288,7 @@ export const ja = {
 		attachmentSubfolder: {
 			name: "サブフォルダ名",
 			desc:
-				"保存先を「アクティブファイル隣の指定フォルダ」にしたときの、" +
+				"保存先を「アクティブファイルと同じ階層の指定フォルダ」にしたときの、" +
 				"アクティブファイルと同じ階層に作るサブフォルダの名前。空欄のときは attachments を使います。",
 			placeholder: "attachments",
 		},

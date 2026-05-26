@@ -319,6 +319,10 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.saveAttachmentsToVault)
 					.onChange(async (v) => {
 						this.plugin.settings.saveAttachmentsToVault = v;
+						// パネル側トグルの実体（プラグイン上の一時状態）も同期。
+						// 設定タブから変えたつもりが現在開いているパネルだけ
+						// 取り残される、という違和感を防ぐ。
+						this.plugin.runtimeSaveAttachmentsToVault = v;
 						await this.plugin.saveSettings();
 					})
 			);

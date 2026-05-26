@@ -460,7 +460,7 @@ export class ClaudePanelView extends ItemView {
 			}
 		});
 		this.inputEl.addEventListener("paste", (e) => {
-			void this.composer.handlePaste(e);
+			this.composer.handlePaste(e);
 		});
 
 		// 参照系（含める/除外）行は textarea の下に並べる。Composer が
@@ -940,7 +940,7 @@ export class ClaudePanelView extends ItemView {
 	 * は触らない（ユーザーが別のことを書いている最中かもしれないため）。
 	 * busy 中は send() と同じく次ターンキューへ積む。
 	 */
-	private sendAskAnswer(answer: string): void {
+	private async sendAskAnswer(answer: string): Promise<void> {
 		const text = answer.trim();
 		if (!text) return;
 		const cwd = this.getVaultPath();
@@ -948,6 +948,9 @@ export class ClaudePanelView extends ItemView {
 			new Notice(t("view.vaultPathUnavailable"));
 			return;
 		}
+		// 未保存のペースト画像を確定させてから組み立てる（× で消されたものは
+		// このタイミングまでにディスクへ書き出さず、そのまま捨てられる）。
+		await this.composer.flushPendingPastes();
 		const composed = this.composer.composeMessage(text);
 		if (this.runtime.isBusy()) {
 			this.queuedTurn = { text, composed, cwd };
@@ -992,6 +995,9 @@ export class ClaudePanelView extends ItemView {
 			return;
 		}
 
+		// 未保存のペースト画像を確定させてから組み立てる（× で消されたものは
+		// このタイミングまでにディスクへ書き出さず、そのまま捨てられる）。
+		await this.composer.flushPendingPastes();
 		const composed = this.composer.composeMessage(text);
 
 		// runtime に渡す（あるいはキューに積む）前に入力欄と添付をクリア

@@ -8,6 +8,7 @@ import type { EffortLevel, ThinkingMode } from "./settings";
 import {
 	copyFileToVault,
 	extractPastedImages,
+	pastedImageFileName,
 	pickFilesViaDialog,
 	resolveAttachmentDir,
 	savePastedImage,
@@ -35,10 +36,11 @@ export class Composer {
 	private selection: SelectionCapture;
 
 	private attachments: string[] = []; // Vault 相対 or OS 絶対パス
-	// 添付・貼り付けたファイルを Vault 内に保存するか。パネルの「Vault に
-	// 保存」チェックボックスと同期する一時状態。初期値はプラグイン設定
-	// `saveAttachmentsToVault` 由来だが、トグルしても設定は書き換えない。
-	private saveToVault: boolean;
+	// 貼り付けた画像のうち、まだディスクに書き出していないもの。送信時に
+	// flushPendingPastes() でまとめて保存して `attachments` に移される。
+	// クリップボードから来た File オブジェクトと、保存時に使う確定済み
+	// ファイル名（チップ表示用にも使う）をセットで保持する。
+	private pendingPastes: { file: File; fileName: string }[] = [];
 	// 初期値はプラグイン設定 `includeActiveByDefault` 由来。パネル内の
 	// トグルは一時状態で、設定値は書き換えない。
 	private includeActiveFile: boolean;
@@ -61,7 +63,6 @@ export class Composer {
 		this.app = app;
 		this.plugin = plugin;
 		this.selection = selection;
-		this.saveToVault = plugin.settings.saveAttachmentsToVault;
 		this.includeActiveFile = plugin.settings.includeActiveByDefault;
 	}
 
@@ -98,15 +99,17 @@ export class Composer {
 		return this.includeActiveFile;
 	}
 
-	/** パネルの「Vault に保存」チェックボックスの現在値。 */
+	/** パネルの「Vault に保存」チェックボックスの現在値。プラグインインスタンス
+	 *  に持たせた一時状態を直接返すので、パネルの開閉やタブ切り替えを跨いでも
+	 *  値が保持される。 */
 	getSaveToVault(): boolean {
-		return this.saveToVault;
+		return this.plugin.runtimeSaveAttachmentsToVault;
 	}
 
 	/** パネルの「Vault に保存」チェックボックスの値を反映する。一時状態
 	 *  なので、プラグイン設定 `saveAttachmentsToVault` は書き換えない。 */
 	setSaveToVault(value: boolean): void {
-		this.saveToVault = value;
+		this.plugin.runtimeSaveAttachmentsToVault = value;
 	}
 
 	/** トグルコマンドの通知メッセージ用に「対象パス」を返す。 */
@@ -116,9 +119,11 @@ export class Composer {
 		return f ? f.path : null;
 	}
 
-	/** 会話クリア時など、添付状態を全部リセットする。 */
+	/** 会話クリア時など、添付状態を全部リセットする。未保存のペースト画像は
+	 *  ディスクに書き出されないまま破棄される（これが本機能の狙い）。 */
 	clearAttachments(): void {
 		this.attachments = [];
+		this.pendingPastes = [];
 		this.renderAttachments();
 	}
 
@@ -130,7 +135,7 @@ export class Composer {
 		const { paths, unresolvedCount } = await pickFilesViaDialog();
 		// 「Vault に保存」が ON のときは、Vault 外ファイルを Vault 内へ
 		// コピーする。保存先はピッカーを閉じた時点のアクティブファイル基準。
-		const toVault = this.saveToVault;
+		const toVault = this.plugin.runtimeSaveAttachmentsToVault;
 		const dir = toVault
 			? resolveAttachmentDir(this.app, this.plugin.settings)
 			: "";
@@ -174,37 +179,57 @@ export class Composer {
 		}
 	}
 
-	async handlePaste(e: ClipboardEvent): Promise<void> {
+	handlePaste(e: ClipboardEvent): void {
 		const images = extractPastedImages(e);
 		if (images.length === 0) return;
 		// バイナリ文字列が textarea に貼り付けられないよう抑止する。
 		e.preventDefault();
-		// 「Vault に保存」が ON なら設定どおりの Vault 内フォルダへ、OFF なら
-		// プラグインの一時フォルダ（unload 時に掃除される）へ書き出す。
-		const toVault = this.saveToVault;
+		// 添付チップだけ即時表示し、実ファイルの書き出しは送信時に
+		// flushPendingPastes() がまとめて行う（× で取り消した画像は
+		// ディスクに残らない）。ファイル名はこの時点で確定させ、表示と
+		// 実際の保存名を一致させる。
+		for (const img of images) {
+			this.pendingPastes.push({
+				file: img,
+				fileName: pastedImageFileName(img),
+			});
+		}
+		this.renderAttachments();
+	}
+
+	/** 未保存のペースト画像を実際にディスクへ書き出し、`attachments` に
+	 *  パスを積む。送信直前に view から呼ばれる。 */
+	async flushPendingPastes(): Promise<void> {
+		if (this.pendingPastes.length === 0) return;
+		const toVault = this.plugin.runtimeSaveAttachmentsToVault;
 		const dir = toVault
 			? resolveAttachmentDir(this.app, this.plugin.settings)
 			: "";
-		for (const img of images) {
+		const pending = this.pendingPastes;
+		this.pendingPastes = [];
+		let savedToVault = 0;
+		for (const { file, fileName } of pending) {
 			try {
 				const savedPath = toVault
-					? await savePastedImageToVault(this.app, dir, img)
+					? await savePastedImageToVault(this.app, dir, file, fileName)
 					: await savePastedImage(
 							this.app,
 							this.plugin.getAttachmentFolder(),
-							img
+							file,
+							fileName
 						);
 				if (!this.attachments.includes(savedPath)) {
 					this.attachments.push(savedPath);
 				}
-				this.renderAttachments();
-				new Notice(t("composer.pasted", savedPath));
+				if (toVault) savedToVault++;
 			} catch (err) {
-				new Notice(
-					t("composer.pasteFailed", (err as Error).message)
-				);
+				new Notice(t("composer.pasteFailed", (err as Error).message));
 			}
 		}
+		if (savedToVault > 0) {
+			new Notice(t("composer.savedToVault", savedToVault));
+		}
+		this.renderAttachments();
 	}
 
 	// ============================================================
@@ -358,6 +383,20 @@ export class Composer {
 			const x = chip.createEl("button", { text: "×" });
 			x.onclick = () => {
 				this.attachments = this.attachments.filter((p) => p !== path);
+				this.renderAttachments();
+			};
+		}
+		// 未保存のペースト画像。送信時に flush するまでディスクには書き
+		// 出されていないので、確定パスではなく仮ファイル名だけを表示する。
+		for (const entry of this.pendingPastes) {
+			const chip = host.createDiv({ cls: "claude-panel-chip is-pending" });
+			const labelEl = chip.createSpan({ text: `@${entry.fileName}` });
+			labelEl.title = t("composer.pendingPaste", entry.fileName);
+			const x = chip.createEl("button", { text: "×" });
+			x.onclick = () => {
+				this.pendingPastes = this.pendingPastes.filter(
+					(p) => p !== entry
+				);
 				this.renderAttachments();
 			};
 		}

@@ -20,6 +20,11 @@ export default class ClaudePanelPlugin extends Plugin {
 	// チャットターン終了ごとの usage を vault 設定フォルダ配下に永続化する。
 	// /usage モーダルとメッセージフッターから読み出す。
 	usageHistory!: UsageHistory;
+	// パネルの「Vault に保存」チェックボックスの現在値。プラグインインスタンス
+	// に持たせることで、パネルの開閉・タブ切り替えをまたいで保持される。
+	// 初期値は `settings.saveAttachmentsToVault`。設定タブで変更された場合も
+	// ここを同期する。Obsidian 再起動・プラグイン再有効化でリセットされる。
+	runtimeSaveAttachmentsToVault = false;
 
 	// クリップボードからペーストした画像の保存先（Vault 相対パス）。
 	// プラグイン自身のディレクトリ配下に置くことでユーザー側の
@@ -214,6 +219,7 @@ export default class ClaudePanelPlugin extends Plugin {
 			DEFAULT_SETTINGS,
 			await this.loadData()
 		);
+		this.runtimeSaveAttachmentsToVault = this.settings.saveAttachmentsToVault;
 	}
 
 	async saveSettings(): Promise<void> {

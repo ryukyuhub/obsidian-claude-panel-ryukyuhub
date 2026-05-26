@@ -1913,6 +1913,13 @@
 	color: var(--text-error);
 }
 
+/* 未保存のペースト画像。送信時に保存される旨を破線枠で示す。 */
+.claude-panel-chip.is-pending {
+	background: transparent;
+	border: 1px dashed var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
 /* ---------- 4. プロンプト textarea ----------
    `claude-panel-input-wrap` は textarea とサジェスト popup の relative
    親。popup を `bottom: 100%` で textarea の真上にオーバレイする。 */

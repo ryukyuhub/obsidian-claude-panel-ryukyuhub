@@ -91,8 +91,10 @@ export function extractPastedImages(e: ClipboardEvent): File[] {
 	return images;
 }
 
-/** ペースト画像のファイル名（拡張子つき）を MIME タイプとタイムスタンプから作る。 */
-function pastedImageFileName(file: File): string {
+/** ペースト画像のファイル名（拡張子つき）を MIME タイプとタイムスタンプから作る。
+ *  ペースト時点で確定させ、後で保存先（Vault / 一時フォルダ）に渡せるよう
+ *  export している。チップの表示と実保存パスのベース名が一致する。 */
+export function pastedImageFileName(file: File): string {
 	const subtype = (file.type.split("/")[1] || "png").toLowerCase();
 	const ext = subtype === "jpeg" ? "jpg" : subtype;
 	const ts = new Date()
@@ -113,13 +115,14 @@ function pastedImageFileName(file: File): string {
 export async function savePastedImage(
 	app: App,
 	folder: string,
-	file: File
+	file: File,
+	fileName: string
 ): Promise<string> {
 	const adapter = app.vault.adapter;
 	if (!(await adapter.exists(folder))) {
 		await adapter.mkdir(folder);
 	}
-	const filePath = normalizePath(`${folder}/${pastedImageFileName(file)}`);
+	const filePath = normalizePath(`${folder}/${fileName}`);
 	const buf = await file.arrayBuffer();
 	await adapter.writeBinary(filePath, buf);
 	return filePath;
@@ -225,10 +228,11 @@ async function writeBinaryToVault(
 export async function savePastedImageToVault(
 	app: App,
 	dir: string,
-	file: File
+	file: File,
+	fileName: string
 ): Promise<string> {
 	const data = await file.arrayBuffer();
-	return writeBinaryToVault(app, dir, pastedImageFileName(file), data);
+	return writeBinaryToVault(app, dir, fileName, data);
 }
 
 /**
