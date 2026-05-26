@@ -733,6 +733,35 @@
 	border: 1px solid var(--background-modifier-border);
 }
 
+/* 割り込みでユーザーが中断したアシスタントメッセージに付くバッジ。
+   thinking/effort バッジと並ぶ位置で、形状は共通、色だけ neutral に
+   して「これは状態表示で意味は中立 (失敗ではない)」と伝える。 */
+.claude-panel-interrupted-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 7px;
+	border-radius: 8px;
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	white-space: nowrap;
+	cursor: help;
+	color: var(--text-muted);
+	background: color-mix(
+		in srgb,
+		var(--text-normal) 8%,
+		transparent
+	);
+	border: 1px solid var(--background-modifier-border);
+}
+
+/* 中断されたメッセージは本文をうっすら薄くして「途中で止まったもの」
+   と分かるようにする。完全に消すと文脈が読めなくなるので opacity だけ。 */
+.claude-panel-msg.is-interrupted {
+	opacity: 0.85;
+}
+
 .claude-panel-msg-text {
 	font-size: var(--claude-panel-font-size, 13px);
 	line-height: 1.6;
@@ -1958,36 +1987,6 @@
 	flex-direction: column;
 }
 
-/* キュー登録された次ターンの 1 行表示。busy 中に追加プロンプトを
-   送ると textarea が空になる代わりにここに preview が出る。× で
-   キャンセル。 */
-.claude-panel-queued-strip {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 4px 8px;
-	margin-bottom: 4px;
-	background: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
-	font-size: 12px;
-	color: var(--text-muted);
-}
-
-.claude-panel-queued-strip.is-hidden {
-	display: none;
-}
-
-.claude-panel-queued-text {
-	flex: 1;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.claude-panel-queued-cancel {
-	flex: 0 0 auto;
-}
 
 /* スラッシュコマンドのサジェスト popup。textarea の上に絶対配置で
    浮かぶ。スクロール可能。`is-hidden` で非表示。 */
