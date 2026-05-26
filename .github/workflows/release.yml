@@ -39,7 +39,12 @@ jobs:
           test -f ./build/manifest.json
           test -f ./build/styles.css
 
+      # Attestation はリリース成功の必須条件ではない: codeload.github.com が
+      # 一時的にこの action の source archive を配信できないケース (2026-05-26)
+      # が観測されたため、失敗してもリリース作成へ進める。codeload が
+      # 健康なら attestation も付くという「ベストエフォート」運用にする。
       - name: Attest build provenance
+        continue-on-error: true
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
