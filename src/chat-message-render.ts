@@ -416,15 +416,23 @@ function renderAskBlocks(
 }
 
 /**
- * 質問カード内の選択肢ボタン群を `slot` に描画する。`allowOther` が true なら
- * 末尾に「その他…」ボタンを追加し、押下で同じスロットを記述入力 UI に
- * 置き換える（戻ると同関数を呼び直して復元）。
+ * 質問カード内の選択肢ボタン群を `slot` に描画する。`type` で分岐:
+ * - single: クリック即送信（従来挙動）。`allowOther` 時は「その他…」で
+ *   記述入力 UI に置き換える。
+ * - multi: クリックはチェック ON/OFF のトグル。下部に「送信」ボタンを
+ *   置き、押下で選択された複数項目をカンマ区切りで送信する。`allowOther`
+ *   時は「その他…」が追加入力行を開き、自由記述もチェック済み項目と
+ *   一緒に送信される（multi では選択肢を消さず、チェックと併存させる）。
  */
 function renderAskOptions(
 	slot: HTMLElement,
 	parsed: AskPayload,
 	onAnswer?: (answer: string) => void
 ): void {
+	if (parsed.type === "multi") {
+		renderAskMulti(slot, parsed, onAnswer);
+		return;
+	}
 	slot.empty();
 	slot.className = "claude-panel-ask-slot claude-panel-ask-options";
 
@@ -466,9 +474,153 @@ function renderAskOptions(
 }
 
 /**
- * 「その他…」を押された後の記述入力 UI。Enter（IME 確定中は除く）で送信、
- * Shift+Enter で改行、Esc / 戻るボタンで選択肢一覧に戻る。送信したら自身を
- * 「ユーザーが入力した文字列」の is-selected ピルに置き換え、押下不可にする。
+ * 複数選択モードの描画。トグル可能なボタン群 + 「送信 (N)」ボタンの構成。
+ * `allowOther` 時の「その他…」は別行のインライン textarea を開閉する形にし、
+ * チェック済み項目と入力中の自由記述が両立できるようにする。
+ */
+function renderAskMulti(
+	slot: HTMLElement,
+	parsed: AskPayload,
+	onAnswer?: (answer: string) => void
+): void {
+	slot.empty();
+	slot.className =
+		"claude-panel-ask-slot claude-panel-ask-options claude-panel-ask-multi";
+
+	const selected = new Set<string>();
+	const optionButtons: HTMLButtonElement[] = [];
+
+	for (const option of parsed.options) {
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "claude-panel-ask-option";
+		btn.textContent = option;
+		if (onAnswer) {
+			btn.onclick = (e) => {
+				e.preventDefault();
+				if (selected.has(option)) {
+					selected.delete(option);
+					btn.removeClass("is-selected");
+				} else {
+					selected.add(option);
+					btn.addClass("is-selected");
+				}
+				updateSendLabel();
+			};
+		} else {
+			btn.disabled = true;
+		}
+		optionButtons.push(btn);
+		slot.appendChild(btn);
+	}
+
+	// 「その他…」用のインライン入力行。閉じている間は textarea を DOM から
+	// 外し、押下で開閉する。値はクローズしても次回オープン時まで保持される
+	// よう、関数スコープの変数に持つ。
+	let otherText = "";
+	let otherOpen = false;
+	let otherInput: HTMLTextAreaElement | null = null;
+	let otherRow: HTMLDivElement | null = null;
+
+	const openOther = (): void => {
+		if (otherOpen) return;
+		otherOpen = true;
+		otherRow = document.createElement("div");
+		otherRow.className = "claude-panel-ask-multi-other-row";
+		const ta = document.createElement("textarea");
+		ta.className = "claude-panel-ask-freeform-input";
+		ta.rows = 2;
+		ta.placeholder = t("chat.askOtherPlaceholder");
+		ta.value = otherText;
+		ta.addEventListener("input", () => {
+			otherText = ta.value;
+			updateSendLabel();
+		});
+		ta.addEventListener("keydown", (e) => {
+			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+				e.preventDefault();
+				submit();
+			}
+		});
+		otherInput = ta;
+		otherRow.appendChild(ta);
+		// 「その他…」行はオプション群の後・送信ボタンの前に挿入する。
+		slot.insertBefore(otherRow, sendRow);
+		ta.focus();
+	};
+
+	if (parsed.allowOther && onAnswer) {
+		const otherBtn = document.createElement("button");
+		otherBtn.type = "button";
+		otherBtn.className =
+			"claude-panel-ask-option claude-panel-ask-option-other";
+		otherBtn.textContent = t("chat.askOtherButton");
+		otherBtn.onclick = (e) => {
+			e.preventDefault();
+			openOther();
+			otherBtn.disabled = true;
+		};
+		slot.appendChild(otherBtn);
+	}
+
+	const sendRow = document.createElement("div");
+	sendRow.className = "claude-panel-ask-multi-actions";
+	slot.appendChild(sendRow);
+
+	const sendBtn = document.createElement("button");
+	sendBtn.type = "button";
+	sendBtn.className = "claude-panel-ask-multi-submit mod-cta";
+	sendRow.appendChild(sendBtn);
+
+	const countOf = (): number =>
+		selected.size + (otherText.trim() ? 1 : 0);
+
+	const updateSendLabel = (): void => {
+		const n = countOf();
+		sendBtn.textContent = t("chat.askMultiSubmit", n);
+		sendBtn.disabled = !onAnswer || n === 0;
+	};
+
+	const submit = (): void => {
+		if (!onAnswer) return;
+		const parts: string[] = [];
+		// 元の options の出現順を維持する。Claude にとっても会話履歴の
+		// 可読性上もこの方が読みやすい。
+		for (const option of parsed.options) {
+			if (selected.has(option)) parts.push(option);
+		}
+		const other = otherText.trim();
+		if (other) parts.push(other);
+		if (parts.length === 0) return;
+
+		// 送信後の確定表示: 全コントロールを disabled にし、選択された
+		// 項目だけ is-selected ピルとして残す。「その他…」入力欄は確定
+		// 文字列を表すピルに置き換える。送信ボタンと未選択項目は外す。
+		slot.empty();
+		slot.className = "claude-panel-ask-slot claude-panel-ask-options";
+		for (const value of parts) {
+			const pill = document.createElement("button");
+			pill.type = "button";
+			pill.className = "claude-panel-ask-option is-selected";
+			pill.textContent = value;
+			pill.disabled = true;
+			slot.appendChild(pill);
+		}
+		onAnswer(parts.join(", "));
+	};
+
+	sendBtn.onclick = (e) => {
+		e.preventDefault();
+		submit();
+	};
+	updateSendLabel();
+}
+
+/**
+ * 「その他…」を押された後の記述入力 UI（単一選択モード）。Enter（IME
+ * 確定中は除く）で送信、Shift+Enter で改行、Esc / 戻るボタンで選択肢一覧に
+ * 戻る。送信したら自身を「ユーザーが入力した文字列」の is-selected ピルに
+ * 置き換え、押下不可にする。
  */
 function renderAskFreeText(
 	slot: HTMLElement,
@@ -662,6 +814,7 @@ interface AskPayload {
 	question: string;
 	options: string[];
 	allowOther: boolean;
+	type: "single" | "multi";
 }
 
 function parseAskPayload(raw: string): AskPayload | null {
@@ -686,7 +839,9 @@ function parseAskPayload(raw: string): AskPayload | null {
 	}
 	if (options.length === 0) return null;
 	const allowOther = o.allowOther === true;
-	return { question, options, allowOther };
+	// `type` 未指定または不明値は "single"（後方互換）。
+	const type: "single" | "multi" = o.type === "multi" ? "multi" : "single";
+	return { question, options, allowOther, type };
 }
 
 export function renderToolPill(

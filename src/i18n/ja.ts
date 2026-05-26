@@ -145,6 +145,8 @@ export const ja = {
 		askOtherPlaceholder: "自由に入力…",
 		askOtherSubmit: "送信",
 		askOtherCancel: "戻る",
+		askMultiSubmit: (n: number) =>
+			n > 0 ? `送信 (${n})` : "送信",
 	},
 	chatTool: {
 		changeOfN: (i: number, n: number) => `変更 ${i} / ${n}`,

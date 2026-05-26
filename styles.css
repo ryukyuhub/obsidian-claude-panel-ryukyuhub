@@ -915,6 +915,35 @@
 .claude-panel-ask-freeform-submit:hover {
 	background: var(--interactive-accent-hover, var(--interactive-accent));
 }
+/* 複数選択モード（type: "multi"）。
+   トグル可能なボタン群 + 行末の「送信 (N)」ボタンで構成。
+   選択中の項目は単一選択と同じ is-selected スタイルを再利用する。 */
+.claude-panel-ask-multi-other-row {
+	display: flex;
+	flex-direction: column;
+}
+.claude-panel-ask-multi-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 4px;
+}
+.claude-panel-ask-multi-submit {
+	padding: 6px 16px;
+	border-radius: 6px;
+	border: 1px solid var(--interactive-accent);
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 0.9em;
+	cursor: pointer;
+}
+.claude-panel-ask-multi-submit:hover:not(:disabled) {
+	background: var(--interactive-accent-hover, var(--interactive-accent));
+}
+.claude-panel-ask-multi-submit:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
 /* 散文中の yes/no 質問を救うフォールバックカード。質問文は本文側に
    既にあるので省略し、ボタン 2 つを横並びで小さめに置く。
    選択肢式カードと違って padding を絞り、本文の続きに見える程度の

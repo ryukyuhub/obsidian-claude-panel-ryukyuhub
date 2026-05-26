@@ -145,6 +145,8 @@ export const en: Messages = {
 		askOtherPlaceholder: "Type your answer…",
 		askOtherSubmit: "Send",
 		askOtherCancel: "Back",
+		askMultiSubmit: (n: number) =>
+			n > 0 ? `Send (${n})` : "Send",
 	},
 	chatTool: {
 		changeOfN: (i: number, n: number) => `Change ${i} / ${n}`,
