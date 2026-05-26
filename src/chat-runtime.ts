@@ -98,6 +98,16 @@ export class ChatRuntime {
 	>();
 	private lastUsage: MessageUsage | null = null;
 	private busy = false;
+	// 現在ストリーミング書き込み先のアシスタントメッセージ ID。`send()` で
+	// 開始時にセットし、`inject()` で割り込み時に新メッセージへ差し替える。
+	// onText / onToolUse / onResult のコールバックはこのフィールドを毎回参照する
+	// ことで、interrupt 後も古いメッセージへ書き続けないようにする。
+	private activeAssistantId: string | null = null;
+	// inject() の再入を防ぐロック。実際に inject() が CLI に書き込み
+	// 終わる (= 新メッセージを push 済み) までを保護する。連続クリックや
+	// 自動再送で interrupt が二重に走ると、最初に push された
+	// アシスタントメッセージが新ターンの onText を受け取れず孤立する。
+	private injecting = false;
 
 	constructor(
 		private readonly plugin: ClaudePanelPlugin,
@@ -202,6 +212,7 @@ export class ChatRuntime {
 		);
 		this.host.onResetInputHistory();
 		const assistantMsgId = this.messages[this.messages.length - 1].id;
+		this.activeAssistantId = assistantMsgId;
 		this.host.onMessagesChanged();
 
 		this.setBusy(true);
@@ -225,24 +236,35 @@ export class ChatRuntime {
 				},
 				{
 					onText: (chunk) =>
-						this.appendStreamingText(assistantMsgId, chunk),
+						this.appendStreamingText(
+							this.activeAssistantId ?? assistantMsgId,
+							chunk
+						),
 					onToolUse: (name, input) =>
-						this.appendStreamingTool(assistantMsgId, name, input),
+						this.appendStreamingTool(
+							this.activeAssistantId ?? assistantMsgId,
+							name,
+							input
+						),
 					onPermissionRequest: (req, decide) =>
 						this.appendPermissionRequest(
-							assistantMsgId,
+							this.activeAssistantId ?? assistantMsgId,
 							req,
 							decide
 						),
 					onResult: ({ durationMs, costUsd, sessionId: newSession }) => {
-						this.setMessageResult(assistantMsgId, {
-							durationMs,
-							costUsd,
-						});
+						this.setMessageResult(
+							this.activeAssistantId ?? assistantMsgId,
+							{
+								durationMs,
+								costUsd,
+							}
+						);
 						if (newSession) this.currentSessionId = newSession;
 					},
 					onUsage: (usage) => {
-						const msg = this.findMessage(assistantMsgId);
+						const targetId = this.activeAssistantId ?? assistantMsgId;
+						const msg = this.findMessage(targetId);
 						if (msg) msg.usage = usage;
 						this.lastUsage = usage;
 						lastRunUsage = usage;
@@ -257,7 +279,7 @@ export class ChatRuntime {
 					onError: (err) => {
 						errorMessage = err.message;
 						this.appendStreamingText(
-							assistantMsgId,
+							this.activeAssistantId ?? assistantMsgId,
 							t("chatRuntime.errorPrefix", err.message)
 						);
 					},
@@ -269,7 +291,7 @@ export class ChatRuntime {
 			if (canceled) {
 				this.flushPendingPermissions(t("chatRuntime.runInterrupted"));
 				this.appendStreamingText(
-					assistantMsgId,
+					this.activeAssistantId ?? assistantMsgId,
 					t("chatRuntime.userInterruptedInline")
 				);
 			} else {
@@ -324,9 +346,91 @@ export class ChatRuntime {
 			canceled = retry.canceled;
 		}
 
-		this.finalizeStreamingMessage(assistantMsgId);
+		this.finalizeStreamingMessage(this.activeAssistantId ?? assistantMsgId);
+		this.activeAssistantId = null;
 		this.setBusy(false);
 		this.host.onRunComplete(canceled);
+	}
+
+	/**
+	 * 進行中のターンに割り込み、新しいユーザーメッセージを即送信する。
+	 * 進行中のアシスタントメッセージは `interrupted = true` でマークされ、
+	 * 部分応答はそのまま履歴に残る。新ユーザー / 新アシスタントメッセージを
+	 * 追加して、CLI 側の続きの assistant ストリーミングを新メッセージへ流す
+	 * (`activeAssistantId` 経由)。失敗時 (run なし／stdin 閉鎖済み等) は
+	 * 通常の `send()` にフォールバックする。
+	 */
+	async inject(
+		userText: string,
+		composed: ComposedMessage,
+		cwd: string
+	): Promise<void> {
+		if (this.injecting) return;
+		this.injecting = true;
+		try {
+			const run = this.currentRun;
+			if (!this.busy || !run || run.canceled()) {
+				// 何らかの理由で busy でない (race condition 含む) — 通常送信。
+				return this.send(userText, composed, cwd);
+			}
+			if (!userText) return;
+
+			this.host.onWarmup();
+
+			const ok = run.inject(composed.fullPrompt);
+			if (!ok) {
+				// CLI subprocess が既に死んでいる／stdin 閉鎖。現在の run の
+				// 自然終了を待ってから (busy が false に戻る) 新規 send() で
+				// やり直す。await しないと send() が busy 早期 return で
+				// ユーザー入力をサイレントに捨ててしまう。
+				await run.promise;
+				return this.send(userText, composed, cwd);
+			}
+
+			// 中断 + 新ターン継続が CLI 側に受理された。ここから先は UI 状態の
+			// 反映: 進行中アシスタントメッセージに interrupted フラグを立て、
+			// pending permission を flush し、新しい user / assistant ペアを push する。
+			this.flushPendingPermissions(t("chatRuntime.runInterrupted"));
+			const interruptedAssistant = this.findStreamingAssistant();
+			if (interruptedAssistant) {
+				interruptedAssistant.interrupted = true;
+				interruptedAssistant.streaming = false;
+				this.host.onMessageRerender(interruptedAssistant);
+			}
+
+			// 新しい user / assistant メッセージを履歴に積み、後続のストリーミング
+			// イベント (onText 等) を新 assistant メッセージへ流す。runAgent 側の
+			// イベントコールバックは this.activeAssistantId を毎回参照するように
+			// 書き換えてあるので、ここでの差し替えだけで自然に新メッセージへ
+			// ルーティングされる。
+			const newAssistantId = nextMsgId();
+			this.messages.push(
+				{
+					id: nextMsgId(),
+					role: "user",
+					mentions: composed.mentions.length ? composed.mentions : undefined,
+					selectionRef: composed.selectionRef,
+					parts: [{ type: "text", text: composed.body }],
+					inputText: userText,
+					thinkingMode:
+						composed.thinkingMode !== "off"
+							? composed.thinkingMode
+							: undefined,
+					effortLevel: composed.effortLevel,
+				},
+				{
+					id: newAssistantId,
+					role: "assistant",
+					parts: [],
+					streaming: true,
+				}
+			);
+			this.host.onResetInputHistory();
+			this.host.onMessagesChanged();
+			this.activeAssistantId = newAssistantId;
+		} finally {
+			this.injecting = false;
+		}
 	}
 
 	cancel(): void {
@@ -483,6 +587,14 @@ export class ChatRuntime {
 
 	private findMessage(msgId: string): ChatMessage | null {
 		return this.messages.find((m) => m.id === msgId) ?? null;
+	}
+
+	private findStreamingAssistant(): ChatMessage | null {
+		for (let i = this.messages.length - 1; i >= 0; i--) {
+			const m = this.messages[i];
+			if (m.role === "assistant" && m.streaming) return m;
+		}
+		return null;
 	}
 
 	private findMessageWithPermission(toolUseId: string): ChatMessage | null {
