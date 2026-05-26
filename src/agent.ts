@@ -698,15 +698,17 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		const eventsWithEnd: AgentEvents = {
 			...events,
 			onResult: (info) => {
-				events.onResult(info);
 				if (interruptInFlight) {
-					// この result は inject() による中断 result。一度だけ
-					// 消費してフラグを下ろし、stdin は開けたまま新ターンを
-					// 待つ。続く新ターン完了時の result では flag は既に
-					// false なので、通常通り stdin が閉じる。
+					// この result は inject() による中断 result。
+					// events.onResult に転送しない: activeAssistantId は既に
+					// 新メッセージへ移っているため、転送すると中断ターンの
+					// 所要時間／コスト／usage が新メッセージのフッターに
+					// 一瞬反映されてしまう。中断メッセージにフッターは出ない
+					// ことになるが、「中断」バッジが状態を示すので許容する。
 					interruptInFlight = false;
 					return;
 				}
+				events.onResult(info);
 				try {
 					childRef.stdin?.end();
 				} catch {
