@@ -147,6 +147,7 @@ export const en: Messages = {
 		askOtherCancel: "Back",
 		askMultiSubmit: (n: number) =>
 			n > 0 ? `Send (${n})` : "Send",
+		interruptedBadge: "Interrupted",
 	},
 	chatTool: {
 		changeOfN: (i: number, n: number) => `Change ${i} / ${n}`,
@@ -179,10 +180,8 @@ export const en: Messages = {
 			"The default state can be changed in the plugin settings.",
 		sendBtn: "Send",
 		stopBtn: "Stop (Esc)",
-		queueBtn: "Queue next",
-		queuedNotice: "Queued for the next turn",
-		queuedLabel: (preview: string) => `Next: ${preview}`,
-		queuedCancelAria: "Cancel queued message",
+		interruptBtn: "Interrupt",
+		interruptedNotice: "Interrupt sent",
 		slashBlockedBusy:
 			"Slash commands aren't available during a running turn. Press Esc to stop first.",
 		controlLabelModel: "Model",

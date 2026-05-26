@@ -147,6 +147,7 @@ export const ja = {
 		askOtherCancel: "戻る",
 		askMultiSubmit: (n: number) =>
 			n > 0 ? `送信 (${n})` : "送信",
+		interruptedBadge: "中断",
 	},
 	chatTool: {
 		changeOfN: (i: number, n: number) => `変更 ${i} / ${n}`,
@@ -179,10 +180,8 @@ export const ja = {
 			"初期状態はプラグイン設定で変更できます。",
 		sendBtn: "送信",
 		stopBtn: "停止 (Esc)",
-		queueBtn: "次のターンへ",
-		queuedNotice: "次のターンとしてキューに登録しました",
-		queuedLabel: (preview: string) => `次のターン: ${preview}`,
-		queuedCancelAria: "キューを取り消す",
+		interruptBtn: "割り込み",
+		interruptedNotice: "割り込み送信しました",
 		slashBlockedBusy:
 			"実行中はスラッシュコマンドを使えません。Esc で停止してから入力してください。",
 		controlLabelModel: "モデル",
