@@ -439,6 +439,81 @@
 	stroke: var(--text-error, #f85149);
 }
 
+/* ---------- 要約バッジ ---------- */
+
+.claude-panel-summary-badge {
+	font-size: 11px;
+	height: 26px;
+	padding: 0 10px;
+	margin-right: 6px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	border-radius: 4px;
+	cursor: pointer;
+	transition:
+		background 120ms ease,
+		color 120ms ease,
+		border-color 120ms ease,
+		opacity 120ms ease;
+}
+
+.claude-panel-summary-badge.is-hidden {
+	display: none;
+}
+
+.claude-panel-summary-badge.is-warn {
+	color: var(--text-warning, #d29922);
+	border-color: var(--text-warning, #d29922);
+}
+
+.claude-panel-summary-badge.is-warn:hover {
+	background: rgba(210, 153, 34, 0.1);
+}
+
+.claude-panel-summary-badge.is-danger {
+	color: var(--text-on-accent, #fff);
+	background: var(--text-error, #f85149);
+	border-color: var(--text-error, #f85149);
+}
+
+.claude-panel-summary-badge.is-danger:hover {
+	filter: brightness(1.1);
+}
+
+.claude-panel-summary-badge.is-disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+	pointer-events: none;
+}
+
+.claude-panel-summary-badge.is-summarizing::before {
+	content: "";
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border: 2px solid currentColor;
+	border-top-color: transparent;
+	border-radius: 50%;
+	animation: claude-panel-spin 800ms linear infinite;
+}
+
+@keyframes claude-panel-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.claude-panel-summary-modal-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	margin-top: 16px;
+}
+
 .claude-panel-clear {
 	font-size: 12px;
 	height: 26px;

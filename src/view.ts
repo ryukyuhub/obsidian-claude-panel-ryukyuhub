@@ -31,6 +31,8 @@ import { SlashSuggest } from "./slash-suggest";
 import { discoverDynamicCommands } from "./skill-discovery";
 import { openAccountUsageModal } from "./account-modal";
 import { Composer } from "./composer";
+import { SummaryBadge } from "./summary-badge";
+import { SummaryConfirmModal } from "./summary-confirm-modal";
 import {
 	type ChatMessage,
 	type MessageUsage,
@@ -71,6 +73,7 @@ export class ClaudePanelView extends ItemView {
 	// `/` で始まる入力に対するコマンド候補ポップアップ。inputEl 構築後に初期化。
 	private slashSuggest!: SlashSuggest;
 	private contextMeter: ContextMeter | null = null;
+	private summaryBadge: SummaryBadge | null = null;
 	// 応答完了通知（フラッシュ・ビープ）。state を view に持つと肥大化する
 	// ので CompletionNotifier に切り出している。view からはモードと panel
 	// root を引き渡すだけ。
@@ -353,6 +356,16 @@ export class ClaudePanelView extends ItemView {
 		this.contextMeter = new ContextMeter(meterHost);
 		this.contextMeter.update(this.runtime?.getLastUsage() ?? null);
 
+		this.summaryBadge = new SummaryBadge(header, {
+			onClick: () => this.openSummaryConfirm(),
+		});
+		// 初期表示時は runtime からの onUsageChanged 通知がまだ来ていない
+		// ことが多いので、現スナップショットを直接読んで反映する。
+		this.summaryBadge.update(
+			this.toUsageFraction(this.runtime?.getLastUsage() ?? null),
+			this.runtime?.isBusy() ?? false
+		);
+
 		const accountBtn = header.createEl("button", {
 			cls: "claude-panel-icon-btn claude-panel-account-btn",
 			attr: { "aria-label": t("view.accountBtnAria") },
@@ -372,10 +385,21 @@ export class ClaudePanelView extends ItemView {
 		clearBtn.onclick = () => this.clearConversation();
 	}
 
+	private toUsageFraction(
+		usage: MessageUsage | null
+	): number | null {
+		return toUsageFractionStatic(usage);
+	}
+
 	/** コンテキストメーターを再描画する（関連する設定が変わった際に
 	 *  プラグイン側から呼ばれる）。 */
 	refreshMeters(): void {
-		this.contextMeter?.update(this.runtime?.getLastUsage() ?? null);
+		const usage = this.runtime?.getLastUsage() ?? null;
+		this.contextMeter?.update(usage);
+		this.summaryBadge?.update(
+			this.toUsageFraction(usage),
+			this.runtime?.isBusy() ?? false
+		);
 	}
 
 	private renderComposer(root: HTMLElement): void {
@@ -774,9 +798,14 @@ export class ClaudePanelView extends ItemView {
 		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
-	/** busy 状態が変わったら送信ボタンの表示を更新する。 */
-	onBusyChanged(_busy: boolean): void {
+	/** busy 状態が変わったら送信ボタンと要約バッジの disabled / spinner を更新する。 */
+	onBusyChanged(busy: boolean): void {
 		this.refreshSendBtn();
+		this.summaryBadge?.update(
+			this.toUsageFraction(this.runtime?.getLastUsage() ?? null),
+			busy
+		);
+		this.summaryBadge?.setSummarizing(this.runtime?.isSummarizing() ?? false);
 	}
 
 	/** 送信ボタンのラベル／クラスを (busy, textarea が空か) に応じて切り替える。
@@ -803,9 +832,13 @@ export class ClaudePanelView extends ItemView {
 		this.sendBtn.disabled = false;
 	}
 
-	/** トークン使用量更新 → コンテキストメーターを駆動する。 */
+	/** トークン使用量更新 → メーターと要約バッジを駆動する。 */
 	onUsageChanged(usage: MessageUsage | null): void {
 		this.contextMeter?.update(usage);
+		this.summaryBadge?.update(
+			this.toUsageFraction(usage),
+			this.runtime?.isBusy() ?? false
+		);
 	}
 
 	/** 1 ターン完了 → ユーザーキャンセル時を除いて通知音／フラッシュ。 */
@@ -879,6 +912,10 @@ export class ClaudePanelView extends ItemView {
 	 * busy 中は send() と同じく `runtime.inject()` で現ターンに割り込む。
 	 */
 	private async sendAskAnswer(answer: string): Promise<void> {
+		if (this.runtime.isSummarizing()) {
+			new Notice(t("view.summarizingInProgress"));
+			return;
+		}
 		const text = answer.trim();
 		if (!text) return;
 		const cwd = this.getVaultPath();
@@ -905,6 +942,10 @@ export class ClaudePanelView extends ItemView {
 	 * 渡す。busy 中なら `runtime.inject()` で現ターンに割り込む。
 	 */
 	private async send(): Promise<void> {
+		if (this.runtime.isSummarizing()) {
+			new Notice(t("view.summarizingInProgress"));
+			return;
+		}
 		const text = this.inputEl.value.trim();
 		if (!text) return;
 
@@ -956,4 +997,40 @@ export class ClaudePanelView extends ItemView {
 		};
 		return adapter.getBasePath?.() ?? adapter.basePath ?? null;
 	}
+
+	private openSummaryConfirm(): void {
+		const usage = this.runtime?.getLastUsage() ?? null;
+		const fraction = toUsageFractionStatic(usage);
+		// バッジ側でも閾値チェックしているが、外部コマンドから呼ばれた場合
+		// などに備えてここでも防御的に弾く。
+		if (fraction === null || fraction < 0.6) return;
+		const cwd = this.getVaultPath();
+		if (!cwd) {
+			new Notice(t("view.vaultPathUnavailable"));
+			return;
+		}
+		new SummaryConfirmModal(this.app, {
+			usageFraction: fraction,
+			onConfirm: () => {
+				void this.runtime.requestSummaryAndReset(cwd);
+			},
+		}).open();
+	}
+}
+
+// コンテキストウィンドウは context-meter 側にも同名の定数があるが、
+// 概念上は「メーターの色判定」と「バッジの表示判定」で別物なので、
+// 共有モジュールには切り出さず両方に持たせる。
+const CONTEXT_WINDOW_TOKENS = 200_000;
+
+function toUsageFractionStatic(
+	usage: MessageUsage | null
+): number | null {
+	if (!usage) return null;
+	const used =
+		usage.inputTokens +
+		usage.cacheCreationTokens +
+		usage.cacheReadTokens +
+		usage.outputTokens;
+	return used / CONTEXT_WINDOW_TOKENS;
 }
