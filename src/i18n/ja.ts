@@ -208,6 +208,18 @@ export const ja = {
 		emptyRecheck: "再チェック",
 		vaultPathUnavailable:
 			"Vault のパスを解決できません（デスクトップ版のみ対応）。",
+		summarizeBadgeLabel: "💬 要約して新会話",
+		summarizeBadgeBusyLabel: "要約中…",
+		summarizeBadgeAria: (percent: number) =>
+			`コンテキスト使用率 ${percent}%。クリックで会話を要約し新規スタート。`,
+		summarizeModalTitle: "会話を要約して新規スタート",
+		summarizeModalBody: (percent: number) =>
+			`現在の会話はコンテキストの ${percent}% を使用しています。Claude にここまでを要約してもらい、その要約だけを引き継いで新しい会話を始めます。表示中のメッセージはチャットからクリアされます(CLI 側の会話ログは残ります)。`,
+		summarizeModalConfirm: "要約して新会話",
+		summarizeModalCancel: "キャンセル",
+		summarizingInProgress: "要約処理中です。完了するまでお待ちください。",
+		summaryFailedNotice: "要約に失敗しました。会話はそのまま続行します。",
+		summarySystemPrefix: "以前の会話の要約:",
 	},
 	settings: {
 		resolved: {

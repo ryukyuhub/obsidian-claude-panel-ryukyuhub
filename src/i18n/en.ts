@@ -208,6 +208,18 @@ export const en: Messages = {
 		emptyRecheck: "Re-check",
 		vaultPathUnavailable:
 			"Could not resolve the vault path (desktop only).",
+		summarizeBadgeLabel: "💬 Summarize & start fresh",
+		summarizeBadgeBusyLabel: "Summarizing…",
+		summarizeBadgeAria: (percent: number) =>
+			`Context at ${percent}%. Click to summarize and start a fresh conversation.`,
+		summarizeModalTitle: "Summarize and start a fresh conversation",
+		summarizeModalBody: (percent: number) =>
+			`Your current conversation is using ${percent}% of the context window. Claude will summarize everything so far, and the summary alone will be carried into a fresh conversation. The displayed messages will be cleared from the chat (the CLI-side log is preserved).`,
+		summarizeModalConfirm: "Summarize & start fresh",
+		summarizeModalCancel: "Cancel",
+		summarizingInProgress: "Summarizing — please wait until it completes.",
+		summaryFailedNotice: "Summarization failed. Continuing with the existing conversation.",
+		summarySystemPrefix: "Previous conversation summary:",
 	},
 	settings: {
 		resolved: {

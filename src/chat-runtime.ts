@@ -85,6 +85,16 @@ export interface ChatRuntimeHost {
 	onResetInputHistory(): void;
 }
 
+// 要約バッジ → 確認モーダル Yes 経路で `requestSummaryAndReset()` が
+// CLI に送る依頼文。新セッションへ「現セッションの濃縮」だけを引き継ぐ
+// ことが目的なので、Claude が自由にツールを使い始めないよう「サマリ
+// 本文だけを返す」と明示している。
+const SUMMARIZE_PROMPT =
+	"Summarize this conversation so far in roughly 1500 characters or less. " +
+	"The summary will be carried into a fresh session as context. " +
+	"Cover: user's intent, key decisions made, files/paths touched, open questions. " +
+	"Output only the summary itself — no preamble, no follow-up question.";
+
 export class ChatRuntime {
 	private messages: ChatMessage[] = [];
 	private currentRun: RunHandle | null = null;
@@ -108,6 +118,14 @@ export class ChatRuntime {
 	// 自動再送で interrupt が二重に走ると、最初に push された
 	// アシスタントメッセージが新ターンの onText を受け取れず孤立する。
 	private injecting = false;
+	// 要約バッジ経由で確定した「次回 send で fullPrompt 先頭に
+	// 1 度だけ prepend する要約」。新セッションを開始したターンで
+	// だけ送られ、それ以降は --resume の履歴に乗るので不要。
+	private pendingSummary: string | null = null;
+	// 要約依頼ターンの実行中フラグ。通常の busy とは別管理して、
+	// view 側で「要約処理中です」用の Notice を出し分けるために
+	// 独立公開する。`isBusy()` 側でも OR で扱う。
+	private summarizing = false;
 
 	constructor(
 		private readonly plugin: ClaudePanelPlugin,
@@ -123,7 +141,13 @@ export class ChatRuntime {
 	}
 
 	isBusy(): boolean {
-		return this.busy;
+		return this.busy || this.summarizing;
+	}
+
+	// 要約処理が実行中かどうか。view 側で「要約処理中です」の
+	// Notice を `isBusy()` の通常 busy と区別するために独立公開する。
+	isSummarizing(): boolean {
+		return this.summarizing;
 	}
 
 	isCurrentRunActive(): boolean {
@@ -217,6 +241,16 @@ export class ChatRuntime {
 
 		this.setBusy(true);
 
+		// 要約バッジで確定した「前会話の要約」が残っていれば、
+		// 新セッション初回ターンの fullPrompt 先頭に prepend する。
+		// 1 度だけ消費する(2 ターン目以降は --resume の履歴に乗るので不要)。
+		// UI のユーザーバブル本文(composed.body)には乗らない —
+		// ユーザーの実際の入力と要約が区別できなくなるため。
+		const promptForCli = this.pendingSummary
+			? `[Previous conversation summary]\n${this.pendingSummary}\n\n---\n\n${composed.fullPrompt}`
+			: composed.fullPrompt;
+		this.pendingSummary = null;
+
 		const runOnce = async (
 			sessionId: string | undefined,
 			continueLast: boolean
@@ -228,7 +262,7 @@ export class ChatRuntime {
 			let lastRunUsage: MessageUsage | null = null;
 			const handle = runAgent(
 				{
-					prompt: composed.fullPrompt,
+					prompt: promptForCli,
 					cwd,
 					settings: this.plugin.settings,
 					sessionId,
@@ -449,6 +483,117 @@ export class ChatRuntime {
 		this.lastUsage = null;
 		this.host.onMessagesChanged();
 		this.host.onUsageChanged(null);
+	}
+
+	/**
+	 * 現セッションを Claude に要約させて、その要約だけを引き継いだ
+	 * 新セッションを始める。バッジ → 確認モーダル Yes 経路から呼ばれる。
+	 *
+	 * フロー:
+	 *  1. summarizing = true → host へ busy 通知
+	 *  2. 現セッションに SUMMARIZE_PROMPT を投げる(UI には流さない)
+	 *  3. assistant の text パートを summaryBuf に蓄積
+	 *  4. result を受けたら summarizing = false
+	 *  5. 成功なら clear 相当 + システムメッセージ追加 + pendingSummary セット
+	 *  6. 失敗(空応答 / エラー / キャンセル)なら現状の会話を保持して戻る
+	 */
+	async requestSummaryAndReset(cwd: string): Promise<boolean> {
+		if (this.busy || this.summarizing) return false;
+		if (this.messages.length === 0) return false;
+		if (!this.currentSessionId && !this.pendingContinue) {
+			// 既存セッションが無いのに要約を頼むのは不整合(空チャットや
+			// セッション失効直後)。安全側で何もしない。
+			return false;
+		}
+
+		this.summarizing = true;
+		this.host.onBusyChanged(this.isBusy());
+
+		let summaryBuf = "";
+		let hadError = false;
+		let canceledByUser = false;
+
+		const handle = runAgent(
+			{
+				prompt: SUMMARIZE_PROMPT,
+				cwd,
+				settings: this.plugin.settings,
+				sessionId: this.currentSessionId ?? undefined,
+				continueLast: false,
+			},
+			{
+				onText: (chunk) => {
+					summaryBuf += chunk;
+				},
+				onToolUse: () => {
+					// 要約依頼に対してツール呼び出しが来る想定は無いが、
+					// 念のため無視する(プロンプトで「summary のみ」と
+					// 指示しているので Claude は自由にツールを使わない)。
+				},
+				onPermissionRequest: (_req, decide) => {
+					// 万が一の保護パス書き込み等は即時 deny する。
+					decide({ allow: false, message: "summary turn — tool use not permitted" });
+				},
+				onResult: () => {
+					/* 完了は handle.promise の resolve で扱う */
+				},
+				onUsage: (usage) => {
+					// 要約ターンも本物のトークン消費があるので、永続履歴と
+					// メーターには反映する。次の通常 send が新セッション
+					// (--resume 無し)で始まるため、lastUsage の意味は
+					// 「直近の Claude 応答時点の消費」として一貫する。
+					this.lastUsage = usage;
+					this.plugin.recordUsage(usage);
+					this.host.onUsageChanged(this.lastUsage);
+				},
+				onRateLimit: (info) => {
+					this.plugin.applyRateLimitEvent(info);
+				},
+				onError: (_err) => {
+					hadError = true;
+				},
+			}
+		);
+
+		// view 側からの ESC キャンセルにも反応できるよう、現 run として登録。
+		this.currentRun = handle;
+		await handle.promise;
+		canceledByUser = handle.canceled();
+		this.currentRun = null;
+
+		this.summarizing = false;
+
+		const trimmed = summaryBuf.trim();
+		if (canceledByUser || hadError || trimmed.length === 0) {
+			// 失敗 → 会話と sessionId をそのまま保持。busy 状態だけ戻す。
+			this.host.onBusyChanged(this.isBusy());
+			return false;
+		}
+
+		// 成功 → 既存メッセージ列を破棄し、要約をシステムメッセージとして 1 件挿入。
+		// pendingPermissions は要約ターンには無いはずだが、過去の取りこぼし
+		// 保護として既存の flushPendingPermissions を呼んで掃除する。
+		this.flushPendingPermissions(t("chatRuntime.conversationCleared"));
+		this.messages = [];
+		this.currentSessionId = null;
+		this.pendingContinue = false;
+		this.lastUsage = null;
+		this.pendingSummary = trimmed;
+		this.messages.push({
+			id: nextMsgId(),
+			role: "system",
+			parts: [
+				{
+					type: "text",
+					text: `${t("view.summarySystemPrefix")}\n\n${trimmed}`,
+				},
+			],
+		});
+
+		this.host.onMessagesChanged();
+		this.host.onUsageChanged(null);
+		this.host.onBusyChanged(this.isBusy());
+		return true;
 	}
 
 	/**
