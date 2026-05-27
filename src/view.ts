@@ -184,6 +184,12 @@ export class ClaudePanelView extends ItemView {
 			return true;
 		});
 
+		// 送信ホットキーは Obsidian 標準の hotkey 設定でユーザーが自由に割り
+		// 当てられる（コマンド ID: `send-claude-panel-prompt`）。プラグイン側
+		// では textarea 内での Enter / Shift+Enter の挙動だけを面倒見て、修飾
+		// キー付き Enter のような「グローバルなショートカット」はユーザーの
+		// hotkey 設定に委ねる方針。
+
 		// Obsidian 起動時に前回の会話を自動復元する。
 		// `~/.claude/projects/<encoded-cwd>/<session>.jsonl` から直近セッションを
 		// 読み出し、UI 履歴と `--continue` 予約を一括でセットする。Vault 内
@@ -436,13 +442,23 @@ export class ClaudePanelView extends ItemView {
 		);
 		this.inputEl.addEventListener("input", () => this.refreshSendBtn());
 		this.inputEl.addEventListener("keydown", (e) => {
-			// サジェスト popup が開いている場合は、popup のキーバインドを
-			// 優先させる（Enter で送信 / Up,Down で履歴より先に処理する）。
 			if (this.slashSuggest.handleKey(e)) return;
-			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+			if (e.key === "Enter") {
+				// Shift+Enter は改行（ブラウザ既定）
+				if (e.shiftKey) return;
+				// 修飾キー付き Enter は Obsidian のホットキー設定に委ねる
+				// （`send-claude-panel-prompt` コマンドにユーザーが自由に
+				// 割り当てる）。ここでは preventDefault せず素通しにする。
+				if (e.ctrlKey || e.metaKey || e.altKey) return;
+				// 設定 ON: 素の Enter は改行。送信は Obsidian のホットキー経由。
+				if (this.plugin.settings.submitWithModEnter) return;
+				// 設定 OFF（既定）: 素の Enter で送信。
+				if (e.isComposing) return; // IME 変換確定の Enter は無視
 				e.preventDefault();
 				void this.send();
-			} else if (e.key === "Escape" && this.runtime.isBusy()) {
+				return;
+			}
+			if (e.key === "Escape" && this.runtime.isBusy()) {
 				e.preventDefault();
 				this.runtime.cancel();
 			} else if (e.key === "ArrowUp" && this.history.cursorOnFirstLine()) {

@@ -265,6 +265,18 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		this.renderNotificationSection(containerEl);
 
 		new Setting(containerEl)
+			.setName(t("settings.submitWithModEnter.name"))
+			.setDesc(t("settings.submitWithModEnter.desc"))
+			.addToggle((tg) =>
+				tg
+					.setValue(this.plugin.settings.submitWithModEnter)
+					.onChange(async (v) => {
+						this.plugin.settings.submitWithModEnter = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName(t("settings.hotkeys.name"))
 			.setDesc(t("settings.hotkeys.desc"))
 			.addButton((btn) =>

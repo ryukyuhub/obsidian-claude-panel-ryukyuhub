@@ -161,6 +161,10 @@ export interface ClaudePanelSettings {
 	/** `attachmentSaveLocation` が `activeFileSubfolder` のときの
 	 *  サブフォルダ名。空文字のときは `attachments` を使う。 */
 	attachmentSubfolderName: string;
+	/** ON のとき、プロンプト送信は Ctrl+Enter（mac は Cmd+Enter も可）に
+	 *  なり、素の Enter は改行を挿入する。OFF（既定）は従来通り Enter で
+	 *  送信、Shift+Enter で改行。 */
+	submitWithModEnter: boolean;
 }
 
 /** 通知音量スライダーの上下限（パーセント）。 */
@@ -204,4 +208,6 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	attachmentSaveLocation: "activeFileFolder",
 	attachmentVaultPath: "attachments",
 	attachmentSubfolderName: "attachments",
+	// 既定は OFF（従来動作を維持）。Enter 即送信のままで、Shift+Enter が改行。
+	submitWithModEnter: false,
 };

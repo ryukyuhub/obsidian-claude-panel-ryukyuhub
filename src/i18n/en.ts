@@ -330,6 +330,13 @@ export const en: Messages = {
 				"and hides the Send button or model selector. Only raise this if that happens.",
 		},
 		resetToDefault: "Reset to default",
+		submitWithModEnter: {
+			name: "Don't submit on Enter",
+			desc:
+				"When ON, plain Enter only inserts a newline. You submit via the key bound to " +
+				"the \"Claude Panel: Send prompt\" command in Obsidian's Hotkeys settings " +
+				"(default: Shift+Enter, customizable). When OFF (default), Enter submits.",
+		},
 		hotkeys: {
 			name: "Hotkeys",
 			desc:

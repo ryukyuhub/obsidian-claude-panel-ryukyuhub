@@ -330,6 +330,13 @@ export const ja = {
 				"送信ボタンやモデル選択が隠れることがあります。隠れて困るときだけ値を上げてください。",
 		},
 		resetToDefault: "デフォルトに戻す",
+		submitWithModEnter: {
+			name: "Enter では送信しない",
+			desc:
+				"ON にすると素の Enter は改行のみになります。送信は Obsidian のホットキー設定で " +
+				"「Claude Panel: プロンプトを送信」コマンドに割り当てたキー（初期値: Shift+Enter、" +
+				"変更可能）で行います。OFF（既定）では Enter で送信。",
+		},
 		hotkeys: {
 			name: "ホットキー",
 			desc:
