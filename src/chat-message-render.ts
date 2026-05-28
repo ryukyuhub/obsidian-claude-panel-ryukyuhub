@@ -386,6 +386,7 @@ function renderAskBlocks(
 		host.querySelectorAll("pre > code.language-ask")
 	) as HTMLElement[];
 	let replaced = false;
+	let lastCard: HTMLElement | null = null;
 	for (const code of codes) {
 		const pre = code.parentElement;
 		if (!pre || pre.tagName !== "PRE") continue;
@@ -407,20 +408,36 @@ function renderAskBlocks(
 		renderAskOptions(slot, parsed, onAnswer);
 
 		pre.replaceWith(card);
+		lastCard = card;
 		replaced = true;
 	}
-	if (replaced) {
-		// MarkdownRenderer.render は非同期で、メッセージ全体を再描画する側
-		// （onMessageRerender）の同期的な scrollTop 設定はカード追加前に
-		// 走り終わっている。質問が画面外に置いていかれないよう、ここで
-		// 改めて messages スクロールを最下部へ寄せる。
-		const messagesEl = host.closest(
-			".claude-panel-messages"
-		) as HTMLElement | null;
-		if (messagesEl) {
-			messagesEl.scrollTop = messagesEl.scrollHeight;
-		}
+	if (replaced && lastCard && isLastMessageHost(host)) {
+		// MarkdownRenderer.render は非同期で、確定再描画側の同期的なスクロール
+		// 調整はカード追加前に走り終わっている。質問が画面外に置いていかれない
+		// よう、カード自身を最小スクロールで可視化する。block:"nearest" なので、
+		// 既に見えている（＝上端固定したプロンプトと同画面に収まる）場合は
+		// スクロールせず、固定を崩さない。下端のスペーサーへ吸い込まれることも
+		// ない（カードを対象にスクロールするため）。
+		scrollCardIntoView(lastCard);
 	}
+}
+
+/** 質問カードを最小スクロールで可視化する。既に見えていれば動かさない。 */
+function scrollCardIntoView(card: HTMLElement): void {
+	card.scrollIntoView({ block: "nearest" });
+}
+
+/** host が会話の「最後のメッセージ」に属するか。新しいプロンプト送信時には
+ *  会話全体が再描画され、過去ターンの ask カードも再描画される。そのとき
+ *  カードを可視化するスクロールを走らせると、上端に固定したばかりの新しい
+ *  プロンプトを過去カードの位置へ引き戻してしまう。最後のメッセージ（＝
+ *  今まさに出た応答）のカードだけを可視化対象にすることでこれを防ぐ。 */
+function isLastMessageHost(host: HTMLElement): boolean {
+	const msg = host.closest(".claude-panel-msg");
+	const container = host.closest(".claude-panel-messages");
+	if (!msg || !container) return false;
+	const msgs = container.querySelectorAll(".claude-panel-msg");
+	return msgs.length > 0 && msgs[msgs.length - 1] === msg;
 }
 
 /**
@@ -719,11 +736,11 @@ function maybeRenderYesNoFallback(
 	const labels = detectYesNoQuestion(partText);
 	if (!labels) return;
 	renderYesNoCard(container, labels, onAnswer);
-	// 質問カードと同様、生成タイミングが scroll の後になるので最下部寄せを再要請。
-	const messagesEl = container.closest(
-		".claude-panel-messages"
-	) as HTMLElement | null;
-	if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+	// 質問カードと同様、生成タイミングがスクロール調整の後になるので、カード
+	// 自身を最小スクロールで可視化する（既に見えていれば動かさない）。最後の
+	// メッセージのときだけ（過去ターンの再描画では固定を崩さない）。
+	const card = container.querySelector<HTMLElement>(".claude-panel-ask");
+	if (card && isLastMessageHost(container)) scrollCardIntoView(card);
 }
 
 interface YesNoLabels {

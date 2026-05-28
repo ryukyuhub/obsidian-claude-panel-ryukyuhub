@@ -54,6 +54,15 @@ export class ClaudePanelView extends ItemView {
 	// （activeFile / selection / attachments）は Composer がオーナーシップを
 	// 持つので view 側には保持しない。
 	private messagesEl!: HTMLDivElement;
+	// スクロール領域の末尾に置く可変高さの余白。送信したプロンプトを常に
+	// 最上部まで引き上げられるよう、応答が短いうちは画面の残り高さ分の
+	// スクロール余地をここで確保し、応答が伸びるにつれて縮める。
+	private bottomSpacer: HTMLElement | null = null;
+	// 現在「最上部に位置付けたプロンプト」のメッセージ ID。送信のたびに更新し、
+	// 応答完了後もそのまま残す（解除しない）ので、上スクロールで履歴が辿れる。
+	private activePromptId: string | null = null;
+	// 初回（セッション復元含む）の描画だけは最下部へスクロールして最新を見せる。
+	private hasRenderedMessages = false;
 	private inputEl!: HTMLTextAreaElement;
 	// 一部の select 要素は refreshControls で外部設定変更を反映するため
 	// 保持する。effort は現状 sync 対象外なので参照を持たない。
@@ -658,17 +667,52 @@ export class ClaudePanelView extends ItemView {
 	// ============================================================
 
 	private renderMessages(): void {
-		this.messagesEl.empty();
 		const messages = this.runtime.getMessages();
 		if (messages.length === 0) {
+			this.messagesEl.empty();
+			this.bottomSpacer = null;
+			this.hasRenderedMessages = false;
 			this.renderEmptyState(this.messagesEl);
 			return;
 		}
-		for (const msg of messages) {
+
+		// 既存の描画済みメッセージ列を取得する。
+		const existingIds = Array.from(
+			this.messagesEl.querySelectorAll<HTMLElement>(
+				".claude-panel-msg[data-msg-id]"
+			)
+		).map((el) => el.getAttribute("data-msg-id"));
+
+		// 既存 DOM が新メッセージ列の prefix なら「追記のみ」。それ以外
+		// （clear / 要約リセット / 空状態からの初回など）は全再構築する。
+		// 追記のみのとき既存メッセージを再描画しないのが最重要ポイント:
+		// 全再構築すると過去メッセージのマークダウンが毎回非同期で再描画され、
+		// その高さ変動が上端固定中のプロンプトを押し下げてしまう。
+		let appendOnly =
+			!this.messagesEl.querySelector(".claude-panel-empty") &&
+			existingIds.length <= messages.length;
+		if (appendOnly) {
+			for (let i = 0; i < existingIds.length; i++) {
+				if (existingIds[i] !== messages[i].id) {
+					appendOnly = false;
+					break;
+				}
+			}
+		}
+
+		let startIdx: number;
+		if (appendOnly) {
+			startIdx = existingIds.length;
+		} else {
+			this.messagesEl.empty();
+			this.bottomSpacer = null;
+			startIdx = 0;
+		}
+		for (let i = startIdx; i < messages.length; i++) {
 			const host = this.messagesEl.createDiv();
 			renderMessage(
 				host,
-				msg,
+				messages[i],
 				this.app,
 				this,
 				(toolUseId, decision) =>
@@ -676,7 +720,20 @@ export class ClaudePanelView extends ItemView {
 				(answer) => this.sendAskAnswer(answer)
 			);
 		}
-		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+
+		if (!this.bottomSpacer) {
+			this.bottomSpacer = createDiv({ cls: "claude-panel-bottom-spacer" });
+		}
+		// スペーサーは常に末尾へ（新規メッセージは createDiv で末尾＝スペーサーの
+		// 後ろに付くため、ここで末尾へ寄せ直す）。
+		this.messagesEl.appendChild(this.bottomSpacer);
+
+		// 初回（セッション復元含む）だけ最下部へ。以降は既存 DOM を保つので
+		// スクロール位置は自然に維持され、上端固定は updatePromptPin が担う。
+		if (!this.hasRenderedMessages) {
+			this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+			this.hasRenderedMessages = true;
+		}
 	}
 
 	/**
@@ -779,7 +836,7 @@ export class ClaudePanelView extends ItemView {
 			last = body.createDiv({ cls: "claude-panel-msg-text-part" });
 		}
 		last.textContent = displayText;
-		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+		this.followActiveTurn();
 	}
 
 	/** ストリーミング中のメッセージにツール実行ピルを追加する。 */
@@ -787,12 +844,13 @@ export class ClaudePanelView extends ItemView {
 		const body = this.getMessageBody(msg.id);
 		if (!body) return;
 		renderToolPill(body, name, input);
-		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+		this.followActiveTurn();
 	}
 
 	/** メッセージ配列の構造的変化（追加・置換・clear）。全体再描画する。 */
 	onMessagesChanged(): void {
 		this.renderMessages();
+		this.updatePromptPin();
 	}
 
 	/** 単一メッセージの完全再描画（permission 状態変化、結果確定など）。 */
@@ -811,7 +869,119 @@ export class ClaudePanelView extends ItemView {
 				(answer) => this.sendAskAnswer(answer)
 			);
 		}
-		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+		this.followActiveTurn();
+	}
+
+	/** 最後の user メッセージの ID。固定対象（= 現ターンのプロンプト）の特定に使う。 */
+	private lastUserMessageId(): string | null {
+		const messages = this.runtime.getMessages();
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i].role === "user") return messages[i].id;
+		}
+		return null;
+	}
+
+	/** 新しいプロンプトが送られたら、それをスクロール領域の最上部へ位置付ける。
+	 *  busy 中（= 送信直後/割り込み送信）かつ前回と別の user メッセージのときだけ
+	 *  発火し、応答完了後の再描画では位置を動かさない（プロンプトを上端に残す）。 */
+	private updatePromptPin(): void {
+		const lastUserId = this.lastUserMessageId();
+		if (!lastUserId) {
+			// 会話が空（clear 等）。固定対象とスペーサーを解除する。
+			this.activePromptId = null;
+			this.markActivePromptHost(null);
+			if (this.bottomSpacer) this.bottomSpacer.style.height = "0px";
+			return;
+		}
+		if (this.runtime.isBusy() && lastUserId !== this.activePromptId) {
+			this.activePromptId = lastUserId;
+			this.markActivePromptHost(lastUserId);
+			this.snapPromptToTop(lastUserId);
+		} else if (this.activePromptId) {
+			// 同一ターン中の再描画など。再描画で失われた余白マークを付け直す。
+			this.markActivePromptHost(this.activePromptId);
+			if (this.runtime.isBusy()) {
+				// 応答中は上端+余白の位置を保ち続ける（再描画やマージン付け直しで
+				// 崩れた分を明示的に戻す）。
+				this.snapPromptToTop(this.activePromptId);
+			} else {
+				// 応答後は位置を動かさない（上スクロールで履歴を辿れるように）。
+				this.refreshActiveSpacer();
+			}
+		}
+	}
+
+	/** 上端に位置付けるプロンプト吹き出しに上マージン（PROMPT_TOP_GAP）を持たせる。
+	 *  スクロールでこのマージン分だけ上を見せることで、上端にぴったり貼り付かず、
+	 *  かつ前ターンの内容も覗かない「きれいな余白」を作る。全再描画のたびに
+	 *  DOM が作り直されて失われるので、その都度付け直す。 */
+	private markActivePromptHost(msgId: string | null): void {
+		this.messagesEl
+			.querySelectorAll<HTMLElement>(".claude-panel-prompt-pinned")
+			.forEach((el) => {
+				el.removeClass("claude-panel-prompt-pinned");
+				el.style.marginTop = "";
+			});
+		if (!msgId) return;
+		const host = this.messagesEl.querySelector(
+			`[data-msg-id="${msgId}"]`
+		) as HTMLElement | null;
+		if (!host) return;
+		host.addClass("claude-panel-prompt-pinned");
+		host.style.marginTop = `${PROMPT_TOP_GAP}px`;
+	}
+
+	/** ストリーミングで応答が伸びても上端のプロンプトは動かさず、下端スペーサー
+	 *  だけ縮める（応答が下へ伸びていくように見せる）。最下部への追従はしない。 */
+	private followActiveTurn(): void {
+		if (this.activePromptId) {
+			this.refreshActiveSpacer();
+		} else {
+			this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+		}
+	}
+
+	/** 現在の固定プロンプトを基準に下端スペーサーの高さを再計算する（スクロール
+	 *  位置は変えない）。応答が短いうちは画面の残り分の余白を確保し、応答が
+	 *  画面高を超えたら 0 にする。 */
+	private refreshActiveSpacer(): void {
+		if (this.activePromptId) this.updateBottomSpacer(this.activePromptId);
+	}
+
+	/** 指定メッセージをスクロール領域の最上部へ位置付ける（余白確保 → スクロール）。
+	 *  上端にぴったり貼り付くと窮屈なので、わずかに余白を残した位置に置く。 */
+	private snapPromptToTop(msgId: string): void {
+		this.updateBottomSpacer(msgId);
+		const host = this.messagesEl.querySelector(
+			`[data-msg-id="${msgId}"]`
+		) as HTMLElement | null;
+		if (!host) return;
+		const contTop = this.messagesEl.getBoundingClientRect().top;
+		const hostOffset =
+			host.getBoundingClientRect().top - contTop + this.messagesEl.scrollTop;
+		this.messagesEl.scrollTop = Math.max(0, hostOffset - PROMPT_TOP_GAP);
+	}
+
+	/** 下端スペーサーの高さを、指定メッセージを最上部まで引き上げられる値に揃える。
+	 *  spacer = max(0, 表示領域の高さ − 当該メッセージ上端から末尾までの実コンテンツ高)。 */
+	private updateBottomSpacer(msgId: string): void {
+		if (!this.bottomSpacer) return;
+		const host = this.messagesEl.querySelector(
+			`[data-msg-id="${msgId}"]`
+		) as HTMLElement | null;
+		if (!host) {
+			this.bottomSpacer.style.height = "0px";
+			return;
+		}
+		const current = parseFloat(this.bottomSpacer.style.height) || 0;
+		const contTop = this.messagesEl.getBoundingClientRect().top;
+		const hostOffset =
+			host.getBoundingClientRect().top - contTop + this.messagesEl.scrollTop;
+		// scrollHeight には現在のスペーサー高が含まれるので差し引いて実コンテンツ高を出す。
+		const contentBelow =
+			this.messagesEl.scrollHeight - hostOffset - current;
+		const spacer = Math.max(0, this.messagesEl.clientHeight - contentBelow);
+		this.bottomSpacer.style.height = `${spacer}px`;
 	}
 
 	/** busy 状態が変わったら送信ボタンと要約バッジの disabled / spinner を更新する。 */
@@ -822,6 +992,8 @@ export class ClaudePanelView extends ItemView {
 			busy
 		);
 		this.summaryBadge?.setSummarizing(this.runtime?.isSummarizing() ?? false);
+		// busy 開始時に送信プロンプトを最上部へ位置付ける（解除はしない）。
+		this.updatePromptPin();
 	}
 
 	/** 送信ボタンのラベル／クラスを (busy, textarea が空か) に応じて切り替える。
@@ -1037,6 +1209,9 @@ export class ClaudePanelView extends ItemView {
 // コンテキストウィンドウは context-meter 側にも同名の定数があるが、
 // 概念上は「メーターの色判定」と「バッジの表示判定」で別物なので、
 // 共有モジュールには切り出さず両方に持たせる。
+// 送信プロンプトを最上部へ寄せるときに残す上端の余白(px)。
+const PROMPT_TOP_GAP = 14;
+
 const CONTEXT_WINDOW_TOKENS = 200_000;
 
 function toUsageFractionStatic(

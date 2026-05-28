@@ -731,6 +731,10 @@
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
+	/* スクロールアンカリングを無効化する。これがあると、上端プロンプトに
+	   余白マージンを付け直すたびにブラウザが scrollTop を自動補正して
+	   余白分を打ち消してしまい、プロンプトが上端に貼り付いてしまう。 */
+	overflow-anchor: none;
 }
 
 .claude-panel-msg {
@@ -744,6 +748,13 @@
 
 .claude-panel-msg-user {
 	background: var(--background-modifier-hover);
+}
+
+/* スクロール領域末尾の可変余白。送信したプロンプトを常に最上部まで
+   引き上げられるよう、JS で高さを調整する（応答が伸びると縮む）。 */
+.claude-panel-bottom-spacer {
+	flex: 0 0 auto;
+	pointer-events: none;
 }
 
 .claude-panel-msg-assistant {
