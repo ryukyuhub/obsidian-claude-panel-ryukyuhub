@@ -125,6 +125,32 @@ function isInjectedMeta(text: string): boolean {
 	return false;
 }
 
+/** CLI に送った fullPrompt から、composer が前置きする合成プレフィックスを
+ *  剥がし、ユーザーが実際に入力したテキストだけを復元する。CLI セッションには
+ *  表示用の clean な body ではなく fullPrompt（添付パス／選択範囲ブロック／
+ *  thinking モードのプレフィックス／前会話の要約）がそのまま記録されるため、
+ *  復元時にこれらが UI のユーザーバブルへ漏れてしまう（例:「think: …」）。
+ *  composer.composeMessage の組み立て順 `要約 → 添付 → 選択 → think → 本文`
+ *  に合わせて先頭から順に取り除く。 */
+function stripSyntheticPromptPrefixes(text: string): string {
+	let t = text;
+	// 前会話の要約（新セッション初回ターンの先頭にだけ付く）
+	t = t.replace(
+		/^\[Previous conversation summary\]\n[\s\S]*?\n\n---\n\n/,
+		""
+	);
+	// 添付パスのブロック
+	t = t.replace(/^\[Attached paths[\s\S]*?\]\n(?:- [^\n]*\n)*\n/, "");
+	// 選択範囲のブロック
+	t = t.replace(
+		/^Selection(?: \(source:[^)]*\))?:\n```\n[\s\S]*?\n```\n\n/,
+		""
+	);
+	// thinking モードのプレフィックス（長いものから先に判定する）
+	t = t.replace(/^(?:ultrathink|think harder|think hard|think): /, "");
+	return t;
+}
+
 /**
  * JSONL ファイルを読み、UI に並べる `ChatMessage[]` に再構築する。
  *
@@ -170,9 +196,12 @@ export function loadSessionMessages(jsonlPath: string): ChatMessage[] {
 		if (rec.isMeta || rec.isCompactSummary) continue;
 
 		if (rec.type === "user" && rec.message?.content !== undefined) {
-			const text = extractUserText(rec.message.content).trim();
+			const raw = extractUserText(rec.message.content).trim();
+			if (!raw) continue;
+			if (isInjectedMeta(raw)) continue;
+			// 送信時の合成プレフィックス（think: 等）を剥がして実入力を復元する。
+			const text = stripSyntheticPromptPrefixes(raw).trim();
 			if (!text) continue;
-			if (isInjectedMeta(text)) continue;
 			flushAssistant();
 			messages.push({
 				id: nextMsgId(),
