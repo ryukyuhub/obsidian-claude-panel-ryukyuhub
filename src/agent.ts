@@ -700,6 +700,17 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		// 待ち続けるため、stdin を閉じないとランが永遠に終わらない。
 		const eventsWithEnd: AgentEvents = {
 			...events,
+			onError: (err) => {
+				if (interruptAckResolver) {
+					// inject() の中断 result は is_error 付きで返ってくる。
+					// これはユーザーが意図した割り込みなので、エラーとして
+					// 表面化させない (onResult のフッター抑制と対になる挙動)。
+					// interruptAckResolver が立っているのは中断 ack を待つ窓の
+					// 間だけなので、通常ターンのエラーはここを通り抜ける。
+					return;
+				}
+				events.onError(err);
+			},
 			onResult: (info) => {
 				if (interruptAckResolver) {
 					// この result は inject() による中断 result。
