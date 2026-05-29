@@ -316,6 +316,16 @@ export const en: Messages = {
 			restartHint:
 				"Language changed. Reload Obsidian to fully update ribbon and command-palette labels.",
 		},
+		roleNames: {
+			userName: "Your display name",
+			userDesc:
+				"Name shown on your own messages in the chat. Leave empty to use the language-default (\"User\").",
+			userPlaceholder: "User",
+			assistantName: "Assistant display name",
+			assistantDesc:
+				"Name shown on Claude's messages in the chat. Leave empty to use the language-default (\"Assistant\").",
+			assistantPlaceholder: "Assistant",
+		},
 		fontSize: {
 			name: "Font size",
 			desc: (min: number, max: number) =>

@@ -14,6 +14,7 @@ import {
 import type { RateLimitInfo } from "./agent";
 import type { MessageUsage } from "./chat-message";
 import { t, setLanguageOverride } from "./i18n";
+import { setRoleNames } from "./chat-message-render";
 
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
@@ -40,6 +41,7 @@ export default class ClaudePanelPlugin extends Plugin {
 		// ribbon / command を登録する前に i18n の override を適用しないと、
 		// ラベルが Obsidian 言語で固定されてしまう。
 		setLanguageOverride(this.settings.language);
+		setRoleNames(this.settings.userName, this.settings.assistantName);
 		await this.cleanupLegacyChatState();
 		this.usageHistory = new UsageHistory();
 		await this.usageHistory.load();

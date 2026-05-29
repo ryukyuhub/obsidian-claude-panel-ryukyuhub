@@ -22,6 +22,26 @@ import { t } from "./i18n";
  * など UI 依存はここに閉じる。
  */
 
+// 設定でカスタムされたロール名。空文字なら i18n の既定ラベルにフォール
+// バックする。i18n の言語 override と同様、モジュールレベルに保持して
+// renderMessage の引数を増やさずに参照できるようにしている。設定の読み込み
+// 時（main.ts）と設定変更時（settings/tab.ts）に setRoleNames で更新する。
+let customUserName = "";
+let customAssistantName = "";
+
+/** 設定で指定されたロール名を反映する。空文字なら既定ラベルに戻す。 */
+export function setRoleNames(userName: string, assistantName: string): void {
+	customUserName = userName.trim();
+	customAssistantName = assistantName.trim();
+}
+
+/** ロールに対応する表示名。カスタム名が未設定なら i18n の既定を使う。 */
+function roleLabel(role: ChatMessage["role"]): string {
+	if (role === "user") return customUserName || t("chat.roleUser");
+	if (role === "assistant") return customAssistantName || t("chat.roleAssistant");
+	return role;
+}
+
 /**
  * チャットメッセージを `host` に描画する。`host` は最初に空にされる。
  * `streaming` モードではテキストをプレーンテキストとして描画する（チャンク
@@ -48,12 +68,7 @@ export function renderMessage(
 	const roleRow = host.createDiv({ cls: "claude-panel-msg-role" });
 	roleRow.createSpan({
 		cls: "claude-panel-msg-role-label",
-		text:
-			msg.role === "user"
-				? t("chat.roleUser")
-				: msg.role === "assistant"
-					? t("chat.roleAssistant")
-					: msg.role,
+		text: roleLabel(msg.role),
 	});
 	if (msg.role === "user" && msg.thinkingMode && msg.thinkingMode !== "off") {
 		roleRow.createSpan({

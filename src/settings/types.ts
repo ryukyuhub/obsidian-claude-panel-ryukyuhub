@@ -165,6 +165,12 @@ export interface ClaudePanelSettings {
 	 *  なり、素の Enter は改行を挿入する。OFF（既定）は従来通り Enter で
 	 *  送信、Shift+Enter で改行。 */
 	submitWithModEnter: boolean;
+	/** チャットで自分（ユーザー）のメッセージに表示する名前。空文字なら
+	 *  言語設定に応じた既定ラベル（「ユーザー」/「User」）を使う。 */
+	userName: string;
+	/** チャットで Claude のメッセージに表示する名前。空文字なら言語設定に
+	 *  応じた既定ラベル（「アシスタント」/「Assistant」）を使う。 */
+	assistantName: string;
 }
 
 /** 通知音量スライダーの上下限（パーセント）。 */
@@ -210,4 +216,6 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	attachmentSubfolderName: "attachments",
 	// 既定は OFF（従来動作を維持）。Enter 即送信のままで、Shift+Enter が改行。
 	submitWithModEnter: false,
+	userName: "",
+	assistantName: "",
 };

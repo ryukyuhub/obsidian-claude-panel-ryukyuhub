@@ -316,6 +316,16 @@ export const ja = {
 			restartHint:
 				"言語を変更しました。リボン・コマンドパレットの文言を完全に切り替えるには Obsidian を再読み込みしてください。",
 		},
+		roleNames: {
+			userName: "あなたの表示名",
+			userDesc:
+				"チャットで自分のメッセージに表示される名前。空欄なら言語設定に応じた既定（「ユーザー」）を使います。",
+			userPlaceholder: "ユーザー",
+			assistantName: "アシスタントの表示名",
+			assistantDesc:
+				"チャットで Claude のメッセージに表示される名前。空欄なら言語設定に応じた既定（「アシスタント」）を使います。",
+			assistantPlaceholder: "アシスタント",
+		},
 		fontSize: {
 			name: "フォントサイズ",
 			desc: (min: number, max: number) =>

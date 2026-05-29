@@ -34,6 +34,7 @@ import {
 	listVaultAudioFiles,
 } from "./vault-audio-suggest";
 import { t, setLanguageOverride } from "../i18n";
+import { setRoleNames } from "../chat-message-render";
 
 export class ClaudePanelSettingTab extends PluginSettingTab {
 	plugin: ClaudePanelPlugin;
@@ -197,6 +198,43 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					new Notice(t("settings.language.restartHint"));
 				});
 			});
+
+		const applyRoleNames = () => {
+			setRoleNames(
+				this.plugin.settings.userName,
+				this.plugin.settings.assistantName
+			);
+			// 既にレンダリング済みのチャットバブルへ即座に反映する。
+			this.plugin.getView()?.rerenderMessages();
+		};
+
+		new Setting(containerEl)
+			.setName(t("settings.roleNames.userName"))
+			.setDesc(t("settings.roleNames.userDesc"))
+			.addText((text) =>
+				text
+					.setPlaceholder(t("settings.roleNames.userPlaceholder"))
+					.setValue(this.plugin.settings.userName)
+					.onChange(async (value) => {
+						this.plugin.settings.userName = value.trim();
+						await this.plugin.saveSettings();
+						applyRoleNames();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName(t("settings.roleNames.assistantName"))
+			.setDesc(t("settings.roleNames.assistantDesc"))
+			.addText((text) =>
+				text
+					.setPlaceholder(t("settings.roleNames.assistantPlaceholder"))
+					.setValue(this.plugin.settings.assistantName)
+					.onChange(async (value) => {
+						this.plugin.settings.assistantName = value.trim();
+						await this.plugin.saveSettings();
+						applyRoleNames();
+					})
+			);
 
 		new Setting(containerEl)
 			.setName(t("settings.fontSize.name"))

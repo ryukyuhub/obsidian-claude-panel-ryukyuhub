@@ -666,6 +666,12 @@ export class ClaudePanelView extends ItemView {
 	//   チャットメッセージ
 	// ============================================================
 
+	/** チャット全体を再描画する公開フック。ロール名など、描画にのみ
+	 *  影響する設定を変更した直後に設定タブから呼ぶ。 */
+	rerenderMessages(): void {
+		this.renderMessages();
+	}
+
 	private renderMessages(): void {
 		const messages = this.runtime.getMessages();
 		if (messages.length === 0) {
