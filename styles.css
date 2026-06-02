@@ -750,6 +750,24 @@
 	background: var(--background-modifier-hover);
 }
 
+/* アクティブな送信プロンプトをスクロール領域の上端に貼り付ける（sticky）。
+   応答が下へ伸びても、最下部へ追従する間ずっとプロンプトが上端に残り続ける。
+   z-index: DOM 順で後ろにある応答バブルが sticky プロンプトの上に描画されるのを
+   防ぐ（前面に出す）。背景: --background-modifier-hover は半透明テーマがあり
+   そのままだと下を流れる応答が透けるため、不透明な primary の上に hover 色を
+   重ねて完全不透明にする。 */
+.claude-panel-prompt-pinned {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	background-color: var(--background-primary);
+	background-image: linear-gradient(
+		var(--background-modifier-hover),
+		var(--background-modifier-hover)
+	);
+	box-shadow: 0 6px 8px -6px rgba(0, 0, 0, 0.25);
+}
+
 /* スクロール領域末尾の可変余白。送信したプロンプトを常に最上部まで
    引き上げられるよう、JS で高さを調整する（応答が伸びると縮む）。 */
 .claude-panel-bottom-spacer {

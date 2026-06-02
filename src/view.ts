@@ -907,9 +907,9 @@ export class ClaudePanelView extends ItemView {
 			// 同一ターン中の再描画など。再描画で失われた余白マークを付け直す。
 			this.markActivePromptHost(this.activePromptId);
 			if (this.runtime.isBusy()) {
-				// 応答中は上端+余白の位置を保ち続ける（再描画やマージン付け直しで
-				// 崩れた分を明示的に戻す）。
-				this.snapPromptToTop(this.activePromptId);
+				// 応答中は最新へ追従する。スペーサーのおかげで応答が短いうちは
+				// 上端固定の位置のまま、画面高を超えたら最下部追従に切り替わる。
+				this.followActiveTurn();
 			} else {
 				// 応答後は位置を動かさない（上スクロールで履歴を辿れるように）。
 				this.refreshActiveSpacer();
@@ -937,14 +937,15 @@ export class ClaudePanelView extends ItemView {
 		host.style.marginTop = `${PROMPT_TOP_GAP}px`;
 	}
 
-	/** ストリーミングで応答が伸びても上端のプロンプトは動かさず、下端スペーサー
-	 *  だけ縮める（応答が下へ伸びていくように見せる）。最下部への追従はしない。 */
+	/** ストリーミング中は常に最新（最下部）へ追従する。下端スペーサーのおかげで、
+	 *  応答が短いうちは「最下部 = 上端固定プロンプトの位置」になるためプロンプトは
+	 *  上端に貼り付いたまま、応答が画面高を超えると最下部追従に切り替わり最新が
+	 *  常に見える。固定対象があれば追従前にスペーサーを縮める。 */
 	private followActiveTurn(): void {
 		if (this.activePromptId) {
 			this.refreshActiveSpacer();
-		} else {
-			this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 		}
+		this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 	}
 
 	/** 現在の固定プロンプトを基準に下端スペーサーの高さを再計算する（スクロール
@@ -968,8 +969,10 @@ export class ClaudePanelView extends ItemView {
 		this.messagesEl.scrollTop = Math.max(0, hostOffset - PROMPT_TOP_GAP);
 	}
 
-	/** 下端スペーサーの高さを、指定メッセージを最上部まで引き上げられる値に揃える。
-	 *  spacer = max(0, 表示領域の高さ − 当該メッセージ上端から末尾までの実コンテンツ高)。 */
+	/** 下端スペーサーの高さを、指定メッセージを最上部（上余白 PROMPT_TOP_GAP 込み）まで
+	 *  引き上げられる値に揃える。最下部までスクロールしたとき固定プロンプトが
+	 *  ちょうど上端＋余白の位置に来るよう、GAP 分を差し引く。
+	 *  spacer = max(0, 表示領域の高さ − 当該メッセージ上端から末尾までの実コンテンツ高 − GAP)。 */
 	private updateBottomSpacer(msgId: string): void {
 		if (!this.bottomSpacer) return;
 		const host = this.messagesEl.querySelector(
@@ -986,7 +989,10 @@ export class ClaudePanelView extends ItemView {
 		// scrollHeight には現在のスペーサー高が含まれるので差し引いて実コンテンツ高を出す。
 		const contentBelow =
 			this.messagesEl.scrollHeight - hostOffset - current;
-		const spacer = Math.max(0, this.messagesEl.clientHeight - contentBelow);
+		const spacer = Math.max(
+			0,
+			this.messagesEl.clientHeight - contentBelow - PROMPT_TOP_GAP
+		);
 		this.bottomSpacer.style.height = `${spacer}px`;
 	}
 
