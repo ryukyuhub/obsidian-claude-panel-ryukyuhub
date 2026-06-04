@@ -750,6 +750,43 @@
 	background: var(--background-modifier-hover);
 }
 
+/* 長いユーザプロンプトの省略表示。本文を 6 行ぶん（max-height は JS が
+   行高 × 6 をインラインで付与）にクランプし、下端をバブル色へフェードさせる。
+   フェード背景はユーザバブル背景 --background-modifier-hover に合わせる。 */
+.claude-panel-user-clamp {
+	position: relative;
+}
+.claude-panel-user-clamp.is-clamped {
+	overflow: hidden;
+}
+.claude-panel-user-clamp.is-clamped::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 2em;
+	background: linear-gradient(
+		transparent,
+		var(--background-modifier-hover)
+	);
+	pointer-events: none;
+}
+.claude-panel-user-clamp-toggle {
+	display: inline-block;
+	background: none;
+	border: none;
+	box-shadow: none;
+	padding: 2px 0;
+	margin-top: 4px;
+	font-size: 12px;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.claude-panel-user-clamp-toggle:hover {
+	color: var(--text-normal);
+}
+
 /* アクティブな送信プロンプトをスクロール領域の上端に貼り付ける（sticky）。
    応答が下へ伸びても、最下部へ追従する間ずっとプロンプトが上端に残り続ける。
    z-index: DOM 順で後ろにある応答バブルが sticky プロンプトの上に描画されるのを
