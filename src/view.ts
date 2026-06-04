@@ -723,7 +723,8 @@ export class ClaudePanelView extends ItemView {
 				this,
 				(toolUseId, decision) =>
 					this.runtime.applyPermissionDecision(toolUseId, decision),
-				(answer) => this.sendAskAnswer(answer)
+				(answer) => this.sendAskAnswer(answer),
+				() => this.recomputeActiveSpacer()
 			);
 		}
 
@@ -872,7 +873,8 @@ export class ClaudePanelView extends ItemView {
 				this,
 				(toolUseId, decision) =>
 					this.runtime.applyPermissionDecision(toolUseId, decision),
-				(answer) => this.sendAskAnswer(answer)
+				(answer) => this.sendAskAnswer(answer),
+				() => this.recomputeActiveSpacer()
 			);
 		}
 		this.followActiveTurn();
@@ -953,6 +955,12 @@ export class ClaudePanelView extends ItemView {
 	 *  画面高を超えたら 0 にする。 */
 	private refreshActiveSpacer(): void {
 		if (this.activePromptId) this.updateBottomSpacer(this.activePromptId);
+	}
+
+	/** ユーザプロンプトの省略トグルで本文高が変わったとき、上端固定中の
+	 *  下端スペーサーを再計算して追従させる（固定対象が無ければ何もしない）。 */
+	recomputeActiveSpacer(): void {
+		this.refreshActiveSpacer();
 	}
 
 	/** 指定メッセージをスクロール領域の最上部へ位置付ける（余白確保 → スクロール）。
