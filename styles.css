@@ -777,14 +777,11 @@
 	pointer-events: none;
 }
 .claude-panel-user-clamp-toggle {
-	/* クランプ本文の右下に絶対配置し、フェード（::after）の上へ重ねる。
-	   z-index でフェードより前面に出す。薄い下地色のチップにして、重なった
-	   プロンプト文字の上でも読めるようにする。padding の左右 8px で文字の
-	   両サイドに余白を持たせる。 */
-	position: absolute;
-	right: 8px;
-	bottom: 4px;
-	z-index: 1;
+	/* 既定（＝展開時）は本文の下に通常フローで右寄せ表示し、文字に重ならない
+	   ようにする。薄い下地色＋角丸のチップ。padding 左右 8px で両サイドに余白。 */
+	display: block;
+	width: fit-content;
+	margin: 4px 0 0 auto;
 	background: var(--background-primary);
 	border: none;
 	box-shadow: none;
@@ -793,6 +790,15 @@
 	font-size: 12px;
 	color: var(--text-muted);
 	cursor: pointer;
+}
+/* 折りたたみ時だけ、クランプ本文の右下に絶対配置してフェード（::after）の上へ
+   重ねる（z-index で前面）。展開時は上記の通常フロー配置に戻り重ならない。 */
+.claude-panel-user-clamp.is-clamped .claude-panel-user-clamp-toggle {
+	position: absolute;
+	right: 8px;
+	bottom: 4px;
+	z-index: 1;
+	margin: 0;
 }
 .claude-panel-user-clamp-toggle:hover {
 	color: var(--text-normal);
