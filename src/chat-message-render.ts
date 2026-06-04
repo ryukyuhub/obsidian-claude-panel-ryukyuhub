@@ -217,7 +217,8 @@ function applyUserClamp(
 	const full = wrap.scrollHeight;
 	// scrollHeight が 0 = パネル非表示/幅 0。計測不能なのでクランプしない。
 	if (full <= 0) return;
-	// 6 行以内（数 px の許容）なら省略不要。トグルも出さない。
+	// 6 行以内なら省略不要（トグルも出さない）。+4px は小数 px の切り上げで
+	// ぴったり 6 行のときに偽陽性でクランプされるのを防ぐ許容誤差。
 	if (full <= maxHeight + 4) return;
 
 	const collapse = () => {
