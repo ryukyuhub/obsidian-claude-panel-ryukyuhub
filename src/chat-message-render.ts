@@ -121,7 +121,7 @@ export function renderMessage(
 		);
 		// マークダウンが実 DOM に入った後に高さを測る。
 		void Promise.all(renders).then(() =>
-			applyUserClamp(clamp, body, onUserContentResize)
+			applyUserClamp(clamp, onUserContentResize)
 		);
 	} else {
 		// 散文中の yes/no 質問の自動 GUI フォールバックは「メッセージ最終の
@@ -202,7 +202,6 @@ const MAX_USER_LINES = 6;
  */
 function applyUserClamp(
 	wrap: HTMLElement,
-	body: HTMLElement,
 	onResize?: () => void
 ): void {
 	const cs = getComputedStyle(wrap);
@@ -236,7 +235,9 @@ function applyUserClamp(
 	let collapsed = true;
 	collapse();
 
-	const toggle = body.createEl("button", {
+	// トグルはラッパ内に絶対配置でフェードへ重ねる（下記 CSS）。本文末尾に
+	// 重なっても overflow:hidden の下端に収まるのでクリップされない。
+	const toggle = wrap.createEl("button", {
 		cls: "claude-panel-user-clamp-toggle",
 		text: t("chat.userClampExpand", hiddenLines),
 	});
