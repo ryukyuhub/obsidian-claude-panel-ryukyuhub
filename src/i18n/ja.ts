@@ -132,8 +132,8 @@ export const ja = {
 		permAllow: "許可",
 		permDeny: "拒否",
 		permUserDenied: "ユーザーが拒否しました。",
-		footerComplete: (duration: string, tokensText: string, cost: string) =>
-			`完了 · ${duration}${tokensText}${cost}`,
+		footerComplete: (modelText: string, duration: string, tokensText: string, cost: string) =>
+			`${modelText}完了 · ${duration}${tokensText}${cost}`,
 		footerDurationSec: (sec: string) => `${sec}秒`,
 		footerDurationMs: (ms: number) => `${ms}ms`,
 		footerUsageTooltip: (inT: string, outT: string, cc: string, cr: string) =>

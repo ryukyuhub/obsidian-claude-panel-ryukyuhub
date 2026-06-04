@@ -34,6 +34,8 @@ export type PermissionDecision =
 export interface RunResult {
 	durationMs: number;
 	costUsd?: number;
+	/** CLI が解決した実モデルの正規 ID（例 `claude-opus-4-8`）。フッター表示用。 */
+	model?: string;
 }
 
 export interface SelectionRef {

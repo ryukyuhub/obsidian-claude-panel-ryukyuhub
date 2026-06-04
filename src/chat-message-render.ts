@@ -15,6 +15,7 @@ import type {
 } from "./chat-message";
 import { formatTokens } from "./usage-history";
 import { t } from "./i18n";
+import { formatModelLabel } from "./settings/labels";
 
 /**
  * チャットメッセージの DOM 描画レイヤー。`chat-message.ts` のデータモデルを
@@ -972,7 +973,8 @@ function renderResultFooter(
 	const tokens = usage ? formatTokens(sumUsage(usage)) : null;
 	const tokensText = tokens ? ` · ${tokens} tokens` : "";
 	const cost = r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : "";
-	footer.setText(t("chat.footerComplete", duration, tokensText, cost));
+	const modelText = r.model ? `${formatModelLabel(r.model)} · ` : "";
+	footer.setText(t("chat.footerComplete", modelText, duration, tokensText, cost));
 	if (usage) {
 		// 内訳をホバーで見られるようにする。フッター行は混雑するので
 		// 4 種別の数値はツールチップに退避。

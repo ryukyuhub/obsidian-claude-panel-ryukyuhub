@@ -260,6 +260,9 @@ export class ChatRuntime {
 			// + 最終 result）来る。最後の値が cumulative なので、ここに
 			// 退避し、runOnce 完了時に 1 回だけ永続履歴へ記録する。
 			let lastRunUsage: MessageUsage | null = null;
+			// onModel は assistant チャンクごとに来るが、同一 run 内では同一値。
+			// 最後に見た値を result 時のフッターに添付する。
+			let lastRunModel: string | null = null;
 			const handle = runAgent(
 				{
 					prompt: promptForCli,
@@ -292,9 +295,13 @@ export class ChatRuntime {
 							{
 								durationMs,
 								costUsd,
+								model: lastRunModel ?? undefined,
 							}
 						);
 						if (newSession) this.currentSessionId = newSession;
+					},
+					onModel: (model) => {
+						lastRunModel = model;
 					},
 					onUsage: (usage) => {
 						const targetId = this.activeAssistantId ?? assistantMsgId;
