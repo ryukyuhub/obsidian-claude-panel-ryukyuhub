@@ -37,11 +37,10 @@ export const EFFORT_LEVELS: EffortLevel[] = [
 	"max",
 ];
 
-export const MODEL_PRESETS: string[] = [
-	"claude-sonnet-4-6",
-	"claude-opus-4-7",
-	"claude-haiku-4-5",
-];
+// エイリアスを使うことで CLI が常に最新バージョンを解決する（例: opus → 4.8）。
+// バージョンを固定したい場合はユーザーが `/model claude-opus-4-8` のように
+// 具体的なフル ID を入力すればよい（任意のバージョンを指定可能）。
+export const MODEL_PRESETS: string[] = ["sonnet", "opus", "haiku"];
 
 /**
  * `claude` CLI が受け付けるパーミッションモード。SDK の PermissionMode から
@@ -189,7 +188,7 @@ export const COMPOSER_BOTTOM_PADDING_MAX = 80;
 
 export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	claudePath: "",
-	model: "claude-sonnet-4-6",
+	model: "sonnet",
 	thinkingMode: "off",
 	effortLevel: "auto",
 	// 既定は ON（従来動作を維持）。アクティブファイル／フォルダは

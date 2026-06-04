@@ -225,6 +225,20 @@ export default class ClaudePanelPlugin extends Plugin {
 			DEFAULT_SETTINGS,
 			await this.loadData()
 		);
+		// 旧プリセット（バージョン固定 ID）をエイリアスへ移行する。CLI に最新を
+		// 解決させ「表示が古いバージョンのまま」問題を解消するため。意図的な
+		// ピン留めを壊さないよう、旧プリセットの 3 文字列だけを対象にする。
+		const LEGACY_PRESET_MIGRATION: Record<string, string> = {
+			"claude-sonnet-4-6": "sonnet",
+			"claude-opus-4-7": "opus",
+			"claude-haiku-4-5": "haiku",
+		};
+		const migrated = LEGACY_PRESET_MIGRATION[this.settings.model];
+		if (migrated) {
+			this.settings.model = migrated;
+			// 移行結果を即座に永続化し、毎起動での再実行とディスク上の古い値を避ける。
+			await this.saveSettings();
+		}
 		this.runtimeSaveAttachmentsToVault = this.settings.saveAttachmentsToVault;
 	}
 
