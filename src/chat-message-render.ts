@@ -140,30 +140,31 @@ export function renderPart(
 	onPermissionDecision?: (toolUseId: string, decision: PermissionDecision) => void,
 	onAskAnswer?: (answer: string) => void,
 	yesNoFallbackEligible = false
-): void {
+): Promise<void> {
 	if (part.type === "text") {
 		const span = body.createDiv({
 			cls: "claude-panel-msg-text-part",
 		});
 		if (streaming) {
 			span.textContent = part.text;
-		} else {
-			span.addClass("claude-panel-md");
-			const partText = part.text;
-			void MarkdownRenderer.render(app, partText, span, "", owner)
-				.then(() => {
-					linkifyPaths(span, app);
-					highlightQuestions(span);
-					renderAskBlocks(span, onAskAnswer);
-					if (yesNoFallbackEligible) {
-						maybeRenderYesNoFallback(span, partText, onAskAnswer);
-					}
-				});
+			return Promise.resolve();
 		}
+		span.addClass("claude-panel-md");
+		const partText = part.text;
+		return MarkdownRenderer.render(app, partText, span, "", owner).then(() => {
+			linkifyPaths(span, app);
+			highlightQuestions(span);
+			renderAskBlocks(span, onAskAnswer);
+			if (yesNoFallbackEligible) {
+				maybeRenderYesNoFallback(span, partText, onAskAnswer);
+			}
+		});
 	} else if (part.type === "tool") {
 		renderToolPill(body, part.name, part.input);
+		return Promise.resolve();
 	} else {
 		renderPermissionCard(body, part, onPermissionDecision);
+		return Promise.resolve();
 	}
 }
 
