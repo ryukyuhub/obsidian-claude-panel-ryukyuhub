@@ -148,6 +148,8 @@ export const en: Messages = {
 		askMultiSubmit: (n: number) =>
 			n > 0 ? `Send (${n})` : "Send",
 		interruptedBadge: "Interrupted",
+		userClampExpand: "Show more",
+		userClampCollapse: "Collapse",
 	},
 	chatTool: {
 		changeOfN: (i: number, n: number) => `Change ${i} / ${n}`,
