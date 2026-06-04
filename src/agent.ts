@@ -37,6 +37,10 @@ interface AgentEvents {
 	}) => void;
 	onError: (err: Error) => void;
 	onUsage?: (usage: UsageInfo) => void;
+	/** assistant ストリームが報告する、CLI が解決した実モデルの正規 ID
+	 *  （例 `claude-opus-4-8`）。プリセットがエイリアスでも、実際に走った
+	 *  バージョンをフッター表示するために使う。1 ラン中に複数回来うる。 */
+	onModel?: (model: string) => void;
 	/** CLI がツール実行のパーミッションを要求した際に発火する。view 側は
 	 *  最終的に `decide(...)`（allow か deny）を呼ぶ必要がある。判定前に
 	 *  ラン全体がキャンセルされた場合、`decide` は no-op になる。 */
@@ -176,7 +180,7 @@ function normalizeUsage(u: RawUsage): UsageInfo {
 
 interface AssistantStreamMessage {
 	type: "assistant";
-	message: { content: ContentBlock[]; usage?: RawUsage };
+	message: { content: ContentBlock[]; usage?: RawUsage; model?: string };
 }
 
 interface ResultStreamMessage {
@@ -241,6 +245,9 @@ function handleStreamLine(line: string, cb: StreamCallbacks): void {
 		const msg = parsed as AssistantStreamMessage;
 		if (msg.message?.usage) {
 			events.onUsage?.(normalizeUsage(msg.message.usage));
+		}
+		if (typeof msg.message?.model === "string") {
+			events.onModel?.(msg.message.model);
 		}
 		for (const block of msg.message?.content ?? []) {
 			if (block.type === "text" && typeof block.text === "string") {
