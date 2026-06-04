@@ -148,7 +148,8 @@ export const ja = {
 		askMultiSubmit: (n: number) =>
 			n > 0 ? `送信 (${n})` : "送信",
 		interruptedBadge: "中断",
-		userClampExpand: "続きを表示",
+		userClampExpand: (hiddenLines: number) =>
+			`続きを表示（あと ${hiddenLines} 行）`,
 		userClampCollapse: "折りたたむ",
 	},
 	chatTool: {

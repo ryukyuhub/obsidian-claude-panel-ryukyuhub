@@ -751,8 +751,8 @@
 }
 
 /* 長いユーザプロンプトの省略表示。本文を 6 行ぶん（max-height は JS が
-   行高 × 6 をインラインで付与）にクランプし、下端をバブル色へフェードさせる。
-   フェード背景はユーザバブル背景 --background-modifier-hover に合わせる。 */
+   行高 × 6 をインラインで付与）にクランプし、下端を不透明なバブル下地色へ
+   フェードさせて「まだ続きがある」感を出す。 */
 .claude-panel-user-clamp {
 	position: relative;
 }
@@ -765,10 +765,14 @@
 	left: 0;
 	right: 0;
 	bottom: 0;
-	height: 2em;
+	/* 約 2 行ぶんを覆う高さ。下端を不透明色まで持っていくことで文字がはっきり
+	   溶けて消える。--background-modifier-hover は多くのテーマで半透明＝下が
+	   透けて弱いので、不透明な --background-primary を終点にして省略感を強める。 */
+	height: 3.2em;
 	background: linear-gradient(
+		to bottom,
 		transparent,
-		var(--background-modifier-hover)
+		var(--background-primary) 92%
 	);
 	pointer-events: none;
 }

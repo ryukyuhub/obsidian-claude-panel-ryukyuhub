@@ -221,6 +221,9 @@ function applyUserClamp(
 	// ぴったり 6 行のときに偽陽性でクランプされるのを防ぐ許容誤差。
 	if (full <= maxHeight + 4) return;
 
+	// 隠れている行数（おおよそ）。トグルに「あと N 行」と添えて省略量を示す。
+	const hiddenLines = Math.max(1, Math.round((full - maxHeight) / lineHeight));
+
 	const collapse = () => {
 		wrap.addClass("is-clamped");
 		wrap.style.maxHeight = `${maxHeight}px`;
@@ -235,14 +238,16 @@ function applyUserClamp(
 
 	const toggle = body.createEl("button", {
 		cls: "claude-panel-user-clamp-toggle",
-		text: t("chat.userClampExpand"),
+		text: t("chat.userClampExpand", hiddenLines),
 	});
 	toggle.onclick = () => {
 		collapsed = !collapsed;
 		if (collapsed) collapse();
 		else expand();
 		toggle.setText(
-			collapsed ? t("chat.userClampExpand") : t("chat.userClampCollapse")
+			collapsed
+				? t("chat.userClampExpand", hiddenLines)
+				: t("chat.userClampCollapse")
 		);
 		onResize?.();
 	};
