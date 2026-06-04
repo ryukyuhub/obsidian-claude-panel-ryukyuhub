@@ -58,7 +58,10 @@ export function renderMessage(
 		toolUseId: string,
 		decision: PermissionDecision
 	) => void,
-	onAskAnswer?: (answer: string) => void
+	onAskAnswer?: (answer: string) => void,
+	// ユーザプロンプトの省略トグルで本文の高さが変わったとき、view 側に
+	// 上端固定スペーサーの再計算を促すためのコールバック。
+	onUserContentResize?: () => void
 ): void {
 	host.empty();
 	host.addClass("claude-panel-msg");
@@ -101,6 +104,25 @@ export function renderMessage(
 	}
 	if (msg.interactive) {
 		msg.interactive(body);
+	} else if (msg.role === "user") {
+		// ユーザプロンプトは本文だけを専用ラッパに包み、長文を 6 行に省略する。
+		// チップ（refs）はラッパの外＝常時表示のまま残す。
+		const clamp = body.createDiv({ cls: "claude-panel-user-clamp" });
+		const renders = msg.parts.map((part) =>
+			renderPart(
+				clamp,
+				part,
+				app,
+				owner,
+				!!msg.streaming,
+				onPermissionDecision,
+				onAskAnswer
+			)
+		);
+		// マークダウンが実 DOM に入った後に高さを測る。
+		void Promise.all(renders).then(() =>
+			applyUserClamp(clamp, body, onUserContentResize)
+		);
 	} else {
 		// 散文中の yes/no 質問の自動 GUI フォールバックは「メッセージ最終の
 		// テキスト part」にだけ載せたい（途中の text → tool → text のような
@@ -166,6 +188,63 @@ export function renderPart(
 		renderPermissionCard(body, part, onPermissionDecision);
 		return Promise.resolve();
 	}
+}
+
+/** ユーザプロンプトを折りたたむ既定行数。これを超えた本文だけクランプする。 */
+const MAX_USER_LINES = 6;
+
+/**
+ * ユーザメッセージ本文 `wrap` が 6 行ぶんを超えていたらクランプし、`body`
+ * 直下に展開/折りたたみトグルを足す。マークダウン確定後に呼ぶこと（高さ計測
+ * のため）。クランプ状態は CSS クラス `is-clamped` ＋ インライン max-height の
+ * 付け外しのみで表現し、データモデルは変更しない。`onResize` はトグルで高さが
+ * 変わったとき view 側のスペーサー再計算を促すためのコールバック。
+ */
+function applyUserClamp(
+	wrap: HTMLElement,
+	body: HTMLElement,
+	onResize?: () => void
+): void {
+	const cs = getComputedStyle(wrap);
+	let lineHeight = parseFloat(cs.lineHeight);
+	if (!isFinite(lineHeight) || lineHeight <= 0) {
+		// line-height が "normal" 等で数値化できないときのフォールバック。
+		const fontSize = parseFloat(cs.fontSize) || 16;
+		lineHeight = fontSize * 1.5;
+	}
+	const maxHeight = Math.round(lineHeight * MAX_USER_LINES);
+
+	const full = wrap.scrollHeight;
+	// scrollHeight が 0 = パネル非表示/幅 0。計測不能なのでクランプしない。
+	if (full <= 0) return;
+	// 6 行以内（数 px の許容）なら省略不要。トグルも出さない。
+	if (full <= maxHeight + 4) return;
+
+	const collapse = () => {
+		wrap.addClass("is-clamped");
+		wrap.style.maxHeight = `${maxHeight}px`;
+	};
+	const expand = () => {
+		wrap.removeClass("is-clamped");
+		wrap.style.maxHeight = "";
+	};
+
+	let collapsed = true;
+	collapse();
+
+	const toggle = body.createEl("button", {
+		cls: "claude-panel-user-clamp-toggle",
+		text: t("chat.userClampExpand"),
+	});
+	toggle.onclick = () => {
+		collapsed = !collapsed;
+		if (collapsed) collapse();
+		else expand();
+		toggle.setText(
+			collapsed ? t("chat.userClampExpand") : t("chat.userClampCollapse")
+		);
+		onResize?.();
+	};
 }
 
 export function renderPermissionCard(
