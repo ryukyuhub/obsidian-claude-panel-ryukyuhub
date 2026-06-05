@@ -227,10 +227,10 @@ function sanitizeLegacyZeros(data: UsageData): UsageData {
  * キャッシュをディスクへ書き出す。fetchUsage 成功時と applyRateLimitEvent
  * 内で自動呼び出し。複数フィールド更新を 1 回にまとめるため debounce する。
  */
-let persistTimer: NodeJS.Timeout | null = null;
+let persistTimer: number | null = null;
 function schedulePersistCache(): void {
 	if (persistTimer !== null) return;
-	persistTimer = setTimeout(() => {
+	persistTimer = window.setTimeout(() => {
 		persistTimer = null;
 		void persistCacheNow();
 	}, 500);

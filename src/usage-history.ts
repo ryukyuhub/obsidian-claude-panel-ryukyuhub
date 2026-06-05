@@ -74,7 +74,7 @@ const UNKNOWN_KEY = "_unknown";
 
 export class UsageHistory {
 	private records: UsageRecord[] = [];
-	private flushTimer: NodeJS.Timeout | null = null;
+	private flushTimer: number | null = null;
 	private loaded = false;
 	private currentAccountKey: string | null = null;
 	// アカウントが未解決の間に来た usage を保持しておき、解決後にまとめて
@@ -212,7 +212,7 @@ export class UsageHistory {
 	/** 即時保存して pending タイマーを破棄。プラグイン onunload で呼ぶ。 */
 	async flushNow(): Promise<void> {
 		if (this.flushTimer !== null) {
-			clearTimeout(this.flushTimer);
+			window.clearTimeout(this.flushTimer);
 			this.flushTimer = null;
 		}
 		await this.persist();
@@ -220,7 +220,7 @@ export class UsageHistory {
 
 	private scheduleFlush(): void {
 		if (this.flushTimer !== null) return;
-		this.flushTimer = setTimeout(() => {
+		this.flushTimer = window.setTimeout(() => {
 			this.flushTimer = null;
 			void this.persist();
 		}, FLUSH_DEBOUNCE_MS);

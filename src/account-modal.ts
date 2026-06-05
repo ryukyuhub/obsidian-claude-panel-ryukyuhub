@@ -402,7 +402,7 @@ function renderUsageRow(
 					? " is-warn"
 					: ""),
 	});
-	fill.style.width = `${pct.toFixed(2)}%`;
+	fill.setCssStyles({ width: `${pct.toFixed(2)}%` });
 	const reset = formatResetsIn(win.resets_at);
 	if (reset) {
 		row.createDiv({

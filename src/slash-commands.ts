@@ -667,7 +667,7 @@ function renderMcpListOutput(
 		const list = host.createDiv({ cls: "claude-panel-mcp-list" });
 		const okCount = parsed.filter((p) => p.connected).length;
 		host.insertBefore(
-			Object.assign(document.createElement("div"), {
+			Object.assign(activeDocument.createElement("div"), {
 				className: "claude-panel-sys-note",
 				textContent: t(
 					"slash.mcp.connectedCount",

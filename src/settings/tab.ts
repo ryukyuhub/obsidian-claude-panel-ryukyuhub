@@ -575,7 +575,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 	 */
 	private renderSetupSection(containerEl: HTMLElement): void {
 		const section = containerEl.createDiv({ cls: "claude-panel-setup" });
-		section.createEl("h3", {
+		section.createEl("div", {
 			cls: "claude-panel-setup-title",
 			text: t("settings.setup.title"),
 		});

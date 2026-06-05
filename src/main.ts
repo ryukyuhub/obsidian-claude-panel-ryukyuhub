@@ -86,10 +86,9 @@ export default class ClaudePanelPlugin extends Plugin {
 		this.addCommand({
 			id: "send-claude-panel-prompt",
 			name: t("command.sendPrompt"),
-			// 初期値は Shift+Enter。「Enter では送信しない」設定を ON にした
-			// ときに、追加設定なしで Shift+Enter による送信が使えるようにする。
-			// ユーザーは Obsidian のホットキー設定で自由に変更できる。
-			hotkeys: [{ modifiers: ["Shift"], key: "Enter" }],
+			// デフォルトのホットキーは付けない（Obsidian ガイドライン: 既定の
+			// ショートカットは他のホットキーと競合しうる）。「Enter では送信しない」
+			// 設定を使うユーザーは Obsidian のホットキー設定で送信キーを割り当てる。
 			checkCallback: (checking) => {
 				const view = this.getView();
 				if (!view) return false;

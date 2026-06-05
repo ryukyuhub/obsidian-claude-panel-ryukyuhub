@@ -43,11 +43,11 @@ export class ContextMeter {
 		const percent = f * 100;
 
 		const ns = "http://www.w3.org/2000/svg";
-		const svg = document.createElementNS(ns, "svg");
+		const svg = activeDocument.createElementNS(ns, "svg");
 		svg.setAttribute("viewBox", "0 0 36 36");
 		svg.classList.add("claude-panel-meter-svg");
 
-		const bg = document.createElementNS(ns, "circle");
+		const bg = activeDocument.createElementNS(ns, "circle");
 		bg.setAttribute("cx", "18");
 		bg.setAttribute("cy", "18");
 		bg.setAttribute("r", "15.9155");
@@ -56,7 +56,7 @@ export class ContextMeter {
 		bg.classList.add("claude-panel-meter-bg");
 		svg.appendChild(bg);
 
-		const fg = document.createElementNS(ns, "circle");
+		const fg = activeDocument.createElementNS(ns, "circle");
 		fg.setAttribute("cx", "18");
 		fg.setAttribute("cy", "18");
 		fg.setAttribute("r", "15.9155");

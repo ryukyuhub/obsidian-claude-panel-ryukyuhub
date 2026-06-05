@@ -81,7 +81,7 @@ export class SelectionCapture {
 		let startLine = 1;
 		try {
 			if (view.getMode?.() === "preview") {
-				const sel = document.getSelection();
+				const sel = activeDocument.getSelection();
 				const containerEl = view.containerEl;
 				if (sel && containerEl) {
 					const a = sel.anchorNode;
@@ -112,7 +112,7 @@ export class SelectionCapture {
 	}
 
 	private isFocusInPanel(): boolean {
-		const ae = document.activeElement;
+		const ae = activeDocument.activeElement;
 		return !!ae && this.panelEl.contains(ae);
 	}
 }

@@ -225,11 +225,11 @@ function applyUserClamp(
 
 	const collapse = () => {
 		wrap.addClass("is-clamped");
-		wrap.style.maxHeight = `${maxHeight}px`;
+		wrap.setCssStyles({ maxHeight: `${maxHeight}px` });
 	};
 	const expand = () => {
 		wrap.removeClass("is-clamped");
-		wrap.style.maxHeight = "";
+		wrap.setCssStyles({ maxHeight: "" });
 	};
 
 	let collapsed = true;
@@ -333,7 +333,7 @@ function linkifyPaths(host: HTMLElement, app: App): void {
 		const file = app.vault.getAbstractFileByPath(path);
 		if (!(file instanceof TFile)) continue;
 
-		const link = document.createElement("a");
+		const link = activeDocument.createElement("a");
 		link.className = "internal-link claude-panel-path-link";
 		link.textContent = code.textContent ?? raw;
 		link.setAttr("href", path);
@@ -370,7 +370,7 @@ function linkifyPaths(host: HTMLElement, app: App): void {
 function highlightQuestions(host: HTMLElement): void {
 	if (!host.closest(".claude-panel-msg-assistant")) return;
 
-	const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+	const walker = activeDocument.createTreeWalker(host, NodeFilter.SHOW_TEXT);
 	const targets: Text[] = [];
 	let node: Node | null;
 	while ((node = walker.nextNode())) {
@@ -389,7 +389,7 @@ function highlightQuestions(host: HTMLElement): void {
 
 	for (const text of targets) {
 		const content = text.data;
-		const fragment = document.createDocumentFragment();
+		const fragment = activeDocument.createDocumentFragment();
 		let lastIdx = 0;
 		let m: RegExpExecArray | null;
 		SENT.lastIndex = 0;
@@ -400,10 +400,10 @@ function highlightQuestions(host: HTMLElement): void {
 			while (trimStart < matchEnd && /\s/.test(content[trimStart])) trimStart++;
 			if (trimStart > lastIdx) {
 				fragment.appendChild(
-					document.createTextNode(content.slice(lastIdx, trimStart))
+					activeDocument.createTextNode(content.slice(lastIdx, trimStart))
 				);
 			}
-			const span = document.createElement("span");
+			const span = activeDocument.createElement("span");
 			span.className = "claude-panel-question";
 			span.textContent = content.slice(trimStart, matchEnd);
 			fragment.appendChild(span);
@@ -411,7 +411,7 @@ function highlightQuestions(host: HTMLElement): void {
 		}
 		if (lastIdx === 0) continue;
 		if (lastIdx < content.length) {
-			fragment.appendChild(document.createTextNode(content.slice(lastIdx)));
+			fragment.appendChild(activeDocument.createTextNode(content.slice(lastIdx)));
 		}
 		text.replaceWith(fragment);
 	}
@@ -497,15 +497,15 @@ function renderAskBlocks(
 		const parsed = parseAskPayload(raw);
 		if (!parsed) continue;
 
-		const card = document.createElement("div");
+		const card = activeDocument.createElement("div");
 		card.className = "claude-panel-ask";
 
-		const q = document.createElement("div");
+		const q = activeDocument.createElement("div");
 		q.className = "claude-panel-ask-question";
 		q.textContent = parsed.question;
 		card.appendChild(q);
 
-		const slot = document.createElement("div");
+		const slot = activeDocument.createElement("div");
 		slot.className = "claude-panel-ask-slot";
 		card.appendChild(slot);
 		renderAskOptions(slot, parsed, onAnswer);
@@ -565,7 +565,7 @@ function renderAskOptions(
 	slot.className = "claude-panel-ask-slot claude-panel-ask-options";
 
 	for (const option of parsed.options) {
-		const btn = document.createElement("button");
+		const btn = activeDocument.createElement("button");
 		btn.type = "button";
 		btn.className = "claude-panel-ask-option";
 		btn.textContent = option;
@@ -588,7 +588,7 @@ function renderAskOptions(
 	}
 
 	if (parsed.allowOther && onAnswer) {
-		const otherBtn = document.createElement("button");
+		const otherBtn = activeDocument.createElement("button");
 		otherBtn.type = "button";
 		otherBtn.className =
 			"claude-panel-ask-option claude-panel-ask-option-other";
@@ -619,7 +619,7 @@ function renderAskMulti(
 	const optionButtons: HTMLButtonElement[] = [];
 
 	for (const option of parsed.options) {
-		const btn = document.createElement("button");
+		const btn = activeDocument.createElement("button");
 		btn.type = "button";
 		btn.className = "claude-panel-ask-option";
 		btn.textContent = option;
@@ -653,9 +653,9 @@ function renderAskMulti(
 	const openOther = (): void => {
 		if (otherOpen) return;
 		otherOpen = true;
-		otherRow = document.createElement("div");
+		otherRow = activeDocument.createElement("div");
 		otherRow.className = "claude-panel-ask-multi-other-row";
-		const ta = document.createElement("textarea");
+		const ta = activeDocument.createElement("textarea");
 		ta.className = "claude-panel-ask-freeform-input";
 		ta.rows = 2;
 		ta.placeholder = t("chat.askOtherPlaceholder");
@@ -678,7 +678,7 @@ function renderAskMulti(
 	};
 
 	if (parsed.allowOther && onAnswer) {
-		const otherBtn = document.createElement("button");
+		const otherBtn = activeDocument.createElement("button");
 		otherBtn.type = "button";
 		otherBtn.className =
 			"claude-panel-ask-option claude-panel-ask-option-other";
@@ -691,11 +691,11 @@ function renderAskMulti(
 		slot.appendChild(otherBtn);
 	}
 
-	const sendRow = document.createElement("div");
+	const sendRow = activeDocument.createElement("div");
 	sendRow.className = "claude-panel-ask-multi-actions";
 	slot.appendChild(sendRow);
 
-	const sendBtn = document.createElement("button");
+	const sendBtn = activeDocument.createElement("button");
 	sendBtn.type = "button";
 	sendBtn.className = "claude-panel-ask-multi-submit mod-cta";
 	sendRow.appendChild(sendBtn);
@@ -727,7 +727,7 @@ function renderAskMulti(
 		slot.empty();
 		slot.className = "claude-panel-ask-slot claude-panel-ask-options";
 		for (const value of parts) {
-			const pill = document.createElement("button");
+			const pill = activeDocument.createElement("button");
 			pill.type = "button";
 			pill.className = "claude-panel-ask-option is-selected";
 			pill.textContent = value;
@@ -758,17 +758,17 @@ function renderAskFreeText(
 	slot.empty();
 	slot.className = "claude-panel-ask-slot claude-panel-ask-freeform";
 
-	const ta = document.createElement("textarea");
+	const ta = activeDocument.createElement("textarea");
 	ta.className = "claude-panel-ask-freeform-input";
 	ta.rows = 2;
 	ta.placeholder = t("chat.askOtherPlaceholder");
 	slot.appendChild(ta);
 
-	const actions = document.createElement("div");
+	const actions = activeDocument.createElement("div");
 	actions.className = "claude-panel-ask-freeform-actions";
 	slot.appendChild(actions);
 
-	const backBtn = document.createElement("button");
+	const backBtn = activeDocument.createElement("button");
 	backBtn.type = "button";
 	backBtn.className = "claude-panel-ask-freeform-cancel";
 	backBtn.textContent = t("chat.askOtherCancel");
@@ -778,7 +778,7 @@ function renderAskFreeText(
 	};
 	actions.appendChild(backBtn);
 
-	const sendBtn = document.createElement("button");
+	const sendBtn = activeDocument.createElement("button");
 	sendBtn.type = "button";
 	sendBtn.className = "claude-panel-ask-freeform-submit mod-cta";
 	sendBtn.textContent = t("chat.askOtherSubmit");
@@ -792,7 +792,7 @@ function renderAskFreeText(
 		}
 		slot.empty();
 		slot.className = "claude-panel-ask-slot claude-panel-ask-options";
-		const pill = document.createElement("button");
+		const pill = activeDocument.createElement("button");
 		pill.type = "button";
 		pill.className = "claude-panel-ask-option is-selected";
 		pill.textContent = value;
@@ -908,15 +908,15 @@ function renderYesNoCard(
 	labels: YesNoLabels,
 	onAnswer: (answer: string) => void
 ): void {
-	const card = document.createElement("div");
+	const card = activeDocument.createElement("div");
 	card.className = "claude-panel-ask claude-panel-ask-yesno";
 
-	const slot = document.createElement("div");
+	const slot = activeDocument.createElement("div");
 	slot.className = "claude-panel-ask-slot claude-panel-ask-options";
 	card.appendChild(slot);
 
 	const makeBtn = (text: string): HTMLButtonElement => {
-		const b = document.createElement("button");
+		const b = activeDocument.createElement("button");
 		b.type = "button";
 		b.className = "claude-panel-ask-option";
 		b.textContent = text;

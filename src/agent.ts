@@ -367,7 +367,7 @@ export function checkClaudeCli(configured: string): Promise<CliStatus> {
 					child.stderr?.setEncoding("utf8");
 					child.stdout?.on("data", (c: string) => (stdout += c));
 					child.stderr?.on("data", (c: string) => (stderr += c));
-					const timer = setTimeout(() => {
+					const timer = window.setTimeout(() => {
 						try {
 							child.kill();
 						} catch {
@@ -376,11 +376,11 @@ export function checkClaudeCli(configured: string): Promise<CliStatus> {
 						done({ code: -1, stdout, stderr: stderr || "timeout" });
 					}, 5000);
 					child.on("error", (err: Error) => {
-						clearTimeout(timer);
+						window.clearTimeout(timer);
 						done({ code: -1, stdout, stderr: err.message });
 					});
 					child.on("close", (code: number | null) => {
-						clearTimeout(timer);
+						window.clearTimeout(timer);
 						done({ code: code ?? -1, stdout, stderr });
 					});
 				} catch (err) {
@@ -809,7 +809,7 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		if (child && !child.killed) {
 			try {
 				child.kill("SIGTERM");
-				setTimeout(() => {
+				window.setTimeout(() => {
 					if (child && !child.killed) {
 						try {
 							child.kill("SIGKILL");
@@ -863,7 +863,7 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		await Promise.race([
 			ack,
 			new Promise<void>((resolve) =>
-				setTimeout(() => {
+				window.setTimeout(() => {
 					timedOut = true;
 					resolve();
 				}, 2000)

@@ -160,7 +160,7 @@ export class ClaudePanelView extends ItemView {
 		// activeFolderPath として記録し、アクティブファイル表示と入れ替える。
 		// `.nav-folder-title` は Obsidian のファイルツリーが各フォルダに
 		// 描画する要素で、`data-path` にフォルダの Vault 相対パスが入る。
-		this.registerDomEvent(document, "click", (e) => {
+		this.registerDomEvent(activeDocument, "click", (e) => {
 			const titleEl = (e.target as HTMLElement | null)?.closest(
 				".nav-folder-title"
 			);
@@ -898,7 +898,7 @@ export class ClaudePanelView extends ItemView {
 			// 会話が空（clear 等）。固定対象とスペーサーを解除する。
 			this.activePromptId = null;
 			this.markActivePromptHost(null);
-			if (this.bottomSpacer) this.bottomSpacer.style.height = "0px";
+			if (this.bottomSpacer) this.bottomSpacer.setCssStyles({ height: "0px" });
 			return;
 		}
 		if (this.runtime.isBusy() && lastUserId !== this.activePromptId) {
@@ -928,7 +928,7 @@ export class ClaudePanelView extends ItemView {
 			.querySelectorAll<HTMLElement>(".claude-panel-prompt-pinned")
 			.forEach((el) => {
 				el.removeClass("claude-panel-prompt-pinned");
-				el.style.marginTop = "";
+				el.setCssStyles({ marginTop: "" });
 			});
 		if (!msgId) return;
 		const host = this.messagesEl.querySelector(
@@ -936,7 +936,7 @@ export class ClaudePanelView extends ItemView {
 		) as HTMLElement | null;
 		if (!host) return;
 		host.addClass("claude-panel-prompt-pinned");
-		host.style.marginTop = `${PROMPT_TOP_GAP}px`;
+		host.setCssStyles({ marginTop: `${PROMPT_TOP_GAP}px` });
 	}
 
 	/** ストリーミング中は常に最新（最下部）へ追従する。下端スペーサーのおかげで、
@@ -987,7 +987,7 @@ export class ClaudePanelView extends ItemView {
 			`[data-msg-id="${msgId}"]`
 		) as HTMLElement | null;
 		if (!host) {
-			this.bottomSpacer.style.height = "0px";
+			this.bottomSpacer.setCssStyles({ height: "0px" });
 			return;
 		}
 		const current = parseFloat(this.bottomSpacer.style.height) || 0;
@@ -1001,7 +1001,7 @@ export class ClaudePanelView extends ItemView {
 			0,
 			this.messagesEl.clientHeight - contentBelow - PROMPT_TOP_GAP
 		);
-		this.bottomSpacer.style.height = `${spacer}px`;
+		this.bottomSpacer.setCssStyles({ height: `${spacer}px` });
 	}
 
 	/** busy 状態が変わったら送信ボタンと要約バッジの disabled / spinner を更新する。 */

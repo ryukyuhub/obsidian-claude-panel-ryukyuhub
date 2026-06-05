@@ -47,10 +47,10 @@ export function pickFilesViaDialog(): Promise<FilePickerResult> {
 			return null;
 		};
 
-		const input = document.createElement("input");
+		const input = activeDocument.createElement("input");
 		input.type = "file";
 		input.multiple = true;
-		input.style.display = "none";
+		input.setCssStyles({ display: "none" });
 		const cleanup = (): void => {
 			input.remove();
 		};
@@ -72,7 +72,7 @@ export function pickFilesViaDialog(): Promise<FilePickerResult> {
 			cleanup();
 			resolve({ paths: [], unresolvedCount: 0 });
 		});
-		document.body.appendChild(input);
+		activeDocument.body.appendChild(input);
 		input.click();
 	});
 }
