@@ -2,6 +2,7 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ClaudePanelPlugin from "../main";
 import { checkClaudeCli, type CliStatus } from "../agent";
 import { resolveClaudePath } from "../cli-resolver";
+import { getSettingModal } from "../obsidian-internals";
 import { pickFilesViaDialog } from "../attachments";
 import { toVaultRelativeIfInside } from "../notify-sound-source";
 import {
@@ -325,11 +326,11 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 						// Obsidian の設定モーダルは ID 指定で setting タブを開ける。
 						// `hotkeys` は組み込みタブ。プラグイン ID を渡すと、
 						// 表示されるコマンドを本プラグイン分に事前フィルタできる。
-						const setting = (this.app as any).setting;
-						setting?.open?.();
-						setting?.openTabById?.("hotkeys");
+						const setting = getSettingModal(this.app);
+						setting?.open();
+						setting?.openTabById("hotkeys");
 						const tab = setting?.activeTab;
-						if (tab && typeof tab.setQuery === "function") {
+						if (tab?.setQuery) {
 							tab.setQuery(this.plugin.manifest.id);
 						}
 					})

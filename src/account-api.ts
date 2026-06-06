@@ -74,7 +74,7 @@ export function fetchAuthStatus(
 			{ timeout: 8000, windowsHide: true },
 			(err, stdout) => {
 				if (err) {
-					reject(err);
+					reject(err instanceof Error ? err : new Error("claude auth status を実行できませんでした"));
 					return;
 				}
 				try {

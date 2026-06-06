@@ -36,6 +36,9 @@ export default class ClaudePanelPlugin extends Plugin {
 		);
 	}
 
+	// Obsidian の onload/onunload は型上 `: void` だが async が公式パターン。
+	// フレームワークは戻り値の Promise を待たないので no-misused-promises は誤検知。
+	// eslint-disable-next-line @typescript-eslint/no-misused-promises
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		// ribbon / command を登録する前に i18n の override を適用しないと、
@@ -60,7 +63,7 @@ export default class ClaudePanelPlugin extends Plugin {
 		);
 
 		this.addRibbonIcon("bot", t("ribbon.openPanel"), () => {
-			this.activateView();
+			void this.activateView();
 		});
 
 		this.addCommand({
@@ -144,6 +147,7 @@ export default class ClaudePanelPlugin extends Plugin {
 		this.addSettingTab(new ClaudePanelSettingTab(this.app, this));
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-misused-promises
 	async onunload(): Promise<void> {
 		// Leaf は Obsidian 側で自動的に切り離されるので明示的な処理は不要。
 		// debounce 中の usage 書き込みを取りこぼさないよう即時 flush。
@@ -219,11 +223,8 @@ export default class ClaudePanelPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
+		const stored = (await this.loadData()) as Partial<ClaudePanelSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
 		// 旧プリセット（バージョン固定 ID）をエイリアスへ移行する。CLI に最新を
 		// 解決させ「表示が古いバージョンのまま」問題を解消するため。意図的な
 		// ピン留めを壊さないよう、旧プリセットの 3 文字列だけを対象にする。

@@ -54,8 +54,8 @@ export class SummaryBadge {
 			this.btn.classList.remove("is-warn", "is-danger", "is-disabled", "is-summarizing");
 			return;
 		}
-		this.btn.classList.toggle("is-danger", f! >= THRESHOLD_DANGER);
-		this.btn.classList.toggle("is-warn", f! < THRESHOLD_DANGER);
+		this.btn.classList.toggle("is-danger", f >= THRESHOLD_DANGER);
+		this.btn.classList.toggle("is-warn", f < THRESHOLD_DANGER);
 		this.btn.classList.toggle("is-disabled", this.isBusy || this.isSummarizing);
 		this.btn.classList.toggle("is-summarizing", this.isSummarizing);
 		this.renderLabel();

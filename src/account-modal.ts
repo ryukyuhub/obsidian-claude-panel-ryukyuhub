@@ -17,6 +17,11 @@ import {
 } from "./usage-history";
 import { t } from "./i18n";
 
+/** allSettled の rejected reason（型は any）から表示用メッセージを安全に取り出す。 */
+function reasonMessage(reason: unknown): string {
+	return reason instanceof Error ? reason.message : String(reason);
+}
+
 /**
  * モーダルを開いた時に「キャッシュ済みデータをそのまま使ってよい」と
  * みなす最大経過時間。ステータスバーが 10 分間隔で更新するので、これ
@@ -134,7 +139,7 @@ export class AccountUsageModal extends Modal {
 			});
 			note.setText(
 				authResult.status === "rejected"
-					? t("account.authFetchFailed", authResult.reason?.message ?? authResult.reason)
+					? t("account.authFetchFailed", reasonMessage(authResult.reason))
 					: t("account.notLoggedIn")
 			);
 		}
@@ -170,7 +175,7 @@ export class AccountUsageModal extends Modal {
 				cls: "claude-panel-account-note",
 			});
 			note.setText(
-				t("account.usageFetchFailed", usageResult.reason?.message ?? usageResult.reason)
+				t("account.usageFetchFailed", reasonMessage(usageResult.reason))
 			);
 		}
 

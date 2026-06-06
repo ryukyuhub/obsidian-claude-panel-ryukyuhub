@@ -30,6 +30,7 @@ import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
 import { SlashSuggest } from "./slash-suggest";
 import { discoverDynamicCommands } from "./skill-discovery";
 import { openAccountUsageModal } from "./account-modal";
+import { getSettingModal } from "./obsidian-internals";
 import { Composer } from "./composer";
 import { SummaryBadge } from "./summary-badge";
 import { SummaryConfirmModal } from "./summary-confirm-modal";
@@ -723,7 +724,9 @@ export class ClaudePanelView extends ItemView {
 				this,
 				(toolUseId, decision) =>
 					this.runtime.applyPermissionDecision(toolUseId, decision),
-				(answer) => this.sendAskAnswer(answer),
+				(answer) => {
+					void this.sendAskAnswer(answer);
+				},
 				() => this.recomputeActiveSpacer()
 			);
 		}
@@ -790,9 +793,9 @@ export class ClaudePanelView extends ItemView {
 				text: t("view.emptyOpenSettings"),
 			});
 			settingsBtn.onclick = () => {
-				const setting = (this.app as any).setting;
-				setting?.open?.();
-				setting?.openTabById?.(this.plugin.manifest.id);
+				const setting = getSettingModal(this.app);
+				setting?.open();
+				setting?.openTabById(this.plugin.manifest.id);
 			};
 			const recheckBtn = actions.createEl("button", {
 				text: t("view.emptyRecheck"),
@@ -806,7 +809,7 @@ export class ClaudePanelView extends ItemView {
 	private getMessageBody(msgId: string): HTMLElement | null {
 		return this.messagesEl.querySelector(
 			`[data-msg-id="${msgId}"] .claude-panel-msg-text`
-		) as HTMLElement | null;
+		);
 	}
 
 	// ============================================================
@@ -862,9 +865,9 @@ export class ClaudePanelView extends ItemView {
 
 	/** 単一メッセージの完全再描画（permission 状態変化、結果確定など）。 */
 	onMessageRerender(msg: ChatMessage): void {
-		const host = this.messagesEl.querySelector(
+		const host = this.messagesEl.querySelector<HTMLElement>(
 			`[data-msg-id="${msg.id}"]`
-		) as HTMLElement | null;
+		);
 		if (host) {
 			renderMessage(
 				host,
@@ -873,7 +876,9 @@ export class ClaudePanelView extends ItemView {
 				this,
 				(toolUseId, decision) =>
 					this.runtime.applyPermissionDecision(toolUseId, decision),
-				(answer) => this.sendAskAnswer(answer),
+				(answer) => {
+					void this.sendAskAnswer(answer);
+				},
 				() => this.recomputeActiveSpacer()
 			);
 		}
@@ -931,9 +936,9 @@ export class ClaudePanelView extends ItemView {
 				el.setCssStyles({ marginTop: "" });
 			});
 		if (!msgId) return;
-		const host = this.messagesEl.querySelector(
+		const host = this.messagesEl.querySelector<HTMLElement>(
 			`[data-msg-id="${msgId}"]`
-		) as HTMLElement | null;
+		);
 		if (!host) return;
 		host.addClass("claude-panel-prompt-pinned");
 		host.setCssStyles({ marginTop: `${PROMPT_TOP_GAP}px` });
@@ -969,7 +974,7 @@ export class ClaudePanelView extends ItemView {
 		this.updateBottomSpacer(msgId);
 		const host = this.messagesEl.querySelector(
 			`[data-msg-id="${msgId}"]`
-		) as HTMLElement | null;
+		);
 		if (!host) return;
 		const contTop = this.messagesEl.getBoundingClientRect().top;
 		const hostOffset =
@@ -985,7 +990,7 @@ export class ClaudePanelView extends ItemView {
 		if (!this.bottomSpacer) return;
 		const host = this.messagesEl.querySelector(
 			`[data-msg-id="${msgId}"]`
-		) as HTMLElement | null;
+		);
 		if (!host) {
 			this.bottomSpacer.setCssStyles({ height: "0px" });
 			return;

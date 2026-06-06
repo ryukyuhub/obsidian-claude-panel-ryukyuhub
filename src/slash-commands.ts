@@ -375,6 +375,12 @@ interface ScopeMap {
 	local: Set<string>;
 }
 
+/** `.mcp.json` / `~/.claude.json` の読み取りに使う最小スキーマ（JSON.parse の any を抑える）。 */
+interface McpConfigFile {
+	mcpServers?: Record<string, unknown>;
+	projects?: Record<string, { mcpServers?: Record<string, unknown> }>;
+}
+
 /**
  * ローカル設定ファイルを読み、各 MCP サーバがどの scope に設定されているか
  * を判定する。`claude mcp list` の出力とつき合わせて行ごとに出所バッジを
@@ -393,7 +399,9 @@ function detectMcpScopes(cwd: string): ScopeMap {
 	try {
 		const projectPath = path.join(cwd, ".mcp.json");
 		if (fs.existsSync(projectPath)) {
-			const data = JSON.parse(fs.readFileSync(projectPath, "utf8"));
+			const data = JSON.parse(
+				fs.readFileSync(projectPath, "utf8")
+			) as McpConfigFile | null;
 			for (const name of Object.keys(data?.mcpServers ?? {})) {
 				map.project.add(name);
 			}
@@ -405,7 +413,9 @@ function detectMcpScopes(cwd: string): ScopeMap {
 	try {
 		const userPath = path.join(os.homedir(), ".claude.json");
 		if (fs.existsSync(userPath)) {
-			const data = JSON.parse(fs.readFileSync(userPath, "utf8"));
+			const data = JSON.parse(
+				fs.readFileSync(userPath, "utf8")
+			) as McpConfigFile | null;
 			for (const name of Object.keys(data?.mcpServers ?? {})) {
 				map.user.add(name);
 			}

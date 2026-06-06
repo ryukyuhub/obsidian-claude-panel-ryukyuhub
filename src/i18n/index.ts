@@ -40,7 +40,7 @@ export function t(key: string, ...args: unknown[]): string {
 	const segments = key.split(".");
 	let cursor: unknown = active;
 	for (const seg of segments) {
-		if (cursor && typeof cursor === "object" && seg in (cursor as object)) {
+		if (cursor && typeof cursor === "object" && seg in cursor) {
 			cursor = (cursor as Record<string, unknown>)[seg];
 		} else {
 			return key;

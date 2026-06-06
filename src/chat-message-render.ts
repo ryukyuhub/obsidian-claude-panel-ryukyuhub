@@ -135,7 +135,9 @@ export function renderMessage(
 			}
 		}
 		msg.parts.forEach((part, idx) => {
-			renderPart(
+			// forEach 内では await できないため void で fire-and-forget（描画は
+			// 各 part が DOM へ同期 append され、続く MarkdownRenderer のみ非同期）。
+			void renderPart(
 				body,
 				part,
 				app,
@@ -487,7 +489,7 @@ function renderAskBlocks(
 ): void {
 	const codes = Array.from(
 		host.querySelectorAll("pre > code.language-ask")
-	) as HTMLElement[];
+	);
 	let replaced = false;
 	let lastCard: HTMLElement | null = null;
 	for (const code of codes) {
@@ -647,7 +649,6 @@ function renderAskMulti(
 	// よう、関数スコープの変数に持つ。
 	let otherText = "";
 	let otherOpen = false;
-	let otherInput: HTMLTextAreaElement | null = null;
 	let otherRow: HTMLDivElement | null = null;
 
 	const openOther = (): void => {
@@ -670,7 +671,6 @@ function renderAskMulti(
 				submit();
 			}
 		});
-		otherInput = ta;
 		otherRow.appendChild(ta);
 		// 「その他…」行はオプション群の後・送信ボタンの前に挿入する。
 		slot.insertBefore(otherRow, sendRow);
@@ -1315,7 +1315,7 @@ function diffLines(oldStr: string, newStr: string): DiffLine[] {
 
 	// LCS テーブル
 	const dp: number[][] = Array.from({ length: n + 1 }, () =>
-		new Array(m + 1).fill(0)
+		new Array<number>(m + 1).fill(0)
 	);
 	for (let x = n - 1; x >= 0; x--) {
 		for (let y = m - 1; y >= 0; y--) {

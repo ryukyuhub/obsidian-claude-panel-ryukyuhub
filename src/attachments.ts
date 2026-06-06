@@ -250,6 +250,6 @@ export async function copyFileToVault(
 	const data = buf.buffer.slice(
 		buf.byteOffset,
 		buf.byteOffset + buf.byteLength
-	) as ArrayBuffer;
+	);
 	return writeBinaryToVault(app, dir, nodePath.basename(absolutePath), data);
 }

@@ -89,7 +89,7 @@ async function readAbsoluteFile(path: string): Promise<ArrayBuffer | null> {
 		return buf.buffer.slice(
 			buf.byteOffset,
 			buf.byteOffset + buf.byteLength
-		) as ArrayBuffer;
+		);
 	} catch (e) {
 		console.warn("[claude-panel] read sound file failed", path, e);
 		return null;

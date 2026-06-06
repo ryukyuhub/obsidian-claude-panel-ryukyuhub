@@ -957,9 +957,7 @@
 
 /* 応答待ちに気付けるよう、アシスタントの問いかけ文（`?` / `？` で終わる文）
    を強調する。サイドバーの隅で見ているとモデルからの確認や質問を
-   見落としやすいため、本文より一段大きく、警告色で塗りつぶす。
-   `box-decoration-break: clone` は折り返し時に各行へ padding/border-radius
-   を行ごとに付け直すため、複数行に渡る質問でもピル状の見た目が崩れない。 */
+   見落としやすいため、本文より一段大きく、警告色で塗りつぶす。 */
 .claude-panel-question {
 	display: inline;
 	color: var(--text-warning, #d29922);
@@ -973,8 +971,6 @@
 	);
 	padding: 1px 5px;
 	border-radius: 4px;
-	box-decoration-break: clone;
-	-webkit-box-decoration-break: clone;
 }
 /* アシスタント応答がストリーミング中の間は part を textContent で設定する
    （マークダウンレンダリングなし）。改行を保持し、複数行チャンクを自然に
@@ -1587,31 +1583,32 @@
 }
 /* リストのスペーシングを引き締めて予測可能にする。
    Obsidian のテーマ（および既定の reading-view CSS）は <ul>/<ol>/<li>
-   に大きな margin/padding を入れることが多いので、!important 付きの
-   shorthand reset で完全に上書きしている。 */
-.claude-panel-md ul,
-.claude-panel-md ol {
-	margin: 4px 0 !important;
-	padding: 0 0 0 22px !important;
+   に大きな margin/padding を入れることが多い。!important の代わりに
+   パネルのルートクラス `.claude-panel-root` を前置して特異度を上げ、
+   テーマ側のセレクタに勝たせている。 */
+.claude-panel-root .claude-panel-md ul,
+.claude-panel-root .claude-panel-md ol {
+	margin: 4px 0;
+	padding: 0 0 0 22px;
 }
-.claude-panel-md ul li,
-.claude-panel-md ol li {
-	margin: 0 !important;
-	padding: 0 !important;
-	line-height: 1.5 !important;
+.claude-panel-root .claude-panel-md ul li,
+.claude-panel-root .claude-panel-md ol li {
+	margin: 0;
+	padding: 0;
+	line-height: 1.5;
 }
-.claude-panel-md ul li:not(:last-child),
-.claude-panel-md ol li:not(:last-child) {
-	margin-bottom: 2px !important;
+.claude-panel-root .claude-panel-md ul li:not(:last-child),
+.claude-panel-root .claude-panel-md ol li:not(:last-child) {
+	margin-bottom: 2px;
 }
 /* loose list（項目本文が <p> でラップされるケース）も同様に余白をフラット化する。 */
-.claude-panel-md li > p,
-.claude-panel-md li > div {
-	margin: 0 !important;
-	padding: 0 !important;
+.claude-panel-root .claude-panel-md li > p,
+.claude-panel-root .claude-panel-md li > div {
+	margin: 0;
+	padding: 0;
 }
-.claude-panel-md li > p + p {
-	margin-top: 4px !important;
+.claude-panel-root .claude-panel-md li > p + p {
+	margin-top: 4px;
 }
 /* インライン `code` とコードブロックは可読性のため本文より少し大きくする
    （monospace は同じ px でも視覚的に小さく見えやすいため）。 */

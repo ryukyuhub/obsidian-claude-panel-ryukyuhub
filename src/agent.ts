@@ -60,7 +60,9 @@ interface AgentEvents {
  * 値の有無はラン時の状態に依存（utilization は 75/90/95% 閾値超過時のみ）。
  */
 export interface RateLimitInfo {
-	rateLimitType: "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet" | "overage" | string;
+	// `(string & {})` で literal 群が string に吸収されるのを防ぎ、補完候補として
+	// 残しつつ任意の文字列も受け付ける(no-redundant-type-constituents 回避)。
+	rateLimitType: "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet" | "overage" | (string & {});
 	/** unix epoch 秒。Anthropic 側がリセットする時刻。 */
 	resetsAt: number;
 	/** "allowed" | "allowed_warning" | "blocked" など。 */
