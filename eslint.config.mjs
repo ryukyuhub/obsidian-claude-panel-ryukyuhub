@@ -1,5 +1,6 @@
 import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
+import comments from "@eslint-community/eslint-plugin-eslint-comments";
 
 // Mirrors the automated checks Obsidian runs on community-plugin releases
 // (eslint-plugin-obsidianmd "recommended"). Run before every release:
@@ -14,6 +15,15 @@ import tseslint from "typescript-eslint";
 // as warnings.
 export default tseslint.config(
 	...obsidianmd.configs.recommended,
+	{
+		// Obsidian の release dashboard はブロッカー扱い: eslint-disable には必ず
+		// `-- 理由` を付ける（コメントが必要な理由を説明する）。ローカルでも error
+		// にして再現し、リリース後の Fail を防ぐ。
+		plugins: { "@eslint-community/eslint-comments": comments },
+		rules: {
+			"@eslint-community/eslint-comments/require-description": "error",
+		},
+	},
 	{
 		languageOptions: {
 			parserOptions: {

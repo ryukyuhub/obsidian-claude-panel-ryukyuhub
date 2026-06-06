@@ -28,6 +28,7 @@
     "url": "https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/issues"
   },
   "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.7.2",
     "@types/node": "^20.11.0",
     "esbuild": "0.21.5",
     "eslint": "^9.39.4",

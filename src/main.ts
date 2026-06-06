@@ -36,9 +36,7 @@ export default class ClaudePanelPlugin extends Plugin {
 		);
 	}
 
-	// Obsidian の onload/onunload は型上 `: void` だが async が公式パターン。
-	// フレームワークは戻り値の Promise を待たないので no-misused-promises は誤検知。
-	// eslint-disable-next-line @typescript-eslint/no-misused-promises
+	// eslint-disable-next-line @typescript-eslint/no-misused-promises -- Obsidian の onload は型上 `: void` だが async が公式パターン。戻り値の Promise はフレームワークが待たないので誤検知
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		// ribbon / command を登録する前に i18n の override を適用しないと、
@@ -147,7 +145,7 @@ export default class ClaudePanelPlugin extends Plugin {
 		this.addSettingTab(new ClaudePanelSettingTab(this.app, this));
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-misused-promises
+	// eslint-disable-next-line @typescript-eslint/no-misused-promises -- onunload も onload 同様 Obsidian の async ライフサイクルは型上 void で誤検知
 	async onunload(): Promise<void> {
 		// Leaf は Obsidian 側で自動的に切り離されるので明示的な処理は不要。
 		// debounce 中の usage 書き込みを取りこぼさないよう即時 flush。
