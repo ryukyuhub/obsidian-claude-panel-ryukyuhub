@@ -5,42 +5,77 @@
  * 設定型だけを参照できる。
  */
 
-export type ThinkingMode =
-	| "off"
-	| "think"
-	| "think hard"
-	| "think harder"
-	| "ultrathink";
+/**
+ * 思考（拡張思考）の制御。公式 Claude Code の思考トグル（Alt+T /
+ * `alwaysThinkingEnabled`）+ `ultrathink` キーワードと同じ構成に保つ。
+ *
+ * - `on`  — 思考を有効化（公式の既定。CLI 仕様: alwaysThinkingEnabled が
+ *           「未設定または true なら対応モデルで自動的に有効」）。
+ * - `off` — 思考を無効化（alwaysThinkingEnabled: false — false のときだけ
+ *           無効になる）。Fable 5 は常時オンのため効かない。
+ * - `ultrathink` — 思考オンに加え、プロンプト先頭にキーワードを付けて
+ *           そのターンの最深推論を要求する。公式で唯一残る思考キーワード
+ *           （`think` / `think hard` / `think harder` / `megathink` は
+ *           2026-01 に廃止され、ただの平文になった）。
+ *
+ * on / off は agent.ts がセッション単位の `--settings` で注入する。
+ * v1 スキーマの旧値（キーワード前置方式の off / think 系）は main.ts の
+ * ロード時に `on` へ移行される（旧 off は実際には思考を止めていなかった
+ * ため、挙動を保存する移行先は on）。
+ */
+export type ThinkingMode = "on" | "off" | "ultrathink";
 
-export const THINKING_MODES: ThinkingMode[] = [
-	"off",
-	"think",
-	"think hard",
-	"think harder",
-	"ultrathink",
-];
+export const THINKING_MODES: ThinkingMode[] = ["on", "off", "ultrathink"];
 
 /**
- * Claude Code の `--effort` フラグに渡す値。`auto` は「フラグを渡さない」を
- * 意味し、CLI 側のデフォルト（あるいは `~/.claude/settings.json` の
- * `effortLevel`）に処理を委ねる。`low`/`medium`/`high`/`max` は新しめの
- * モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度を制御する。Haiku など
- * 非対応モデルでは指定しても CLI が黙って無視する。
+ * data.json に保存する設定スキーマの世代。値の「意味」が変わる変更
+ * （例: v2 で thinkingMode の off がキーワード無しから思考無効化に変化）を
+ * 一度きりの移行として実行するために使う。単なる選択肢の追加・削除は
+ * ロード時の不正値ガードで足りるため、バージョンを上げる必要はない。
  */
-export type EffortLevel = "auto" | "low" | "medium" | "high" | "max";
+export const SETTINGS_SCHEMA_VERSION = 2;
+
+/**
+ * Claude Code の `--effort` フラグに渡す値。公式 `/effort` の選択肢
+ * （low / medium / high / xhigh / max / auto）と同一に保つ。`auto` は
+ * 「フラグを渡さない」を意味し、CLI 側のデフォルト（あるいは
+ * `~/.claude/settings.json` の `effortLevel`）に処理を委ねる。
+ * `xhigh` は Opus 4.7 以降 / Fable 5 / Sonnet 5 など対応モデルのみ。
+ * Haiku など非対応モデルでは指定しても CLI が黙って無視する。
+ * REPL 専用のセッション限定モード `ultracode`（xhigh 固定の
+ * マルチエージェント動作）は意図的に含めない。
+ */
+export type EffortLevel = "auto" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export const EFFORT_LEVELS: EffortLevel[] = [
 	"auto",
 	"low",
 	"medium",
 	"high",
+	"xhigh",
 	"max",
 ];
 
-// エイリアスを使うことで CLI が常に最新バージョンを解決する（例: opus → 4.8）。
-// バージョンを固定したい場合はユーザーが `/model claude-opus-4-8` のように
-// 具体的なフル ID を入力すればよい（任意のバージョンを指定可能）。
-export const MODEL_PRESETS: string[] = ["sonnet", "opus", "haiku"];
+// 公式 Claude Code が `--model` / `/model` で受け付けるエイリアス一覧と
+// 同一に保つ（CLI v2.1.170 のエイリアス表 + `default` で確認）。
+// エイリアスは CLI が常に最新バージョンへ解決し（例: opus → 4.8）、
+// `default` はアカウント既定（プランに応じて解決）、`best` は Fable 5
+// が使えればそれ、なければ最新 Opus。`[1m]` は 1M コンテキスト版。
+// バージョンを固定したい場合はユーザーが `/model claude-opus-4-8` の
+// ように具体的なフル ID を入力すればよい（任意のバージョンを指定可能）。
+// CLI 側に新モデルが増えたらこの配列を更新する（KEEP IN SYNC）。
+export const MODEL_PRESETS: string[] = [
+	"default",
+	"sonnet",
+	"opus",
+	"haiku",
+	"fable",
+	"best",
+	"sonnet[1m]",
+	"opus[1m]",
+	"fable[1m]",
+	"opusplan",
+];
 
 /**
  * `claude` CLI が受け付けるパーミッションモード。SDK の PermissionMode から
@@ -112,6 +147,8 @@ export const ATTACHMENT_SAVE_LOCATIONS: AttachmentSaveLocation[] = [
 ];
 
 export interface ClaudePanelSettings {
+	/** 設定スキーマの世代。SETTINGS_SCHEMA_VERSION を参照。 */
+	settingsSchemaVersion: number;
 	claudePath: string;
 	model: string;
 	thinkingMode: ThinkingMode;
@@ -187,9 +224,11 @@ export const COMPOSER_BOTTOM_PADDING_MIN = 0;
 export const COMPOSER_BOTTOM_PADDING_MAX = 80;
 
 export const DEFAULT_SETTINGS: ClaudePanelSettings = {
+	settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
 	claudePath: "",
 	model: "sonnet",
-	thinkingMode: "off",
+	// 公式 Claude Code の既定に合わせて思考はオン。
+	thinkingMode: "on",
 	effortLevel: "auto",
 	// 既定は ON（従来動作を維持）。アクティブファイル／フォルダは
 	// 含めた状態でパネルが開く。

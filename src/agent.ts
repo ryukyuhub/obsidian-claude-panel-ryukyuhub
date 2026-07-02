@@ -157,6 +157,30 @@ function getEmptyMcpConfigPath(): string {
 	return p;
 }
 
+// 思考トグル用の --settings ファイル。inline JSON でも渡せるが、Windows の
+// .cmd 経由（shell: true）では引用符が壊れるため、--mcp-config と同じ
+// 一時ファイル方式に統一する。
+const _thinkingSettingsPaths: Partial<Record<"on" | "off", string>> = {};
+function getThinkingSettingsPath(enabled: boolean): string {
+	const key = enabled ? "on" : "off";
+	const cached = _thinkingSettingsPaths[key];
+	if (cached && fs.existsSync(cached)) {
+		return cached;
+	}
+	const p = path.join(os.tmpdir(), `claude-panel-thinking-${key}.json`);
+	try {
+		fs.writeFileSync(
+			p,
+			`{"alwaysThinkingEnabled":${enabled ? "true" : "false"}}\n`,
+			"utf8"
+		);
+	} catch {
+		/* noop — エラーは spawn 側で表面化させる */
+	}
+	_thinkingSettingsPaths[key] = p;
+	return p;
+}
+
 interface ContentBlock {
 	type: string;
 	text?: string;
@@ -559,6 +583,16 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		if (settings.effortLevel && settings.effortLevel !== "auto") {
 			cliArgs.push("--effort", settings.effortLevel);
 		}
+		// 公式 Claude Code の思考トグル（Alt+T が書く alwaysThinkingEnabled）を
+		// セッション単位の --settings で注入する。CLI 仕様では false のときだけ
+		// 思考が無効化され、true / 未設定は対応モデルで自動的に有効。明示的に
+		// 渡すのは、~/.claude/settings.json 側のトグル状態に関わらずパネルの
+		// 表示と実際の挙動を一致させるため。Fable 5 は常時オンで off は効かない。
+		// ultrathink のキーワード前置は composer 側が担う。
+		cliArgs.push(
+			"--settings",
+			getThinkingSettingsPath(settings.thinkingMode !== "off")
+		);
 		if (settings.disableMcpServers) {
 			cliArgs.push("--strict-mcp-config", "--mcp-config", getEmptyMcpConfigPath());
 		}

@@ -222,7 +222,7 @@ export class ChatRuntime {
 				parts: [{ type: "text", text: composed.body }],
 				inputText: userText,
 				thinkingMode:
-					composed.thinkingMode !== "off"
+					composed.thinkingMode === "ultrathink"
 						? composed.thinkingMode
 						: undefined,
 				effortLevel: composed.effortLevel,
@@ -454,7 +454,7 @@ export class ChatRuntime {
 					parts: [{ type: "text", text: composed.body }],
 					inputText: userText,
 					thinkingMode:
-						composed.thinkingMode !== "off"
+						composed.thinkingMode === "ultrathink"
 							? composed.thinkingMode
 							: undefined,
 					effortLevel: composed.effortLevel,

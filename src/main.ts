@@ -3,6 +3,9 @@ import {
 	ClaudePanelSettings,
 	DEFAULT_SETTINGS,
 	ClaudePanelSettingTab,
+	THINKING_MODES,
+	EFFORT_LEVELS,
+	SETTINGS_SCHEMA_VERSION,
 } from "./settings";
 import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
 import { UsageHistory } from "./usage-history";
@@ -222,7 +225,11 @@ export default class ClaudePanelPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		const stored = (await this.loadData()) as Partial<ClaudePanelSettings> | null;
+		// スキーマ世代は Object.assign 前に読む（assign 後は既定値で上書き
+		// されるため、旧データかどうかの判定ができなくなる）。
+		const storedVersion = stored?.settingsSchemaVersion ?? 1;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
+		this.settings.settingsSchemaVersion = SETTINGS_SCHEMA_VERSION;
 		// 旧プリセット（バージョン固定 ID）をエイリアスへ移行する。CLI に最新を
 		// 解決させ「表示が古いバージョンのまま」問題を解消するため。意図的な
 		// ピン留めを壊さないよう、旧プリセットの 3 文字列だけを対象にする。
@@ -232,8 +239,35 @@ export default class ClaudePanelPlugin extends Plugin {
 			"claude-haiku-4-5": "haiku",
 		};
 		const migrated = LEGACY_PRESET_MIGRATION[this.settings.model];
+		let dirty =
+			Boolean(migrated) ||
+			(stored !== null && storedVersion < SETTINGS_SCHEMA_VERSION);
 		if (migrated) {
 			this.settings.model = migrated;
+		}
+		if (storedVersion < 2) {
+			// v1 の思考モードはキーワード前置方式（off / think / think hard /
+			// think harder / ultrathink）。think 系キーワードは 2026-01 に CLI
+			// 側で廃止されて平文になり、v1 の off も「キーワードを付けない」
+			// だけで思考自体は止めていなかった（CLI 既定 = 思考オン）。
+			// v2 では off が本当に思考を無効化する（--settings で
+			// alwaysThinkingEnabled: false を注入）ため、挙動を保存するには
+			// ultrathink 以外のすべての旧値を on へ移行するのが正しい。
+			if (this.settings.thinkingMode !== "ultrathink") {
+				this.settings.thinkingMode = "on";
+			}
+		}
+		// 選択肢の増減（effort: `xhigh` 追加など）に対する不正値ガード。
+		// ディスク上の値がリストから外れている場合は既定値へ戻す。
+		if (!THINKING_MODES.includes(this.settings.thinkingMode)) {
+			this.settings.thinkingMode = DEFAULT_SETTINGS.thinkingMode;
+			dirty = true;
+		}
+		if (!EFFORT_LEVELS.includes(this.settings.effortLevel)) {
+			this.settings.effortLevel = DEFAULT_SETTINGS.effortLevel;
+			dirty = true;
+		}
+		if (dirty) {
 			// 移行結果を即座に永続化し、毎起動での再実行とディスク上の古い値を避ける。
 			await this.saveSettings();
 		}

@@ -17,6 +17,7 @@ import {
 	formatModelLabel,
 	permissionModeLabel,
 	permissionModeTooltip,
+	thinkingModeLabel,
 	type EffortLevel,
 	type PermissionMode,
 	type ThinkingMode,
@@ -578,9 +579,15 @@ export class ClaudePanelView extends ItemView {
 		});
 		const thinkSelect = row.createEl("select", {
 			cls: "claude-panel-control-select",
+			attr: {
+				title: t("view.thinkingTooltip"),
+			},
 		});
 		for (const mode of THINKING_MODES) {
-			thinkSelect.createEl("option", { value: mode, text: mode });
+			thinkSelect.createEl("option", {
+				value: mode,
+				text: thinkingModeLabel(mode),
+			});
 		}
 		thinkSelect.value = this.plugin.settings.thinkingMode;
 		thinkSelect.onchange = async () => {

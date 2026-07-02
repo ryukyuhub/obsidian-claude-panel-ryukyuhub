@@ -440,9 +440,11 @@ export class Composer {
 			}
 		}
 
+		// キーワード前置は ultrathink のみ（公式で唯一残る思考キーワード）。
+		// on / off は agent.ts が --settings（alwaysThinkingEnabled）で制御する。
 		const thinkPrefix =
-			!isSlash && this.plugin.settings.thinkingMode !== "off"
-				? `${this.plugin.settings.thinkingMode}: `
+			!isSlash && this.plugin.settings.thinkingMode === "ultrathink"
+				? "ultrathink: "
 				: "";
 
 		const sel =

@@ -19,6 +19,10 @@ export const en: Messages = {
 		flash: "Flash only",
 		both: "Sound and flash",
 	},
+	thinking: {
+		on: "On",
+		off: "Off",
+	},
 	permission: {
 		default: "Ask before edits",
 		acceptEdits: "Auto-approve edits",
@@ -191,8 +195,10 @@ export const en: Messages = {
 		controlLabelThinking: "Thinking",
 		controlLabelEffort: "Effort",
 		controlLabelPermission: "Approval",
+		thinkingTooltip:
+			"Thinking (extended thinking). On/off matches the official Claude Code thinking toggle (alwaysThinkingEnabled); ultrathink additionally prefixes each turn with the keyword to request the deepest reasoning. Fable 5 always thinks and cannot be turned off.",
 		effortTooltip:
-			"Reasoning depth for supported models (Sonnet 4.6 / Opus 4.7, etc.). 'auto' defers to the CLI / ~/.claude/settings.json default. Haiku does not support effort and the value is ignored.",
+			"Reasoning depth (same low–max options as the official /effort; xhigh needs a capable model such as Opus 4.7+, Fable 5 or Sonnet 5). 'auto' defers to the CLI / ~/.claude/settings.json default. Haiku does not support effort and the value is ignored.",
 		modelChangedNotice: (label: string) => `Model: ${label}`,
 		includeStateIncluded: "include",
 		includeStateExcluded: "exclude",
@@ -261,10 +267,17 @@ export const en: Messages = {
 			desc:
 				"Claude model used for new messages. Can also be changed from the dropdown at the bottom of the chat panel.",
 		},
+		thinking: {
+			name: "Thinking (extended thinking)",
+			desc:
+				"Initial thinking mode for new messages. Can also be changed from the dropdown at the bottom of the chat panel. " +
+				"On/off matches the official Claude Code thinking toggle (alwaysThinkingEnabled); ultrathink additionally prefixes each turn with the keyword to request the deepest reasoning. " +
+				"Fable 5 always thinks and cannot be turned off.",
+		},
 		effort: {
 			name: "Effort (reasoning depth)",
 			desc:
-				"Reasoning depth for supported models (Sonnet 4.6 / Opus 4.6, etc.). `auto` defers to the CLI / `~/.claude/settings.json` default. " +
+				"Reasoning depth. Same options as the official Claude Code `/effort` (`xhigh` needs a capable model such as Opus 4.7+, Fable 5 or Sonnet 5). `auto` defers to the CLI / `~/.claude/settings.json` default. " +
 				"Haiku does not support effort, so the value is ignored.",
 		},
 		includeActiveDefault: {

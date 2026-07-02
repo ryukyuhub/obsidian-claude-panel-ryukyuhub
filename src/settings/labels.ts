@@ -1,4 +1,4 @@
-import type { NotifyOnComplete, PermissionMode } from "./types";
+import type { NotifyOnComplete, PermissionMode, ThinkingMode } from "./types";
 import { t } from "../i18n";
 
 /**
@@ -31,6 +31,18 @@ export function permissionModeLabel(m: PermissionMode): string {
 			return t("permission.bypassPermissions");
 		case "plan":
 			return t("permission.plan");
+	}
+}
+
+export function thinkingModeLabel(m: ThinkingMode): string {
+	switch (m) {
+		case "on":
+			return t("thinking.on");
+		case "off":
+			return t("thinking.off");
+		case "ultrathink":
+			// 公式のプロンプトキーワードそのものなので翻訳しない。
+			return "ultrathink";
 	}
 }
 

@@ -20,6 +20,10 @@ export const ja = {
 		flash: "フラッシュのみ",
 		both: "音とフラッシュ",
 	},
+	thinking: {
+		on: "オン",
+		off: "オフ",
+	},
 	permission: {
 		default: "編集前に確認",
 		acceptEdits: "編集を自動承認",
@@ -191,8 +195,10 @@ export const ja = {
 		controlLabelThinking: "思考",
 		controlLabelEffort: "Effort",
 		controlLabelPermission: "承認",
+		thinkingTooltip:
+			"思考（拡張思考）。オン/オフは公式 Claude Code の思考トグル（alwaysThinkingEnabled）と同じで、ultrathink はさらに各ターンの先頭にキーワードを付けて最深の推論を要求します。Fable 5 は常時オンでオフにできません。",
 		effortTooltip:
-			"対応モデル（Sonnet 4.6 / Opus 4.7 など）の推論密度。auto は CLI / ~/.claude/settings.json の既定値に委譲。Haiku は非対応のため指定は無視されます。",
+			"推論密度（公式 /effort と同じ low〜max。xhigh は Opus 4.7 以降 / Fable 5 / Sonnet 5 など対応モデルのみ）。auto は CLI / ~/.claude/settings.json の既定値に委譲。Haiku は非対応のため指定は無視されます。",
 		modelChangedNotice: (label: string) => `モデル: ${label}`,
 		includeStateIncluded: "含める",
 		includeStateExcluded: "除外",
@@ -261,10 +267,17 @@ export const ja = {
 			desc:
 				"新規メッセージで使う Claude モデル。チャットパネル下部のドロップダウンからも変更できます。",
 		},
+		thinking: {
+			name: "思考（拡張思考）",
+			desc:
+				"新規メッセージで使う思考モードの初期値。チャットパネル下部のドロップダウンからも変更できます。" +
+				"オン/オフは公式 Claude Code の思考トグル（alwaysThinkingEnabled）に対応し、ultrathink は各ターンの先頭にキーワードを付けて最深の推論を要求します。" +
+				"Fable 5 は常時オンでオフにできません。",
+		},
 		effort: {
 			name: "Effort（推論密度）",
 			desc:
-				"対応モデル（Sonnet 4.6 / Opus 4.6 など）の推論密度。`auto` は CLI/`~/.claude/settings.json` の既定値に委譲します。" +
+				"推論密度。公式 Claude Code の `/effort` と同じ選択肢（`xhigh` は Opus 4.7 以降 / Fable 5 / Sonnet 5 など対応モデルのみ）。`auto` は CLI/`~/.claude/settings.json` の既定値に委譲します。" +
 				"Haiku は Effort 非対応のため、指定しても無視されます。",
 		},
 		includeActiveDefault: {

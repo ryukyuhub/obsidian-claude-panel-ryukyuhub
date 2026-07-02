@@ -18,17 +18,20 @@ import {
 	NOTIFY_VOLUME_MAX,
 	NOTIFY_VOLUME_MIN,
 	PERMISSION_MODES,
+	THINKING_MODES,
 	UI_LANGUAGES,
 	type AttachmentSaveLocation,
 	type EffortLevel,
 	type NotifyOnComplete,
 	type PermissionMode,
+	type ThinkingMode,
 	type UiLanguage,
 } from "./types";
 import {
 	formatModelLabel,
 	notifyOnCompleteLabel,
 	permissionModeLabel,
+	thinkingModeLabel,
 } from "./labels";
 import {
 	VaultAudioFileSuggestModal,
@@ -145,6 +148,20 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				dropdown.setValue(current);
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.model = value;
+					await this.plugin.saveSettings();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(t("settings.thinking.name"))
+			.setDesc(t("settings.thinking.desc"))
+			.addDropdown((dropdown) => {
+				for (const mode of THINKING_MODES) {
+					dropdown.addOption(mode, thinkingModeLabel(mode));
+				}
+				dropdown.setValue(this.plugin.settings.thinkingMode);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.thinkingMode = value as ThinkingMode;
 					await this.plugin.saveSettings();
 				});
 			});

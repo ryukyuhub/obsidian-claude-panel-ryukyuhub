@@ -6,6 +6,7 @@ import {
 	MODEL_PRESETS,
 	THINKING_MODES,
 	formatModelLabel,
+	thinkingModeLabel,
 	type ThinkingMode,
 } from "./settings";
 import { listMcpServers, runClaudeSubcommand } from "./agent";
@@ -337,7 +338,9 @@ function handleThinkCommand(ctx: SlashContext, arg: string): void {
 			ctx.plugin.settings.thinkingMode = arg as ThinkingMode;
 			void ctx.plugin.saveSettings();
 			ctx.refreshControls();
-			ctx.appendSystemMessage(t("slash.think.set", arg));
+			ctx.appendSystemMessage(
+				t("slash.think.set", thinkingModeLabel(arg as ThinkingMode))
+			);
 		} else {
 			const valid = THINKING_MODES.map((v) => `\`${v}\``).join(", ");
 			ctx.appendSystemMessage(t("slash.think.unknown", arg, valid));
@@ -347,13 +350,18 @@ function handleThinkCommand(ctx: SlashContext, arg: string): void {
 	ctx.appendInteractive((c) => {
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: t("slash.think.current", ctx.plugin.settings.thinkingMode),
+			text: t(
+				"slash.think.current",
+				thinkingModeLabel(ctx.plugin.settings.thinkingMode)
+			),
 		});
 		const choices = c.createDiv({ cls: "claude-panel-sys-choices" });
 		for (const mode of THINKING_MODES) {
 			const btn = choices.createEl("button", {
 				cls: "claude-panel-sys-choice",
-				text: mode,
+				text: thinkingModeLabel(mode),
+				// /think <値> で直接指定するときの生の値をホバーで示す。
+				attr: { title: mode },
 			});
 			if (mode === ctx.plugin.settings.thinkingMode)
 				btn.addClass("is-current");
@@ -361,7 +369,9 @@ function handleThinkCommand(ctx: SlashContext, arg: string): void {
 				ctx.plugin.settings.thinkingMode = mode;
 				await ctx.plugin.saveSettings();
 				ctx.refreshControls();
-				ctx.appendSystemMessage(t("slash.think.set", mode));
+				ctx.appendSystemMessage(
+					t("slash.think.set", thinkingModeLabel(mode))
+				);
 			};
 		}
 	});
