@@ -265,7 +265,10 @@ export const en: Messages = {
 		model: {
 			name: "Model",
 			desc:
-				"Claude model used for new messages. Can also be changed from the dropdown at the bottom of the chat panel.",
+				"Claude model used for new messages. Can also be changed from the dropdown at the bottom of the chat panel. " +
+				"Aliases resolve to the latest version (default = your account default, best = Fable 5 if available and otherwise the latest Opus, opusplan = Opus for planning and Sonnet for execution). " +
+				"The [1m] variants run the same model with a 1M-token context window — about 5× more headroom before auto-compaction than the standard 200K, but responses get heavier and rate limits are consumed faster. " +
+				"Some plans don't support the 1M variants; switch back to the standard alias if the CLI errors.",
 		},
 		thinking: {
 			name: "Thinking (extended thinking)",
