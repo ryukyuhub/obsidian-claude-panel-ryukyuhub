@@ -128,6 +128,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.permissionMode = value as PermissionMode;
 					await this.plugin.saveSettings();
+					this.plugin.getView()?.refreshControls();
 				});
 			});
 
@@ -149,6 +150,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.model = value;
 					await this.plugin.saveSettings();
+					this.plugin.getView()?.refreshControls();
 				});
 			});
 
@@ -163,6 +165,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.thinkingMode = value as ThinkingMode;
 					await this.plugin.saveSettings();
+					this.plugin.getView()?.refreshControls();
 				});
 			});
 
@@ -177,6 +180,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.effortLevel = value as EffortLevel;
 					await this.plugin.saveSettings();
+					this.plugin.getView()?.refreshControls();
 				});
 			});
 

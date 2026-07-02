@@ -66,10 +66,11 @@ export class ClaudePanelView extends ItemView {
 	// 初回（セッション復元含む）の描画だけは最下部へスクロールして最新を見せる。
 	private hasRenderedMessages = false;
 	private inputEl!: HTMLTextAreaElement;
-	// 一部の select 要素は refreshControls で外部設定変更を反映するため
-	// 保持する。effort は現状 sync 対象外なので参照を持たない。
+	// select 要素は refreshControls で外部設定変更（設定タブ・スラッシュ
+	// コマンド）を反映するため保持する。
 	private modelSelect: HTMLSelectElement | null = null;
 	private thinkSelect: HTMLSelectElement | null = null;
+	private effortSelect: HTMLSelectElement | null = null;
 	private permSelect: HTMLSelectElement | null = null;
 	private sendBtn!: HTMLButtonElement;
 
@@ -614,6 +615,7 @@ export class ClaudePanelView extends ItemView {
 			this.plugin.settings.effortLevel = effortSelect.value as EffortLevel;
 			await this.plugin.saveSettings();
 		};
+		this.effortSelect = effortSelect;
 
 		row.createSpan({
 			cls: "claude-panel-control-label",
@@ -648,7 +650,10 @@ export class ClaudePanelView extends ItemView {
 		this.permSelect = permSelect;
 	}
 
-	private refreshControls(): void {
+	/** パネルのドロップダウン表示を現在の設定値へ同期する。スラッシュ
+	 *  コマンドのほか、設定タブでの変更時にも呼ばれる（表示だけが古い
+	 *  まま残ると、実際に送信される値とズレて見える）。 */
+	refreshControls(): void {
 		if (this.modelSelect) {
 			const m = this.plugin.settings.model;
 			const has = Array.from(this.modelSelect.options).some(
@@ -664,6 +669,9 @@ export class ClaudePanelView extends ItemView {
 		}
 		if (this.thinkSelect) {
 			this.thinkSelect.value = this.plugin.settings.thinkingMode;
+		}
+		if (this.effortSelect) {
+			this.effortSelect.value = this.plugin.settings.effortLevel;
 		}
 		if (this.permSelect) {
 			this.permSelect.value = this.plugin.settings.permissionMode;
