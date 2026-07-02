@@ -493,6 +493,13 @@ export class Composer {
 				? this.plugin.settings.effortLevel
 				: undefined;
 
+		// model は effort と違い「未指定」を表す値がない（`default` も
+		// アカウント既定への明示的な指名）ため、スラッシュコマンド以外は
+		// 常にバッジ表示する。
+		const model: string | undefined = !isSlash
+			? this.plugin.settings.model
+			: undefined;
+
 		return {
 			mentions: mentionLabels,
 			selectionRef,
@@ -500,6 +507,7 @@ export class Composer {
 			fullPrompt,
 			thinkingMode,
 			effortLevel,
+			model,
 		};
 	}
 

@@ -852,10 +852,12 @@
 	margin-bottom: 6px;
 }
 
-/* Thinking / Effort モードバッジ: ユーザーメッセージの役割ラベルの横に
-   控えめに表示する。プロンプト本文に混ぜるよりも視覚ノイズが少なく、
-   どの送信でどの強度が使われたかが一目で分かる。共通の形状で、色だけ
-   分けて意味を区別する（thinking = アクセント色、effort = ニュートラル）。 */
+/* Model / Thinking / Effort モードバッジ: ユーザーメッセージの役割ラベルの
+   横に控えめに表示する。プロンプト本文に混ぜるよりも視覚ノイズが少なく、
+   どの送信でどのモデル・強度が使われたかが一目で分かる。共通の形状で、
+   色だけ分けて意味を区別する（thinking = アクセント色、model / effort =
+   ニュートラル）。 */
+.claude-panel-model-badge,
 .claude-panel-think-badge,
 .claude-panel-effort-badge {
 	display: inline-flex;
@@ -881,6 +883,7 @@
 		color-mix(in srgb, var(--interactive-accent) 28%, transparent);
 }
 
+.claude-panel-model-badge,
 .claude-panel-effort-badge {
 	color: var(--text-muted);
 	background: color-mix(

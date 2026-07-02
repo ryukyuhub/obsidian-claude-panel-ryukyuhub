@@ -55,6 +55,9 @@ export interface ComposedMessage {
 	/** ユーザーメッセージのバッジ表示用。`auto` やスラッシュコマンドでは
 	 *  undefined にしておく。 */
 	effortLevel?: EffortLevel;
+	/** ユーザーメッセージのバッジ表示用。送信時に選択されていたモデル。
+	 *  スラッシュコマンドでは undefined にしておく。 */
+	model?: string;
 }
 
 /**
@@ -226,6 +229,7 @@ export class ChatRuntime {
 						? composed.thinkingMode
 						: undefined,
 				effortLevel: composed.effortLevel,
+				model: composed.model,
 			},
 			{
 				id: nextMsgId(),
@@ -458,6 +462,7 @@ export class ChatRuntime {
 							? composed.thinkingMode
 							: undefined,
 					effortLevel: composed.effortLevel,
+					model: composed.model,
 				},
 				{
 					id: newAssistantId,

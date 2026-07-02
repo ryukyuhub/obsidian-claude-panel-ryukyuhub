@@ -74,6 +74,13 @@ export function renderMessage(
 		cls: "claude-panel-msg-role-label",
 		text: roleLabel(msg.role),
 	});
+	if (msg.role === "user" && msg.model) {
+		roleRow.createSpan({
+			cls: "claude-panel-model-badge",
+			text: formatModelLabel(msg.model),
+			attr: { title: `Model: ${msg.model}` },
+		});
+	}
 	if (msg.role === "user" && msg.thinkingMode && msg.thinkingMode !== "off") {
 		roleRow.createSpan({
 			cls: "claude-panel-think-badge",
@@ -1095,6 +1102,12 @@ function formatToolArg(name: string, input: unknown): string {
 	if (typeof input !== "object" || input === null) return "";
 	const i = input as Record<string, unknown>;
 
+	// Skill の入力は { skill, args? } で汎用キーに合致しないため個別に拾う。
+	// スラッシュコマンド由来なので "/name args" 表記が一番伝わる。
+	if (typeof i.skill === "string") {
+		const args = typeof i.args === "string" && i.args.length > 0 ? ` ${i.args}` : "";
+		return truncate(`/${i.skill}${args}`, 50);
+	}
 	if (typeof i.file_path === "string") return basename(i.file_path);
 	if (typeof i.path === "string") return basename(i.path);
 	if (typeof i.notebook_path === "string") return basename(i.notebook_path);
