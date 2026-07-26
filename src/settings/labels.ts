@@ -73,17 +73,22 @@ export function permissionModeTooltip(m: PermissionMode): string {
  * そのまま保持される。
  *   claude-sonnet-4-5            → "sonnet 4.5"
  *   claude-haiku-4-5-20251001    → "haiku 4.5 (20251001)"
- *   gpt-4 / unknown              → そのまま返す
+ *   claude-opus-5[1m]            → "opus 5 [1m]"
+ *   opus[1m] / gpt-4 / unknown   → そのまま返す
  */
 export function formatModelLabel(id: string): string {
-	const stripped = id.startsWith("claude-")
-		? id.slice("claude-".length)
-		: id;
-	const m = stripped.match(/^([a-z]+)-(\d+)-(\d+)(?:-(.+))?$/);
-	if (!m) return stripped;
+	const oneM = id.endsWith("[1m]");
+	const stripped = id
+		.replace(/^claude-/, "")
+		.replace(/\[1m\]$/, "");
+	const m = stripped.match(/^([a-z]+)-(\d+)(?:-(\d+))?(?:-(.+))?$/);
+	if (!m) return oneM ? `${stripped}[1m]` : stripped;
 	const [, family, major, minor, suffix] = m;
-	const version = `${major}.${minor}`;
-	return suffix ? `${family} ${version} (${suffix})` : `${family} ${version}`;
+	const version = minor ? `${major}.${minor}` : major;
+	let label = `${family} ${version}`;
+	if (suffix) label += ` (${suffix})`;
+	if (oneM) label += " [1m]";
+	return label;
 }
 
 /** モデルドロップダウンの 1 選択肢。`value` は `--model` に渡す値。 */

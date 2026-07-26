@@ -6,6 +6,7 @@ import {
 	THINKING_MODES,
 	EFFORT_LEVELS,
 	SETTINGS_SCHEMA_VERSION,
+	modelLabelFor,
 	type DiscoveredModel,
 } from "./settings";
 import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
@@ -18,7 +19,7 @@ import {
 import type { RateLimitInfo } from "./agent";
 import type { MessageUsage } from "./chat-message";
 import { t, setLanguageOverride } from "./i18n";
-import { setRoleNames } from "./chat-message-render";
+import { setRoleNames, setModelLabelResolver } from "./chat-message-render";
 
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
@@ -47,6 +48,10 @@ export default class ClaudePanelPlugin extends Plugin {
 		// ラベルが Obsidian 言語で固定されてしまう。
 		setLanguageOverride(this.settings.language);
 		setRoleNames(this.settings.userName, this.settings.assistantName);
+		// モデルバッジをドロップダウンと同じバージョン付きラベルにする。
+		// settings を遅延参照するので、途中でモデル一覧が収穫されても
+		// 次の再レンダーから反映される。
+		setModelLabelResolver((id) => modelLabelFor(this.settings, id));
 		await this.cleanupLegacyChatState();
 		this.usageHistory = new UsageHistory();
 		await this.usageHistory.load();

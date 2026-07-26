@@ -36,6 +36,18 @@ export function setRoleNames(userName: string, assistantName: string): void {
 	customAssistantName = assistantName.trim();
 }
 
+// モデルバッジのラベル解決関数。ドロップダウンと同じバージョン付きラベル
+// （modelLabelFor）を出すには settings（収穫済みモデル一覧）が要るが、
+// renderMessage の引数を増やさないよう roleNames と同じくモジュールレベルに
+// 保持する。main.ts が設定を遅延参照するクロージャを登録するので、途中で
+// 一覧が収穫されても再レンダー時に自動で反映される。
+let modelLabelResolver: (id: string) => string = formatModelLabel;
+
+/** モデル ID → 表示ラベルの解決関数を差し替える。 */
+export function setModelLabelResolver(fn: (id: string) => string): void {
+	modelLabelResolver = fn;
+}
+
 /** ロールに対応する表示名。カスタム名が未設定なら i18n の既定を使う。 */
 function roleLabel(role: ChatMessage["role"]): string {
 	if (role === "user") return customUserName || t("chat.roleUser");
@@ -77,7 +89,7 @@ export function renderMessage(
 	if (msg.role === "user" && msg.model) {
 		roleRow.createSpan({
 			cls: "claude-panel-model-badge",
-			text: formatModelLabel(msg.model),
+			text: modelLabelResolver(msg.model),
 			attr: { title: `Model: ${msg.model}` },
 		});
 	}
