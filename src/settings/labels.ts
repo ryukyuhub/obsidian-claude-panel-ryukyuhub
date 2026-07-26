@@ -1,4 +1,10 @@
-import type { NotifyOnComplete, PermissionMode, ThinkingMode } from "./types";
+import type {
+	ClaudePanelSettings,
+	NotifyOnComplete,
+	PermissionMode,
+	ThinkingMode,
+} from "./types";
+import { MODEL_PRESETS } from "./types";
 import { t } from "../i18n";
 
 /**
@@ -78,4 +84,95 @@ export function formatModelLabel(id: string): string {
 	const [, family, major, minor, suffix] = m;
 	const version = `${major}.${minor}`;
 	return suffix ? `${family} ${version} (${suffix})` : `${family} ${version}`;
+}
+
+/** モデルドロップダウンの 1 選択肢。`value` は `--model` に渡す値。 */
+export interface ModelChoice {
+	value: string;
+	label: string;
+	/** ホバー時のツールチップ用（CLI が返す 1 行説明）。 */
+	description?: string;
+}
+
+/**
+ * 解決先の正規 ID からモデルファミリとバージョン番号を取り出す。
+ *   claude-opus-5[1m]          → { family: "opus",  version: "5" }
+ *   claude-haiku-4-5-20251001  → { family: "haiku", version: "4.5" }
+ *   claude-sonnet-4-6          → { family: "sonnet", version: "4.6" }
+ * 形式が読めない場合は null（ラベルへのバージョン付与を諦める）。
+ */
+function parseResolvedModel(
+	resolved: string
+): { family: string; version: string } | null {
+	const stripped = resolved
+		.replace(/^claude-/, "")
+		.replace(/\[1m\]$/, "");
+	// 末尾の日付スナップショット（8 桁）は表示から省く。
+	const m = stripped.match(/^([a-z]+)-(\d+)(?:-(\d+))?(?:-\d{8})?$/);
+	if (!m) return null;
+	const [, family, major, minor] = m;
+	return { family, version: minor ? `${major}.${minor}` : major };
+}
+
+/**
+ * 収穫済みモデルの表示ラベル。CLI の displayName（"Opus" 等）はバージョンを
+ * 含まないため、resolvedModel から取り出したバージョンを合成する。
+ *   Opus (1M context)     + claude-opus-5[1m] → "Opus 5 (1M context)"
+ *   Fable                 + claude-fable-5    → "Fable 5"
+ *   Default (recommended) + claude-opus-5[1m] → "Default (recommended) · Opus 5"
+ * displayName がファミリ名で始まるときはその直後へ挿入し、そうでないとき
+ * （Default 等）は解決先のファミリ名ごと接尾辞にする。resolvedModel が
+ * 無い／読めないときは displayName をそのまま返す。
+ */
+function discoveredModelLabel(m: {
+	displayName: string;
+	resolvedModel?: string;
+}): string {
+	const parsed = m.resolvedModel
+		? parseResolvedModel(m.resolvedModel)
+		: null;
+	if (!parsed) return m.displayName;
+	const { family, version } = parsed;
+	if (m.displayName.toLowerCase().startsWith(family)) {
+		return (
+			m.displayName.slice(0, family.length) +
+			` ${version}` +
+			m.displayName.slice(family.length)
+		);
+	}
+	const familyLabel = family.charAt(0).toUpperCase() + family.slice(1);
+	return `${m.displayName} · ${familyLabel} ${version}`;
+}
+
+/**
+ * モデルドロップダウン（設定タブ・パネル・`/model`）の選択肢を返す。
+ * ラン中の initialize ハンドシェイクで CLI から収穫した一覧（公式 /model
+ * ピッカーと同一・プラン解決済み）があればそれを使い、未収穫（初回起動や
+ * 旧 CLI）なら MODEL_PRESETS にフォールバックする。これで CLI 側のモデル
+ * 増減にプラグインのリリースを待たず追従できる。
+ */
+export function modelChoices(settings: ClaudePanelSettings): ModelChoice[] {
+	const discovered = settings.discoveredModels;
+	if (discovered && discovered.length > 0) {
+		return discovered.map((m) => ({
+			value: m.value,
+			label: discoveredModelLabel(m),
+			description: m.description,
+		}));
+	}
+	return MODEL_PRESETS.map((m) => ({ value: m, label: formatModelLabel(m) }));
+}
+
+/**
+ * 設定値 `model` の表示ラベル。収穫済み一覧にあればバージョン付き
+ * displayName（例: `claude-fable-5[1m]` → "Fable 5"）、無ければ
+ * formatModelLabel の推測整形にフォールバックする。通知やシステム
+ * メッセージ用。
+ */
+export function modelLabelFor(
+	settings: ClaudePanelSettings,
+	value: string
+): string {
+	const hit = settings.discoveredModels?.find((m) => m.value === value);
+	return hit ? discoveredModelLabel(hit) : formatModelLabel(value);
 }

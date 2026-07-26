@@ -6,6 +6,7 @@ import {
 	THINKING_MODES,
 	EFFORT_LEVELS,
 	SETTINGS_SCHEMA_VERSION,
+	type DiscoveredModel,
 } from "./settings";
 import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
 import { UsageHistory } from "./usage-history";
@@ -267,6 +268,15 @@ export default class ClaudePanelPlugin extends Plugin {
 			this.settings.effortLevel = DEFAULT_SETTINGS.effortLevel;
 			dirty = true;
 		}
+		// 収穫キャッシュの形が壊れている場合（手編集など）は破棄して
+		// MODEL_PRESETS フォールバックへ戻す。次のランで再収穫される。
+		if (
+			this.settings.discoveredModels !== null &&
+			!Array.isArray(this.settings.discoveredModels)
+		) {
+			this.settings.discoveredModels = null;
+			dirty = true;
+		}
 		if (dirty) {
 			// 移行結果を即座に永続化し、毎起動での再実行とディスク上の古い値を避ける。
 			await this.saveSettings();
@@ -276,6 +286,22 @@ export default class ClaudePanelPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	/** ランの initialize ハンドシェイクで収穫したモデル一覧をキャッシュへ
+	 *  反映し、変化があればパネルのドロップダウンを再構築する。空配列は
+	 *  「CLI が一覧を返さない（旧バージョンへのダウングレード等）」の印
+	 *  なのでキャッシュを破棄し、MODEL_PRESETS フォールバックへ戻す。 */
+	updateDiscoveredModels(models: DiscoveredModel[]): void {
+		const next = models.length > 0 ? models : null;
+		if (
+			JSON.stringify(next) === JSON.stringify(this.settings.discoveredModels)
+		) {
+			return;
+		}
+		this.settings.discoveredModels = next;
+		void this.saveSettings();
+		this.getView()?.refreshControls();
 	}
 
 	getView(): ClaudePanelView | null {

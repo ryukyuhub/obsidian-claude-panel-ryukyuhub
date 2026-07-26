@@ -13,7 +13,6 @@ import {
 	EFFORT_LEVELS,
 	FONT_SIZE_MAX,
 	FONT_SIZE_MIN,
-	MODEL_PRESETS,
 	NOTIFY_ON_COMPLETE_OPTIONS,
 	NOTIFY_VOLUME_MAX,
 	NOTIFY_VOLUME_MIN,
@@ -29,6 +28,7 @@ import {
 } from "./types";
 import {
 	formatModelLabel,
+	modelChoices,
 	notifyOnCompleteLabel,
 	permissionModeLabel,
 	thinkingModeLabel,
@@ -136,11 +136,12 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			.setName(t("settings.model.name"))
 			.setDesc(t("settings.model.desc"))
 			.addDropdown((dropdown) => {
-				for (const m of MODEL_PRESETS) {
-					dropdown.addOption(m, formatModelLabel(m));
+				const choices = modelChoices(this.plugin.settings);
+				for (const c of choices) {
+					dropdown.addOption(c.value, c.label);
 				}
 				const current = this.plugin.settings.model;
-				if (current && !MODEL_PRESETS.includes(current)) {
+				if (current && !choices.some((c) => c.value === current)) {
 					dropdown.addOption(
 						current,
 						`${formatModelLabel(current)} (custom)`

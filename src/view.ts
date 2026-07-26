@@ -11,10 +11,11 @@ import { checkClaudeCli } from "./agent";
 import { ChatRuntime } from "./chat-runtime";
 import {
 	EFFORT_LEVELS,
-	MODEL_PRESETS,
 	PERMISSION_MODES,
 	THINKING_MODES,
 	formatModelLabel,
+	modelChoices,
+	modelLabelFor,
 	permissionModeLabel,
 	permissionModeTooltip,
 	thinkingModeLabel,
@@ -332,13 +333,18 @@ export class ClaudePanelView extends ItemView {
 		this.clearConversation();
 	}
 	commandCycleModel(): void {
-		const list = MODEL_PRESETS;
+		const list = modelChoices(this.plugin.settings).map((c) => c.value);
 		const i = list.indexOf(this.plugin.settings.model);
 		const next = list[(i + 1) % list.length];
 		this.plugin.settings.model = next;
 		void this.plugin.saveSettings();
 		if (this.modelSelect) this.modelSelect.value = next;
-		new Notice(t("view.modelChangedNotice", formatModelLabel(next)));
+		new Notice(
+			t(
+				"view.modelChangedNotice",
+				modelLabelFor(this.plugin.settings, next)
+			)
+		);
 	}
 	commandToggleIncludeActive(): void {
 		const include = this.composer.toggleIncludeActive();
@@ -553,21 +559,7 @@ export class ClaudePanelView extends ItemView {
 		const modelSelect = row.createEl("select", {
 			cls: "claude-panel-control-select",
 		});
-		const presets = new Set(MODEL_PRESETS);
-		const currentModel = this.plugin.settings.model;
-		for (const m of MODEL_PRESETS) {
-			modelSelect.createEl("option", {
-				value: m,
-				text: formatModelLabel(m),
-			});
-		}
-		if (currentModel && !presets.has(currentModel)) {
-			modelSelect.createEl("option", {
-				value: currentModel,
-				text: `${formatModelLabel(currentModel)} (custom)`,
-			});
-		}
-		modelSelect.value = currentModel;
+		this.populateModelSelect(modelSelect);
 		modelSelect.onchange = async () => {
 			this.plugin.settings.model = modelSelect.value;
 			await this.plugin.saveSettings();
@@ -653,19 +645,34 @@ export class ClaudePanelView extends ItemView {
 	/** パネルのドロップダウン表示を現在の設定値へ同期する。スラッシュ
 	 *  コマンドのほか、設定タブでの変更時にも呼ばれる（表示だけが古い
 	 *  まま残ると、実際に送信される値とズレて見える）。 */
+	/** モデルセレクトの選択肢を組み立て直す。ラン中の initialize で CLI から
+	 *  収穫した一覧が更新されたときにも呼ばれるため、追記ではなく毎回
+	 *  作り直す（選択肢は数個なのでコストは無視できる）。現在値が一覧に
+	 *  無い場合（手入力のフル ID や CLI から消えたエイリアス）は
+	 *  「(custom)」として温存し、ユーザーの選択を黙って書き換えない。 */
+	private populateModelSelect(select: HTMLSelectElement): void {
+		select.empty();
+		const choices = modelChoices(this.plugin.settings);
+		for (const c of choices) {
+			const opt = select.createEl("option", {
+				value: c.value,
+				text: c.label,
+			});
+			if (c.description) opt.title = c.description;
+		}
+		const current = this.plugin.settings.model;
+		if (current && !choices.some((c) => c.value === current)) {
+			select.createEl("option", {
+				value: current,
+				text: `${formatModelLabel(current)} (custom)`,
+			});
+		}
+		select.value = current;
+	}
+
 	refreshControls(): void {
 		if (this.modelSelect) {
-			const m = this.plugin.settings.model;
-			const has = Array.from(this.modelSelect.options).some(
-				(o) => o.value === m
-			);
-			if (!has) {
-				this.modelSelect.createEl("option", {
-					value: m,
-					text: `${formatModelLabel(m)} (custom)`,
-				});
-			}
-			this.modelSelect.value = m;
+			this.populateModelSelect(this.modelSelect);
 		}
 		if (this.thinkSelect) {
 			this.thinkSelect.value = this.plugin.settings.thinkingMode;

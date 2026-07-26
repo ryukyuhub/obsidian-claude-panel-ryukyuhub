@@ -56,14 +56,15 @@ export const EFFORT_LEVELS: EffortLevel[] = [
 	"max",
 ];
 
-// 公式 Claude Code が `--model` / `/model` で受け付けるエイリアス一覧と
-// 同一に保つ（CLI v2.1.170 のエイリアス表 + `default` で確認）。
-// エイリアスは CLI が常に最新バージョンへ解決し（例: opus → 4.8）、
-// `default` はアカウント既定（プランに応じて解決）、`best` は Fable 5
-// が使えればそれ、なければ最新 Opus。`[1m]` は 1M コンテキスト版。
-// バージョンを固定したい場合はユーザーが `/model claude-opus-4-8` の
-// ように具体的なフル ID を入力すればよい（任意のバージョンを指定可能）。
-// CLI 側に新モデルが増えたらこの配列を更新する（KEEP IN SYNC）。
+// モデル一覧の**フォールバック**。通常はラン中の initialize ハンドシェイク
+// で CLI から収穫した一覧（`discoveredModels`）がドロップダウンを駆動し、
+// この配列は未収穫（初回起動）や models を返さない旧 CLI のときだけ使う。
+// 内容は公式 Claude Code が `--model` / `/model` で受け付けるエイリアス
+// （CLI v2.1.170 のエイリアス表 + `default` で確認）。エイリアスは CLI が
+// 常に最新バージョンへ解決し（例: opus → 4.8）、`default` はアカウント既定、
+// `best` は Fable 5 が使えればそれ、なければ最新 Opus。`[1m]` は 1M
+// コンテキスト版。バージョンを固定したい場合はユーザーが
+// `/model claude-opus-4-8` のように具体的なフル ID を入力すればよい。
 export const MODEL_PRESETS: string[] = [
 	"default",
 	"sonnet",
@@ -76,6 +77,23 @@ export const MODEL_PRESETS: string[] = [
 	"fable[1m]",
 	"opusplan",
 ];
+
+/**
+ * CLI の initialize control_response から収穫したモデル一覧の 1 エントリ。
+ * 公式 Claude Code の `/model` ピッカーと同じ内容で、アカウント／プランに
+ * 応じて解決済み。`value` は `--model` にそのまま渡せる値。CLI のレスポンス
+ * には resolvedModel や supportedEffortLevels 等も含まれるが、永続化する
+ * のはドロップダウン表示に必要な最小限のみ。
+ */
+export interface DiscoveredModel {
+	value: string;
+	displayName: string;
+	description?: string;
+	/** エイリアスの解決先の正規 ID（例 `claude-opus-5[1m]`）。displayName に
+	 *  バージョン番号を付与するために使う（CLI の displayName は "Opus" の
+	 *  ようにバージョンを含まないため）。 */
+	resolvedModel?: string;
+}
 
 /**
  * `claude` CLI が受け付けるパーミッションモード。SDK の PermissionMode から
@@ -151,6 +169,11 @@ export interface ClaudePanelSettings {
 	settingsSchemaVersion: number;
 	claudePath: string;
 	model: string;
+	/** ラン中の initialize ハンドシェイクで CLI から収穫したモデル一覧の
+	 *  キャッシュ。null は未収穫（初回起動）または CLI が一覧を返さない
+	 *  旧バージョンで、MODEL_PRESETS にフォールバックする。CLI 更新で
+	 *  一覧が変われば次のランで自動的に追従する（issue #1）。 */
+	discoveredModels: DiscoveredModel[] | null;
 	thinkingMode: ThinkingMode;
 	effortLevel: EffortLevel;
 	/** チャットパネルを開いた時／会話をクリアした時に、アクティブ
@@ -227,6 +250,7 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
 	claudePath: "",
 	model: "sonnet",
+	discoveredModels: null,
 	// 公式 Claude Code の既定に合わせて思考はオン。
 	thinkingMode: "on",
 	effortLevel: "auto",

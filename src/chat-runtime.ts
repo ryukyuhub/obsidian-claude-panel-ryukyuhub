@@ -307,6 +307,11 @@ export class ChatRuntime {
 					onModel: (model) => {
 						lastRunModel = model;
 					},
+					onModels: (models) => {
+						// initialize レスポンスから収穫したモデル一覧をキャッシュへ。
+						// CLI 更新でモデルが増減しても次のランで自動追従する。
+						this.plugin.updateDiscoveredModels(models);
+					},
 					onUsage: (usage) => {
 						const targetId = this.activeAssistantId ?? assistantMsgId;
 						const msg = this.findMessage(targetId);

@@ -3,9 +3,9 @@ import * as os from "os";
 import * as path from "path";
 import type ClaudePanelPlugin from "./main";
 import {
-	MODEL_PRESETS,
 	THINKING_MODES,
-	formatModelLabel,
+	modelChoices,
+	modelLabelFor,
 	thinkingModeLabel,
 	type ThinkingMode,
 } from "./settings";
@@ -302,31 +302,39 @@ function showHelp(ctx: SlashContext): void {
 }
 
 function handleModelCommand(ctx: SlashContext, arg: string): void {
+	const settings = ctx.plugin.settings;
 	if (arg) {
-		ctx.plugin.settings.model = arg;
+		settings.model = arg;
 		void ctx.plugin.saveSettings();
 		ctx.refreshControls();
-		ctx.appendSystemMessage(t("slash.model.set", formatModelLabel(arg)));
+		ctx.appendSystemMessage(t("slash.model.set", modelLabelFor(settings, arg)));
 		return;
 	}
 	ctx.appendInteractive((c) => {
 		c.createEl("div", {
 			cls: "claude-panel-sys-title",
-			text: t("slash.model.current", formatModelLabel(ctx.plugin.settings.model)),
+			text: t("slash.model.current", modelLabelFor(settings, settings.model)),
 		});
-		const choices = c.createDiv({ cls: "claude-panel-sys-choices" });
-		for (const m of MODEL_PRESETS) {
-			const btn = choices.createEl("button", {
+		const choicesEl = c.createDiv({ cls: "claude-panel-sys-choices" });
+		for (const choice of modelChoices(settings)) {
+			const btn = choicesEl.createEl("button", {
 				cls: "claude-panel-sys-choice",
-				text: formatModelLabel(m),
-				attr: { title: m },
+				text: choice.label,
+				// ホバーで `--model` に渡る実値（+ CLI の 1 行説明）を出す。
+				attr: {
+					title: choice.description
+						? `${choice.value} — ${choice.description}`
+						: choice.value,
+				},
 			});
-			if (m === ctx.plugin.settings.model) btn.addClass("is-current");
+			if (choice.value === settings.model) btn.addClass("is-current");
 			btn.onclick = async () => {
-				ctx.plugin.settings.model = m;
+				settings.model = choice.value;
 				await ctx.plugin.saveSettings();
 				ctx.refreshControls();
-				ctx.appendSystemMessage(t("slash.model.set", formatModelLabel(m)));
+				ctx.appendSystemMessage(
+					t("slash.model.set", modelLabelFor(settings, choice.value))
+				);
 			};
 		}
 	});

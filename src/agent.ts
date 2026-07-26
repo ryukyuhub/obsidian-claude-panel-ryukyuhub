@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import type { ClaudePanelSettings } from "./settings";
+import type { ClaudePanelSettings, DiscoveredModel } from "./settings";
 import { buildEnv, needsShell, resolveClaudePath } from "./cli-resolver";
 import { t } from "./i18n";
 
@@ -41,6 +41,11 @@ interface AgentEvents {
 	 *  （例 `claude-opus-4-8`）。プリセットがエイリアスでも、実際に走った
 	 *  バージョンをフッター表示するために使う。1 ラン中に複数回来うる。 */
 	onModel?: (model: string) => void;
+	/** initialize ハンドシェイクの control_response から収穫した、CLI の
+	 *  `/model` ピッカーと同じモデル一覧。モデルドロップダウンを CLI 更新へ
+	 *  自動追従させるためのキャッシュ更新に使う。models を返さない旧 CLI
+	 *  では空配列で発火する（呼び出し側でキャッシュ破棄の印になる）。 */
+	onModels?: (models: DiscoveredModel[]) => void;
 	/** CLI がツール実行のパーミッションを要求した際に発火する。view 側は
 	 *  最終的に `decide(...)`（allow か deny）を呼ぶ必要がある。判定前に
 	 *  ラン全体がキャンセルされた場合、`decide` は no-op になる。 */
@@ -630,10 +635,12 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		// `--permission-prompt-tool stdio` の配線が確立されず、
 		// can_use_tool リクエストが取りこぼされる。
 		// 成功レスポンスを待つ必要はない（CLI は最初のアシスタントチャンク
-		// 送出前に必ず ack を返してくる）。
+		// 送出前に必ず ack を返してくる）が、レスポンスにはモデル一覧が
+		// 入っているため request_id を控えて onControlResponse で収穫する。
+		const initRequestId = randomRequestId();
 		writeJson({
 			type: "control_request",
-			request_id: randomRequestId(),
+			request_id: initRequestId,
 			request: { subtype: "initialize" },
 		});
 
@@ -731,11 +738,37 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 			);
 		};
 
-		const onControlResponse = (_msg: ControlResponseMessage): void => {
-			// 現状こちらから能動的に control_request を送っていない
-			// （initialize ハンドシェイクなしでも本プラグイン用途では CLI
-			// が動作する）ため、受信する control_response は実質「何もない」
-			// ack で安全に無視できる。
+		const onControlResponse = (msg: ControlResponseMessage): void => {
+			// こちらから送る control_request は initialize と interrupt の
+			// 2 種類。interrupt の ack は無視してよいが、initialize の成功
+			// レスポンスには CLI の `/model` ピッカーと同じモデル一覧
+			// （プラン解決済み・displayName 付き）が入っており、モデル
+			// ドロップダウンを CLI 更新へ自動追従させる材料になるため収穫する。
+			if (msg.response.request_id !== initRequestId) return;
+			if (msg.response.subtype !== "success") return;
+			const raw = msg.response.response?.models;
+			const models: DiscoveredModel[] = Array.isArray(raw)
+				? (raw as Array<Record<string, unknown> | null>)
+						.filter(
+							(m): m is Record<string, unknown> =>
+								!!m &&
+								typeof m.value === "string" &&
+								typeof m.displayName === "string"
+						)
+						.map((m) => ({
+							value: m.value as string,
+							displayName: m.displayName as string,
+							description:
+								typeof m.description === "string"
+									? m.description
+									: undefined,
+							resolvedModel:
+								typeof m.resolvedModel === "string"
+									? m.resolvedModel
+									: undefined,
+						}))
+				: [];
+			events.onModels?.(models);
 		};
 
 		// 呼び出し側の onResult をラップし、最初の result 受信後に stdin を
