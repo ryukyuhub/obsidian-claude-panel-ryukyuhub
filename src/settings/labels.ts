@@ -120,14 +120,17 @@ function parseResolvedModel(
 }
 
 /**
- * 収穫済みモデルの表示ラベル。CLI の displayName（"Opus" 等）はバージョンを
- * 含まないため、resolvedModel から取り出したバージョンを合成する。
+ * 収穫済みモデルの表示ラベル。旧 CLI の displayName（"Opus" 等）はバージョンを
+ * 含まないため、resolvedModel から取り出したバージョンを合成する。一方、新しい
+ * CLI は displayName 自体にバージョンを含めて返す（"Opus 5.5"）ので、その場合は
+ * 二重表示を避けてそのまま使う。
  *   Opus (1M context)     + claude-opus-5[1m] → "Opus 5 (1M context)"
  *   Fable                 + claude-fable-5    → "Fable 5"
+ *   Opus 5.5              + claude-opus-5-5   → "Opus 5.5"（既にバージョン付きなのでそのまま）
  *   Default (recommended) + claude-opus-5[1m] → "Default (recommended) · Opus 5"
- * displayName がファミリ名で始まるときはその直後へ挿入し、そうでないとき
- * （Default 等）は解決先のファミリ名ごと接尾辞にする。resolvedModel が
- * 無い／読めないときは displayName をそのまま返す。
+ * displayName がファミリ名で始まるときは、直後にバージョンが無い場合に限って
+ * その直後へ挿入し、そうでないとき（Default 等）は解決先のファミリ名ごと
+ * 接尾辞にする。resolvedModel が無い／読めないときは displayName をそのまま返す。
  */
 function discoveredModelLabel(m: {
 	displayName: string;
@@ -139,11 +142,11 @@ function discoveredModelLabel(m: {
 	if (!parsed) return m.displayName;
 	const { family, version } = parsed;
 	if (m.displayName.toLowerCase().startsWith(family)) {
-		return (
-			m.displayName.slice(0, family.length) +
-			` ${version}` +
-			m.displayName.slice(family.length)
-		);
+		const rest = m.displayName.slice(family.length);
+		// 新しい CLI は displayName 自体にバージョンを含めて返す（"Opus 5.5"）。
+		// 旧 CLI（"Opus"）のときだけ付与し、二重表示を避ける。
+		if (/^\s*\d/.test(rest)) return m.displayName;
+		return m.displayName.slice(0, family.length) + ` ${version}` + rest;
 	}
 	const familyLabel = family.charAt(0).toUpperCase() + family.slice(1);
 	return `${m.displayName} · ${familyLabel} ${version}`;
