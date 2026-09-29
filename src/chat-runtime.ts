@@ -129,6 +129,10 @@ export class ChatRuntime {
 	// view 側で「要約処理中です」用の Notice を出し分けるために
 	// 独立公開する。`isBusy()` 側でも OR で扱う。
 	private summarizing = false;
+	// auto 要求が CLI に default へ落とされた旨の注記を、最後に出した
+	// モデル。同じモデルで毎ターン注記を出さないための記録で、モデルを
+	// 切り替えたときだけ再度出す。
+	private autoFallbackNotifiedModel: string | null = null;
 
 	constructor(
 		private readonly plugin: ClaudePanelPlugin,
@@ -259,6 +263,9 @@ export class ChatRuntime {
 			sessionId: string | undefined,
 			continueLast: boolean
 		): Promise<{ canceled: boolean; errorMessage: string }> => {
+			// 実行中に設定が変わっても、このランで要求したモードを比較できる
+			// よう起動時点の値を控える（onPermissionMode の照合用）。
+			const requestedMode = this.plugin.settings.permissionMode;
 			let errorMessage = "";
 			// onUsage は 1 回の CLI 実行中に複数回（assistant チャンクごと
 			// + 最終 result）来る。最後の値が cumulative なので、ここに
@@ -306,6 +313,18 @@ export class ChatRuntime {
 					},
 					onModel: (model) => {
 						lastRunModel = model;
+					},
+					onPermissionMode: (mode) => {
+						// auto を要求したのに CLI が default へ落とした（非対応モデル・プラン・設定）
+						// ときだけ注記する。plan への遷移などで誤爆しないよう "default" に限定。
+						if (requestedMode !== "auto" || mode !== "default") return;
+						const model = this.plugin.settings.model;
+						if (this.autoFallbackNotifiedModel === model) return;
+						this.autoFallbackNotifiedModel = model;
+						this.appendStreamingText(
+							this.activeAssistantId ?? assistantMsgId,
+							`_${t("chatRuntime.autoModeUnavailable")}_\n\n`
+						);
 					},
 					onModels: (models) => {
 						// initialize レスポンスから収穫したモデル一覧をキャッシュへ。

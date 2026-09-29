@@ -17,6 +17,7 @@ Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.
 - `claude --resume <session>` を内部で利用して会話コンテキストを維持(Claude Code の自動コンパクションも有効)
 - アカウント＆使用状況パネル — Claude プラン、組織、レートリミット消費(5時間／7日／Sonnet)をリアルタイム表示
 - スラッシュコマンド: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
+- ツール実行の承認モードは 5 種類(編集前に確認 / 編集を自動承認 / オートモード / 全ての確認をスキップ / プランモード)。オートモードは Claude Code の分類器が低リスクな操作を自動で実行し、危険な操作をブロックします。対応モデルとプランが必要で(Haiku は非対応)、使えない場合は「編集前に確認」で動作します。オートモードの判定リクエストは Claude Code から Anthropic に送られ、使用量に数えられる場合があります
 - プロジェクトレベルの MCP サーバー: Vault ルートに `.mcp.json` を置けば自動で読み込まれます
 - UI 言語は Obsidian の設定(English / 日本語)に追従
 

@@ -33,6 +33,8 @@ export function permissionModeLabel(m: PermissionMode): string {
 			return t("permission.default");
 		case "acceptEdits":
 			return t("permission.acceptEdits");
+		case "auto":
+			return t("permission.auto");
 		case "bypassPermissions":
 			return t("permission.bypassPermissions");
 		case "plan":
@@ -59,6 +61,8 @@ export function permissionModeTooltip(m: PermissionMode): string {
 			return t("permission.tooltip.default");
 		case "acceptEdits":
 			return t("permission.tooltip.acceptEdits");
+		case "auto":
+			return t("permission.tooltip.auto");
 		case "bypassPermissions":
 			return t("permission.tooltip.bypassPermissions");
 		case "plan":

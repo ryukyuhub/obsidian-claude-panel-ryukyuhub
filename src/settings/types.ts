@@ -96,24 +96,34 @@ export interface DiscoveredModel {
 }
 
 /**
- * `claude` CLI が受け付けるパーミッションモード。SDK の PermissionMode から
- * ユーザー向けの4種類を露出している。SDK 内部用の `delegate` / `dontAsk`
- * は本プラグインでは扱わない（不要なため意図的に非公開）。
+ * `claude --permission-mode` に渡すモード。CLI 2.1.284 の選択肢は
+ * acceptEdits / auto / bypassPermissions / manual / dontAsk / plan
+ * （`manual` は従来の `default` の表示名で、`default` も受け付ける）。
+ * `dontAsk`（事前許可の無いツールを確認なしで拒否）はパネルに承認 UI が
+ * あるため使い道が薄く、意図的に非公開。同梱 SDK 型にある `delegate` は
+ * CLI の選択肢に無い。
  *
- * - `default`            — リスクのあるツールごとに毎回確認（パネル内で Approve / Deny）。
- * - `acceptEdits`        — ファイル編集は自動許可、それ以外は引き続き確認。
- * - `bypassPermissions`  — 完全自律実行（旧デフォルト。全ての確認をスキップ）。
- * - `plan`               — 読み取り専用のプラン作成。ツール実行はしない。
+ * - `default`           — リスクのあるツールごとに確認（パネル内で Approve / Deny）。
+ * - `acceptEdits`       — ファイル編集は自動許可、それ以外は確認。
+ * - `auto`              — CLI の分類器が審査し、低リスクは実行・危険はブロック。
+ *                         ブロックはパネルを通らず CLI 内で deny され、3 回連続で
+ *                         承認カードに切り替わる。非対応モデル（Haiku 等）・プラン・
+ *                         設定では CLI が黙って `default` に落とす。
+ * - `bypassPermissions` — 完全自律実行（全ての確認をスキップ）。
+ * - `plan`              — 読み取り専用のプラン作成。ツール実行はしない。
  */
 export type PermissionMode =
 	| "default"
 	| "acceptEdits"
+	| "auto"
 	| "bypassPermissions"
 	| "plan";
 
+/** 自律度の低い順（`plan` はツールを実行しないので末尾）。 */
 export const PERMISSION_MODES: PermissionMode[] = [
 	"default",
 	"acceptEdits",
+	"auto",
 	"bypassPermissions",
 	"plan",
 ];

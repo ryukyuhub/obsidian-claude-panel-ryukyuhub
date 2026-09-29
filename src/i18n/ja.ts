@@ -27,11 +27,13 @@ export const ja = {
 	permission: {
 		default: "編集前に確認",
 		acceptEdits: "編集を自動承認",
+		auto: "オートモード",
 		bypassPermissions: "全ての確認をスキップ",
 		plan: "プランモード",
 		tooltip: {
 			default: "ツール（編集・Bash・MCP など）を実行するたびに承認を求めます。",
 			acceptEdits: "ファイル編集は自動承認。Bash や MCP などは引き続き確認します。",
+			auto: "ツールを実行する前に Claude Code がリスクを判定し、低リスクなものは自動で実行、危険なものはブロックします。対応モデル・プランが必要で、使えない場合は『編集前に確認』で動作します。",
 			bypassPermissions: "確認なしで全てのツールを実行します。エージェントを信頼できるときのみ。",
 			plan: "プラン作成のみ。ツールは実行せず、提案だけを返します。",
 		},
@@ -171,6 +173,8 @@ export const ja = {
 		interruptedDefault: "実行を中断しました。",
 		errorPrefix: (msg: string) => `\n\n**エラー:** ${msg}`,
 		userInterruptedInline: "\n\n_**[ユーザーが中断しました]**_",
+		autoModeUnavailable:
+			"このモデル・プラン・設定ではオートモードを使えないため、『編集前に確認』で動作しています。",
 		noActiveMessage: "アクティブなチャットメッセージがありません。",
 	},
 	view: {
@@ -257,10 +261,11 @@ export const ja = {
 			name: "ツール実行の承認モード",
 			desc:
 				"Claude が Edit / Bash / MCP などのツールを呼び出す際の挙動。" +
-				"『Ask before edits』ではチャット内に Approve / Deny ボタンが表示されます。" +
-				"『Edit automatically』はファイル編集のみ自動で許可し、Bash や MCP は確認します。" +
-				"『Bypass permissions』は確認なしで実行します（旧バージョンの動作）。" +
-				"『Plan mode』はツール実行なしで計画のみ返します。",
+				"『編集前に確認』ではチャット内に Approve / Deny ボタンが表示されます。" +
+				"『編集を自動承認』はファイル編集のみ自動で許可し、Bash や MCP は確認します。" +
+				"『オートモード』は低リスクな操作を自動で実行し、危険な操作はブロックします（3 回続けてブロックされるとチャットで確認します）。対応モデル・プランが必要で、使えない場合は『編集前に確認』で動作します。" +
+				"『全ての確認をスキップ』は確認なしで実行します（旧バージョンの動作）。" +
+				"『プランモード』はツール実行なしで計画のみ返します。",
 		},
 		model: {
 			name: "モデル",

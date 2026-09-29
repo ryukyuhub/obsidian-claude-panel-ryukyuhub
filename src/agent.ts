@@ -58,6 +58,10 @@ interface AgentEvents {
 	 *  出てくる。最低限 `resetsAt` と `rateLimitType` は必ず含まれ、閾値
 	 *  超過時には `utilization`（0.0〜1.0）も入る。 */
 	onRateLimit?: (info: RateLimitInfo) => void;
+	/** `system` イベントが報告する permissionMode。`system/init` は要求した
+	 *  モード、`system/status` は CLI が切り替えた後の実際のモード（auto を
+	 *  使えないと黙って default に落ちる等）。1 ラン中に複数回来うる。 */
+	onPermissionMode?: (mode: string) => void;
 }
 
 /**
@@ -322,8 +326,18 @@ function handleStreamLine(line: string, cb: StreamCallbacks): void {
 		cb.onControlRequest(parsed as ControlRequestMessage);
 	} else if (parsed.type === "control_response") {
 		cb.onControlResponse(parsed as ControlResponseMessage);
+	} else if (parsed.type === "system") {
+		// auto を使えないモデル・プラン・設定では、CLI はエラーを出さず黙って
+		// default に切り替える。実際のモードを知る手段は system/init（要求値）
+		// と system/status（切替後の値）の permissionMode だけなので、ここで
+		// 拾って呼び出し側に渡す。
+		const mode = (parsed as { permissionMode?: unknown }).permissionMode;
+		if (typeof mode === "string") {
+			events.onPermissionMode?.(mode);
+		}
 	}
-	// `keep_alive`, `system`, `partial` などは無視する。
+	// `keep_alive`, `partial` などは無視する。`system` も permissionMode
+	// 以外（permission_denied など）は使わない。
 }
 
 function randomRequestId(): string {
@@ -568,6 +582,8 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 		// `bypassPermissions` でも CLI 側が稀に発行する can_use_tool（保護
 		// パスへの書き込み等）を取りこぼさないように、`plan` でも将来の
 		// 仕様変更で発行されたときに備えて、常に stdio で受け取る。
+		// `auto` でも、分類器のブロックが 3 回連続したときや ask ルールに
+		// 該当したときは can_use_tool が来る。
 		cliArgs.push("--permission-prompt-tool", "stdio");
 		if (args.sessionId) {
 			// 既存の claude セッションを継続する。これによりコンテキストが
@@ -711,6 +727,9 @@ export function runAgent(args: RunArgs, events: AgentEvents): RunHandle {
 			// 「アシスタントが『承認してください』と言うのに承認ボタンが
 			// 出ない」状態になる。bypass を選択しているユーザーは介入を
 			// 望まないので、即時 allow して透過にする。
+			// ここに `auto` を含めてはいけない: auto で can_use_tool が来るのは
+			// 分類器のブロックが 3 回連続したときなど、人の確認が必要な場面で、
+			// 自動 allow するとその確認が素通りになる。
 			if (settings.permissionMode === "bypassPermissions") {
 				decide({
 					allow: true,

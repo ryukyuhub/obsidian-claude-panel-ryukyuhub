@@ -26,11 +26,13 @@ export const en: Messages = {
 	permission: {
 		default: "Ask before edits",
 		acceptEdits: "Auto-approve edits",
+		auto: "Auto mode",
 		bypassPermissions: "Skip all confirmations",
 		plan: "Plan mode",
 		tooltip: {
 			default: "Ask for approval on every tool call (edit, Bash, MCP, etc.).",
 			acceptEdits: "File edits are auto-approved. Bash, MCP, and others still require confirmation.",
+			auto: "Each tool call is checked for risk first: low-risk calls run automatically and risky ones are blocked. Needs a supported model and plan; otherwise it falls back to 'Ask before edits'.",
 			bypassPermissions: "Run every tool without confirmation. Only when you trust the agent.",
 			plan: "Planning only. No tools are executed; the agent returns proposals.",
 		},
@@ -171,6 +173,8 @@ export const en: Messages = {
 		interruptedDefault: "Run interrupted.",
 		errorPrefix: (msg: string) => `\n\n**Error:** ${msg}`,
 		userInterruptedInline: "\n\n_**[User interrupted]**_",
+		autoModeUnavailable:
+			"Auto mode isn't available for this model, plan, or settings, so tools run with 'Ask before edits' instead.",
 		noActiveMessage: "No active chat message.",
 	},
 	view: {
@@ -258,8 +262,9 @@ export const en: Messages = {
 			desc:
 				"How Claude behaves when invoking tools such as Edit / Bash / MCP. " +
 				"'Ask before edits' shows Approve / Deny buttons in the chat. " +
-				"'Edit automatically' auto-approves file edits only; Bash and MCP still ask. " +
-				"'Bypass permissions' runs everything without confirmation (legacy behavior). " +
+				"'Auto-approve edits' auto-approves file edits only; Bash and MCP still ask. " +
+				"'Auto mode' runs low-risk actions automatically and blocks risky ones (after 3 blocks in a row it asks in the chat). Needs a supported model and plan; otherwise it falls back to 'Ask before edits'. " +
+				"'Skip all confirmations' runs everything without confirmation (legacy behavior). " +
 				"'Plan mode' returns a plan only, with no tool execution.",
 		},
 		model: {

@@ -19,6 +19,7 @@ Claude Panel adds a right-sidebar chat panel powered by [Claude Code](https://do
 - Sessions are resumed via `claude --resume <session>` (Claude Code's auto-compaction stays active)
 - Account & usage panel — Claude plan, organization, and rate-limit consumption (5h / 7d / Sonnet) in real time
 - Slash commands: `/clear`, `/help`, `/model`, `/think`, `/mcp`, `/usage`, `/login`
+- Five tool approval modes: Ask before edits / Auto-approve edits / Auto mode / Skip all confirmations / Plan mode. Auto mode lets Claude Code's classifier run low-risk actions automatically and block risky ones; it needs a supported model and plan (Haiku is not supported) and falls back to "Ask before edits" when unavailable. The classifier's risk-check requests are sent from Claude Code to Anthropic and may count toward your usage
 - Project-level MCP servers: drop a `.mcp.json` at the vault root and it is loaded automatically
 - UI follows Obsidian's language setting (English / 日本語)
 
