@@ -52,6 +52,13 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		// どのプラグインの設定かを示すため、見出しではなく 1 行の説明文を置く。
+		// 公式ガイドラインが設定タブ最上位へのプラグイン名見出しを禁じているため。
+		containerEl.createEl("p", {
+			cls: "claude-panel-settings-intro",
+			text: t("settings.intro"),
+		});
+
 		this.renderSetupSection(containerEl);
 
 		const resolvedEl = containerEl.createDiv({

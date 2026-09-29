@@ -399,6 +399,8 @@ export const en: Messages = {
 			pickFromOs: "Pick via OS file dialog",
 			clearSound: "Clear (revert to built-in chime)",
 		},
+		intro:
+			"Claude Panel lets you use the Claude Code CLI from a chat panel in the sidebar.",
 		setup: {
 			title: "Setup status",
 			checking: "Checking…",

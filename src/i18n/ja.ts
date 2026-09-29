@@ -399,6 +399,8 @@ export const ja = {
 			pickFromOs: "OS のファイルダイアログから選択",
 			clearSound: "クリア（内蔵チャイムに戻す）",
 		},
+		intro:
+			"Claude Panel は、Claude Code CLI をサイドバーのチャットパネルから使うためのプラグインです。",
 		setup: {
 			title: "セットアップ状況",
 			checking: "確認中…",
