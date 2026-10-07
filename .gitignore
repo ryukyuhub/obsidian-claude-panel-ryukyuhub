@@ -22,3 +22,6 @@ CLAUDE.md
 # Per-developer Claude Code MCP servers used while working on this plugin.
 # Public users get MCP from ~/.claude.json or the vault's .mcp.json instead.
 .mcp.json
+
+# Per-developer environment variables (e.g. SSH_CMD_PROD for .claude/agents/remote-ops.md).
+.env
