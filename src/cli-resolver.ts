@@ -107,7 +107,16 @@ export function buildEnv(claudePath: string): NodeJS.ProcessEnv {
 				"/bin",
 			]),
 	];
-	const currentPath = env.PATH ?? "";
+	// Windows では Obsidian（Electron）の環境変数のキー名が `Path` のことが多い。
+	// `{ ...process.env }` のコピーは大文字小文字を区別するので `env.PATH` では
+	// 引けない。大文字小文字を区別せずに拾い、変種のキーは消して `PATH` 1 つに
+	// まとめる（残すと Node.js が辞書順で先の `PATH` だけを子プロセスに渡し、
+	// 元の PATH が捨てられる）。POSIX ではキーは大文字小文字を区別するので対象外。
+	const pathKeys = isWindows
+		? Object.keys(env).filter((k) => k.toUpperCase() === "PATH")
+		: ["PATH"];
+	const currentPath = pathKeys.map((k) => env[k]).find(Boolean) ?? "";
+	for (const k of pathKeys) delete env[k];
 	const sep = path.delimiter;
 	const merged = [
 		...extraPathDirs,
