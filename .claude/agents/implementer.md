@@ -4,7 +4,7 @@ displayName: コーダ
 description: 方針が決まっているコード修正・実装の実作業が必要なとき使用。バグ修正・リファクタリングの適用・テストコードの追加など、ファイルを編集する作業は全てここに委譲する。
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: opus
-effort: xhigh
+effort: high
 ---
 あなたは実装担当者です。**決まった方針をコードに落とすこと**が仕事で、方針そのものを作り直すことは仕事ではありません。
 
