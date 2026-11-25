@@ -1,7 +1,6 @@
 import {
 	ItemView,
 	WorkspaceLeaf,
-	TFolder,
 	Notice,
 	Scope,
 	setIcon,
@@ -45,12 +44,11 @@ import {
 	renderToolPill,
 	stripAskBlocksForStream,
 } from "./chat-message-render";
+import { trackNoteContext } from "./note-context";
+import { VIEW_TYPE_CLAUDE_PANEL, type PanelView } from "./panel-view";
 import { t } from "./i18n";
 
-
-export const VIEW_TYPE_CLAUDE_PANEL = "claude-panel-view";
-
-export class ClaudePanelView extends ItemView {
+export class ClaudePanelView extends ItemView implements PanelView {
 	plugin: ClaudePanelPlugin;
 
 	// DOM 参照（onOpen で初期化）。コンポーザー配下の 3 ホスト
@@ -147,43 +145,7 @@ export class ClaudePanelView extends ItemView {
 		// 渡し、状態は完全に runtime 内部に閉じ込める。
 		this.runtime = new ChatRuntime(this.plugin, this);
 
-		this.registerEvent(
-			this.app.workspace.on("active-leaf-change", () => {
-				this.composer.renderActiveFile();
-				this.selection.poll();
-			})
-		);
-		this.registerEvent(
-			this.app.workspace.on("file-open", () => {
-				// ファイル選択でアクティブフォルダは解除（相互排他）
-				this.composer.setActiveFolderPath(null);
-				this.selection.poll();
-			})
-		);
-		// ファイルエクスプローラーでフォルダをクリックしたら
-		// activeFolderPath として記録し、アクティブファイル表示と入れ替える。
-		// `.nav-folder-title` は Obsidian のファイルツリーが各フォルダに
-		// 描画する要素で、`data-path` にフォルダの Vault 相対パスが入る。
-		this.registerDomEvent(activeDocument, "click", (e) => {
-			const titleEl = (e.target as HTMLElement | null)?.closest(
-				".nav-folder-title"
-			);
-			if (!titleEl) return;
-			const path = titleEl.getAttribute("data-path");
-			if (!path) return; // ルート（path="" / null）は無視
-			const f = this.app.vault.getAbstractFileByPath(path);
-			if (!(f instanceof TFolder)) return;
-			this.composer.setActiveFolderPath(path);
-		});
-		// Grace-period handoff（猶予期間の引き継ぎ）: パネル内クリックで
-		// キャプチャ済みの markdown 選択を失わないようにする。これがないと
-		// パネルがアクティブな leaf になった瞬間に選択が消える。
-		this.registerDomEvent(this.containerEl, "pointerdown", () => {
-			this.selection.markHandoff();
-		});
-		this.registerInterval(
-			window.setInterval(() => this.selection.poll(), 250)
-		);
+		trackNoteContext(this, this.composer.notes, this.selection);
 
 		// ESC で実行中のエージェントを中断。プライベートな Scope を使う
 		// ことで、パネルが未フォーカスの状況でも他の Obsidian ホットキー

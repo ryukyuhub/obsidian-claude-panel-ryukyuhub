@@ -81,9 +81,14 @@ function getShadowBinDir(): string | null {
 	return dir;
 }
 
-export function buildEnv(claudePath: string): NodeJS.ProcessEnv {
+/** `suppressBrowser`（既定 true）を false にすると、ブラウザの起動を抑止しない。 */
+export function buildEnv(
+	claudePath: string,
+	opts: { suppressBrowser?: boolean } = {}
+): NodeJS.ProcessEnv {
+	const suppressBrowser = opts.suppressBrowser ?? true;
 	const env: NodeJS.ProcessEnv = { ...process.env };
-	const shadow = getShadowBinDir();
+	const shadow = suppressBrowser ? getShadowBinDir() : null;
 	const extraPathDirs = [
 		// PATH の順序が重要: shadow ディレクトリを必ず先頭に置き、no-op の
 		// `open` がシステム標準の `open` をシャドウできるようにする。
@@ -127,7 +132,7 @@ export function buildEnv(claudePath: string): NodeJS.ProcessEnv {
 	// Linux／クロスプラットフォーム向けのフォールバック。`true` は no-op の
 	// シェル組み込みコマンド。$BROWSER を尊重するツール（Linux の Python
 	// webbrowser モジュール等）はこれを見て静かに何もしないようになる。
-	env.BROWSER = "true";
+	if (suppressBrowser) env.BROWSER = "true";
 	return env;
 }
 

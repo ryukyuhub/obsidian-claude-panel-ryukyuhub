@@ -58,7 +58,7 @@ export async function loadSoundBuffer(
 	}
 }
 
-function getVaultBasePath(app: App): string | null {
+export function getVaultBasePath(app: App): string | null {
 	const adapter = app.vault.adapter as unknown as {
 		getBasePath?: () => string;
 		basePath?: string;

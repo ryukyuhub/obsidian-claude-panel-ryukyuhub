@@ -234,12 +234,42 @@ export const en: Messages = {
 		summaryFailedNotice: "Summarization failed. Continuing with the existing conversation.",
 		summarySystemPrefix: "Previous conversation summary:",
 	},
+	terminal: {
+		newSession: "New session",
+		continueSession: "Continue last session",
+		attach: "Attach files",
+		openSettings: "Open settings",
+		starting: "Starting Claude Code…",
+		exited: (code: number) => `Claude Code exited (code ${code}).`,
+		exitedUnknown: "Claude Code exited.",
+		resume: "Resume",
+		retry: "Retry",
+		switchToChat: "Switch to chat UI",
+		errPtyUnavailable: "A terminal can't be opened in this environment.",
+		errPtyUnavailableHint:
+			"The terminal UI needs Python 3.8 or later, or the `script` command.",
+		errBridge: "Could not open a terminal.",
+		errLaunch: "Could not start Claude Code.",
+		migratedNotice:
+			"Claude Panel now uses the terminal UI by default. You can go back to the chat UI with \"Interface\" in the plugin settings.",
+	},
 	settings: {
 		resolved: {
 			labelResolved: "✓ Resolved:",
 			labelAutoDetected: "✓ Auto-detected:",
 			labelNotFoundConfigured: "✗ The claude CLI was not found at the specified path",
 			labelNotFoundAuto: "✗ The claude CLI was not found in any auto-detection location",
+		},
+		interfaceMode: {
+			name: "Interface",
+			desc:
+				"UI shown in the panel. The terminal UI shows the Claude Code screen as is. " +
+				"The chat UI is this plugin's own screen. " +
+				"Switching reopens the panel and ends anything that is running.",
+			option: {
+				terminal: "Terminal UI (Claude Code standard)",
+				chat: "Chat UI",
+			},
 		},
 		claudePath: {
 			name: "Claude CLI path",
@@ -254,7 +284,7 @@ export const en: Messages = {
 			desc:
 				"When on, the spawned `claude` CLI ignores ~/.claude.json and the project's .mcp.json " +
 				"and starts without any MCP servers. Default: off (MCP enabled). " +
-				"Browser pop-ups that servers like Serena try to open are blocked separately " +
+				"Browser pop-ups that servers like Serena try to open are blocked separately (chat UI only) " +
 				"by overriding the `open`/`xdg-open` commands on PATH.",
 		},
 		permissionMode: {
@@ -292,7 +322,7 @@ export const en: Messages = {
 			name: "Include the active file / folder by default",
 			desc:
 				"When on, the active file (or folder) is included in the prompt " +
-				"when the chat panel opens. " +
+				"when the panel opens. " +
 				"When off, it starts excluded. " +
 				"Either way you can flip it per turn with the \"Include / Exclude\" toggle in the panel.",
 		},
@@ -302,7 +332,8 @@ export const en: Messages = {
 				"When on, attached and pasted files are saved inside the vault. " +
 				"When off, pasted images go to the plugin's temporary folder (removed when Obsidian quits), " +
 				"and attached files are referenced by their original absolute path. " +
-				"This value becomes the initial state of the \"Save to vault\" checkbox in the chat panel.",
+				"The terminal UI always follows this setting. " +
+				"In the chat UI, it's the initial state of the \"Save to vault\" checkbox.",
 		},
 		attachmentLocation: {
 			name: "Attachment save location",
@@ -353,15 +384,15 @@ export const en: Messages = {
 		fontSize: {
 			name: "Font size",
 			desc: (min: number, max: number) =>
-				`Base font size for the entire chat panel (${min}–${max}px). ` +
+				`Base font size for the entire panel (${min}–${max}px). ` +
 				"Changes apply to the panel immediately.",
 		},
 		composerPadding: {
 			name: "Bottom padding",
 			desc: (min: number, max: number) =>
-				`Extra padding reserved below the composer (${min}–${max}px). ` +
+				`Extra padding reserved at the bottom of the panel (${min}–${max}px). ` +
 				"With some themes the Obsidian status bar overlaps the bottom of the right sidebar " +
-				"and hides the Send button or model selector. Only raise this if that happens.",
+				"and hides the input area or buttons. Only raise this if that happens.",
 		},
 		resetToDefault: "Reset to default",
 		submitWithModEnter: {
@@ -405,7 +436,7 @@ export const en: Messages = {
 			clearSound: "Clear (revert to built-in chime)",
 		},
 		intro:
-			"Claude Panel lets you use the Claude Code CLI from a chat panel in the sidebar.",
+			"Claude Panel lets you use the Claude Code CLI from a panel in the sidebar.",
 		setup: {
 			title: "Setup status",
 			checking: "Checking…",
@@ -417,7 +448,8 @@ export const en: Messages = {
 			stepNotFound: "Claude CLI not found",
 			stepLoggedIn: "Signed in",
 			stepLoginNeeded: "Sign-in required",
-			stepLoginNeededDetail: "Run `claude /login` in your terminal.",
+			stepLoginNeededDetail:
+				"Run `claude /login` in your terminal. With the terminal UI, you can also run `/login` in the panel.",
 			recheck: "Re-check",
 			installTitle: "Install instructions",
 			installNote:

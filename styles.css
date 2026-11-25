@@ -2400,3 +2400,612 @@
 	color: var(--text-normal);
 }
 
+/* ============================================================
+   ターミナル UI
+   ============================================================ */
+
+.claude-panel-terminal {
+	position: relative;
+	padding-bottom: var(--claude-panel-composer-bottom-padding, 0px);
+}
+
+/* xterm の背景が root の inset box-shadow を隠すので、フラッシュは手前に重ねる。 */
+.claude-panel-root.claude-panel-terminal.is-flash {
+	animation: none;
+}
+
+.claude-panel-terminal.is-flash::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 20;
+	pointer-events: none;
+	animation: claude-panel-flash 3s ease-out;
+}
+
+/* ---------- ヘッダー ---------- */
+
+.claude-panel-terminal > .claude-panel-header {
+	flex: 0 0 auto;
+	gap: 8px;
+	padding: 8px 10px;
+}
+
+.claude-panel-terminal > .claude-panel-header h3 {
+	flex: 1 1 0;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.claude-panel-terminal-actions {
+	display: flex;
+	flex: 0 0 auto;
+	gap: 4px;
+}
+
+.claude-panel-terminal-actions .claude-panel-icon-btn {
+	flex: 0 0 auto;
+	margin: 0;
+}
+
+.claude-panel-terminal-actions .claude-panel-icon-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* ---------- 端末 ---------- */
+
+/* 余白はここに付ける。xterm の親（screen）に付けると、FitAddon が余白まで
+   行数に数えてしまう。右はスクロールバー分（14px）を xterm が空けている。 */
+.claude-panel-terminal-body {
+	position: relative;
+	display: flex;
+	flex: 1 1 0;
+	min-height: 0;
+	padding: 8px 0 4px 10px;
+	background: var(--background-primary);
+}
+
+.claude-panel-terminal-screen {
+	position: relative;
+	flex: 1 1 0;
+	min-width: 0;
+	min-height: 0;
+	padding: 0;
+	overflow: hidden;
+	isolation: isolate;
+}
+
+/* 配色とフォントを調べるための一時的な要素。 */
+.claude-panel-terminal-probe {
+	position: absolute;
+	visibility: hidden;
+	transition: none;
+}
+
+.claude-panel-terminal-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 10;
+	display: flex;
+	flex-direction: column;
+	overflow: auto;
+	background: var(--background-primary);
+}
+
+/* 中央寄せ。上下を auto にすると、はみ出すときは先頭からスクロールできる。 */
+.claude-panel-terminal-overlay > * {
+	flex: 0 0 auto;
+	margin-block: auto;
+}
+
+.claude-panel-terminal-starting {
+	padding: 16px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-align: center;
+}
+
+.claude-panel-terminal-overlay .claude-panel-empty {
+	margin-inline: 12px;
+	padding: 14px;
+	font-size: var(--font-ui-smaller);
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+
+.claude-panel-terminal-overlay .claude-panel-empty-warn {
+	font-size: var(--font-ui-small);
+}
+
+.claude-panel-terminal-overlay .claude-panel-empty-actions {
+	flex-wrap: wrap;
+}
+
+.claude-panel-terminal-error-detail {
+	max-height: 12em;
+	margin: 0;
+	padding: 8px;
+	overflow: auto;
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	user-select: text;
+}
+
+/* ---------- 終了バー ---------- */
+
+.claude-panel-terminal-exit {
+	display: flex;
+	flex: 0 0 auto;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+	padding: 8px 10px;
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	font-size: var(--font-ui-smaller);
+}
+
+.claude-panel-terminal-exit-label {
+	flex: 1 1 12em;
+	color: var(--text-muted);
+}
+
+.claude-panel-terminal-exit-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.claude-panel-terminal-exit-actions button {
+	height: 26px;
+	padding: 0 10px;
+	font-size: var(--font-ui-smaller);
+}
+
+/* ---------- ノート欄（アクティブファイルと選択範囲） ---------- */
+
+/* 高さは固定する。選択のたびに変わると端末がリサイズされ、claude が画面全体を
+   描き直してしまう。 */
+.claude-panel-terminal-context {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 6px;
+	height: 36px;
+	padding: 0 6px;
+	overflow: hidden;
+	border-top: 1px solid var(--background-modifier-border);
+	container-type: inline-size;
+}
+
+.claude-panel-terminal-context .claude-panel-active-file,
+.claude-panel-terminal-context .claude-panel-selection {
+	min-width: 0;
+	min-height: 0;
+	height: 26px;
+	padding: 0 4px 0 8px;
+}
+
+.claude-panel-terminal-context .claude-panel-active-file {
+	flex: 1 1 0;
+}
+
+.claude-panel-terminal-context .claude-panel-selection {
+	flex: 0 1 auto;
+	justify-content: center;
+	max-width: 55%;
+}
+
+.claude-panel-terminal-context .claude-panel-selection-header {
+	min-width: 0;
+}
+
+.claude-panel-terminal-context .claude-panel-active-file-label,
+.claude-panel-terminal-context .claude-panel-selection-label {
+	flex: 0 0 auto;
+	white-space: nowrap;
+}
+
+.claude-panel-terminal-context .claude-panel-active-file-path {
+	min-width: 0;
+}
+
+.claude-panel-terminal-context .claude-panel-active-file-empty,
+.claude-panel-terminal-context .claude-panel-selection-meta {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.claude-panel-terminal-context .claude-panel-active-file-toggle,
+.claude-panel-terminal-context .claude-panel-selection-toggle {
+	flex: 0 0 auto;
+	height: 20px;
+	padding: 0 6px;
+	white-space: nowrap;
+}
+
+.claude-panel-terminal-context .claude-panel-selection-preview {
+	display: none;
+}
+
+/* 狭いときはラベルを省き、ファイル名と切り替えボタンを残す。 */
+@container (max-width: 420px) {
+	.claude-panel-terminal-context .claude-panel-active-file-label,
+	.claude-panel-terminal-context .claude-panel-selection-label {
+		display: none;
+	}
+
+	.claude-panel-terminal-context .claude-panel-active-file,
+	.claude-panel-terminal-context .claude-panel-selection-header {
+		gap: 4px;
+	}
+
+	.claude-panel-terminal-context .claude-panel-active-file,
+	.claude-panel-terminal-context .claude-panel-selection {
+		padding: 0 3px 0 6px;
+	}
+
+	.claude-panel-terminal-context .claude-panel-active-file-toggle,
+	.claude-panel-terminal-context .claude-panel-selection-toggle {
+		padding: 0 4px;
+	}
+}
+
+/* ---------- xterm.js の調整（下の xterm.css より特異度を上げて優先させる） ---------- */
+
+/* 最終行より下の余りをクリックしてもフォーカスできるようにする。 */
+.claude-panel-terminal .claude-panel-terminal-screen .xterm {
+	height: 100%;
+}
+
+/* xterm.js 6 は独自のスクロールバーを使うので、こちらのバーは出さない。 */
+.claude-panel-terminal .claude-panel-terminal-screen .xterm .xterm-viewport {
+	background-color: transparent;
+	overflow-y: hidden;
+}
+
+/* キー入力と IME を受ける不可視の textarea。Obsidian の入力欄の装飾が付くと、
+   位置や大きさが変わり、変換候補の表示位置がカーソルからずれる。 */
+.claude-panel-terminal .claude-panel-terminal-screen .xterm .xterm-helper-textarea {
+	min-width: 0;
+	max-width: none;
+	min-height: 0;
+	max-height: none;
+	border: 0;
+	border-radius: 0;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+	transition: none;
+}
+
+/* IME の変換中の文字列 */
+.claude-panel-terminal .claude-panel-terminal-screen .xterm .composition-view {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+/* ---------- xterm.css（@xterm/xterm 6.0.0、MIT） ----------
+   他のターミナル系プラグインに影響しないよう、全セレクタに .claude-panel-terminal を
+   前置している。!important は特異度で置き換えた。 */
+
+/**
+ * Copyright (c) 2014 The xterm.js authors. All rights reserved.
+ * Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
+ * https://github.com/chjj/term.js
+ * @license MIT
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * Originally forked from (with the author's permission):
+ *   Fabrice Bellard's javascript vt100 for jslinux:
+ *   http://bellard.org/jslinux/
+ *   Copyright (c) 2011 Fabrice Bellard
+ *   The original design remains. The terminal itself
+ *   has been extended to include xterm CSI codes, among
+ *   other features.
+ */
+
+.claude-panel-terminal .xterm {
+	cursor: text;
+	position: relative;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.claude-panel-terminal .xterm.focus,
+.claude-panel-terminal .xterm:focus {
+	outline: none;
+}
+
+.claude-panel-terminal .xterm .xterm-helpers {
+	position: absolute;
+	top: 0;
+	/* The z-index of the helpers must be higher than the canvases in order
+	   for IMEs to appear on top. */
+	z-index: 5;
+}
+
+.claude-panel-terminal .xterm .xterm-helper-textarea {
+	padding: 0;
+	border: 0;
+	margin: 0;
+	/* Move textarea out of the screen to the far left, so that the cursor is not visible */
+	position: absolute;
+	opacity: 0;
+	left: -9999em;
+	top: 0;
+	width: 0;
+	height: 0;
+	z-index: -5;
+	/* Prevent wrapping so the IME appears against the textarea at the correct position */
+	white-space: nowrap;
+	overflow: hidden;
+	resize: none;
+}
+
+.claude-panel-terminal .xterm .composition-view {
+	/* TODO: Composition position got messed up somewhere */
+	background: #000;
+	color: #fff;
+	display: none;
+	position: absolute;
+	white-space: nowrap;
+	z-index: 1;
+}
+
+.claude-panel-terminal .xterm .composition-view.active {
+	display: block;
+}
+
+.claude-panel-terminal .xterm .xterm-viewport {
+	/* On OS X this is required in order for the scroll bar to appear fully opaque */
+	background-color: #000;
+	overflow-y: scroll;
+	cursor: default;
+	position: absolute;
+	right: 0;
+	left: 0;
+	top: 0;
+	bottom: 0;
+}
+
+.claude-panel-terminal .xterm .xterm-screen {
+	position: relative;
+}
+
+.claude-panel-terminal .xterm .xterm-screen canvas {
+	position: absolute;
+	left: 0;
+	top: 0;
+}
+
+.claude-panel-terminal .xterm-char-measure-element {
+	display: inline-block;
+	visibility: hidden;
+	position: absolute;
+	top: 0;
+	left: -9999em;
+	line-height: normal;
+}
+
+.claude-panel-terminal .xterm.enable-mouse-events {
+	/* When mouse events are enabled (eg. tmux), revert to the standard pointer cursor */
+	cursor: default;
+}
+
+.claude-panel-terminal .xterm.xterm-cursor-pointer,
+.claude-panel-terminal .xterm .xterm-cursor-pointer {
+	cursor: pointer;
+}
+
+.claude-panel-terminal .xterm.column-select.focus {
+	/* Column selection mode */
+	cursor: crosshair;
+}
+
+.claude-panel-terminal .xterm .xterm-accessibility:not(.debug),
+.claude-panel-terminal .xterm .xterm-message {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	right: 0;
+	z-index: 10;
+	color: transparent;
+	pointer-events: none;
+}
+
+.claude-panel-terminal .xterm .xterm-accessibility-tree:not(.debug) *::selection {
+	color: transparent;
+}
+
+.claude-panel-terminal .xterm .xterm-accessibility-tree {
+	font-family: monospace;
+	user-select: text;
+	white-space: pre;
+}
+
+.claude-panel-terminal .xterm .xterm-accessibility-tree > div {
+	transform-origin: left;
+	width: fit-content;
+}
+
+.claude-panel-terminal .xterm .live-region {
+	position: absolute;
+	left: -9999px;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+}
+
+.claude-panel-terminal .xterm .xterm-rows .xterm-dim {
+	/* Dim should not apply to background, so the opacity of the foreground
+	   color is applied explicitly in the generated class and reset to 1 here */
+	opacity: 1;
+}
+
+.claude-panel-terminal .xterm-underline-1 {
+	text-decoration: underline;
+}
+
+.claude-panel-terminal .xterm-underline-2 {
+	text-decoration: double underline;
+}
+
+.claude-panel-terminal .xterm-underline-3 {
+	text-decoration: wavy underline;
+}
+
+.claude-panel-terminal .xterm-underline-4 {
+	text-decoration: dotted underline;
+}
+
+.claude-panel-terminal .xterm-underline-5 {
+	text-decoration: dashed underline;
+}
+
+.claude-panel-terminal .xterm-overline {
+	text-decoration: overline;
+}
+
+.claude-panel-terminal .xterm-overline.xterm-underline-1 {
+	text-decoration: overline underline;
+}
+
+.claude-panel-terminal .xterm-overline.xterm-underline-2 {
+	text-decoration: overline double underline;
+}
+
+.claude-panel-terminal .xterm-overline.xterm-underline-3 {
+	text-decoration: overline wavy underline;
+}
+
+.claude-panel-terminal .xterm-overline.xterm-underline-4 {
+	text-decoration: overline dotted underline;
+}
+
+.claude-panel-terminal .xterm-overline.xterm-underline-5 {
+	text-decoration: overline dashed underline;
+}
+
+.claude-panel-terminal .xterm-strikethrough {
+	text-decoration: line-through;
+}
+
+.claude-panel-terminal .xterm-screen .xterm-decoration-container .xterm-decoration {
+	z-index: 6;
+	position: absolute;
+}
+
+.claude-panel-terminal .xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer {
+	z-index: 7;
+}
+
+.claude-panel-terminal .xterm-decoration-overview-ruler {
+	z-index: 8;
+	position: absolute;
+	top: 0;
+	right: 0;
+	pointer-events: none;
+}
+
+.claude-panel-terminal .xterm-decoration-top {
+	z-index: 2;
+	position: relative;
+}
+
+/* Derived from vs/base/browser/ui/scrollbar/media/scrollbar.css */
+
+/* xterm.js customization: Override xterm's cursor style */
+.claude-panel-terminal .xterm .xterm-scrollable-element > .scrollbar {
+	cursor: default;
+}
+
+/* Arrows */
+.claude-panel-terminal .xterm .xterm-scrollable-element > .scrollbar > .scra {
+	cursor: pointer;
+	font-size: 11px;
+}
+
+.claude-panel-terminal .xterm .xterm-scrollable-element > .visible {
+	opacity: 1;
+	/* Background rule added for IE9 - to allow clicks on dom node */
+	background: rgba(0, 0, 0, 0);
+	transition: opacity 100ms linear;
+	/* In front of peek view */
+	z-index: 11;
+}
+
+.claude-panel-terminal .xterm .xterm-scrollable-element > .invisible {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.claude-panel-terminal .xterm .xterm-scrollable-element > .invisible.fade {
+	transition: opacity 800ms linear;
+}
+
+/* Scrollable Content Inset Shadow */
+.claude-panel-terminal .xterm .xterm-scrollable-element > .shadow {
+	position: absolute;
+	display: none;
+}
+
+.claude-panel-terminal .xterm .xterm-scrollable-element > .shadow.top {
+	display: block;
+	top: 0;
+	left: 3px;
+	height: 3px;
+	width: 100%;
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 0 6px 6px -6px inset;
+}
+
+.claude-panel-terminal .xterm .xterm-scrollable-element > .shadow.left {
+	display: block;
+	top: 3px;
+	left: 0;
+	height: 100%;
+	width: 3px;
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+
+.claude-panel-terminal .xterm .xterm-scrollable-element > .shadow.top-left-corner {
+	display: block;
+	top: 0;
+	left: 0;
+	height: 3px;
+	width: 3px;
+}
+
+.claude-panel-terminal .xterm .xterm-scrollable-element > .shadow.top.left {
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}

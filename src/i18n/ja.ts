@@ -234,12 +234,43 @@ export const ja = {
 		summaryFailedNotice: "要約に失敗しました。会話はそのまま続行します。",
 		summarySystemPrefix: "以前の会話の要約:",
 	},
+	terminal: {
+		newSession: "新しいセッション",
+		continueSession: "前回の続き",
+		attach: "ファイルを添付",
+		openSettings: "設定を開く",
+		starting: "Claude Code を起動しています…",
+		exited: (code: number) =>
+			`Claude Code が終了しました（終了コード ${code}）。`,
+		exitedUnknown: "Claude Code が終了しました。",
+		resume: "再開",
+		retry: "再試行",
+		switchToChat: "チャット UI に切り替える",
+		errPtyUnavailable: "この環境ではターミナルを開けません。",
+		errPtyUnavailableHint:
+			"ターミナル UI には Python 3.8 以降、または `script` コマンドが必要です。",
+		errBridge: "ターミナルを開けませんでした。",
+		errLaunch: "Claude Code を起動できませんでした。",
+		migratedNotice:
+			"Claude Panel の標準がターミナル UI になりました。プラグイン設定の「UI の種類」でチャット UI に戻せます。",
+	},
 	settings: {
 		resolved: {
 			labelResolved: "✓ 解決済み:",
 			labelAutoDetected: "✓ 自動検出:",
 			labelNotFoundConfigured: "✗ 指定されたパスに claude CLI が見つかりません",
 			labelNotFoundAuto: "✗ 自動検出対象の場所に claude CLI が見つかりません",
+		},
+		interfaceMode: {
+			name: "UI の種類",
+			desc:
+				"パネルに表示する UI。ターミナル UI は Claude Code の画面をそのまま表示します。" +
+				"チャット UI はプラグイン独自の画面です。" +
+				"切り替えるとパネルを開き直し、実行中の処理は終了します。",
+			option: {
+				terminal: "ターミナル UI（Claude Code 標準）",
+				chat: "チャット UI",
+			},
 		},
 		claudePath: {
 			name: "claude CLI のパス",
@@ -254,7 +285,7 @@ export const ja = {
 			desc:
 				"オンにすると、起動した `claude` CLI は ~/.claude.json とプロジェクトの .mcp.json を無視し、" +
 				"MCP サーバー無しで起動します。デフォルト: オフ（MCP 有効）。" +
-				"Serena などのサーバーが開こうとするブラウザポップアップは、" +
+				"Serena などのサーバーが開こうとするブラウザポップアップは、チャット UI に限り、" +
 				"PATH 上の `open`/`xdg-open` コマンドを上書きすることで別途ブロックされます。",
 		},
 		permissionMode: {
@@ -291,7 +322,7 @@ export const ja = {
 		includeActiveDefault: {
 			name: "アクティブファイル／フォルダを初期状態で含める",
 			desc:
-				"オンにすると、チャットパネルを開いた時に、" +
+				"オンにすると、パネルを開いた時に、" +
 				"アクティブファイル（またはフォルダ）をプロンプトに含めた状態で始まります。" +
 				"オフのときは除外された状態で始まります。" +
 				"いずれもパネル内の「含める／除外」トグルで都度切り替えられます。",
@@ -302,7 +333,8 @@ export const ja = {
 				"オンにすると、添付・貼り付けたファイルを Vault 内に保存します。" +
 				"オフのときは、貼り付け画像はプラグインの一時フォルダに置かれ（Obsidian 終了時に削除）、" +
 				"添付したファイルは元の絶対パスのまま参照されます。" +
-				"この値はチャットパネルの「Vault に保存」チェックボックスの初期状態になります。",
+				"ターミナル UI ではこの設定がそのまま使われます。" +
+				"チャット UI では「Vault に保存」チェックボックスの初期状態になります。",
 		},
 		attachmentLocation: {
 			name: "添付ファイルの保存先",
@@ -353,15 +385,15 @@ export const ja = {
 		fontSize: {
 			name: "フォントサイズ",
 			desc: (min: number, max: number) =>
-				`チャットパネル全体の基準フォントサイズ (${min}–${max}px)。` +
+				`パネル全体の基準フォントサイズ (${min}–${max}px)。` +
 				"変更は即座にパネルへ反映されます。",
 		},
 		composerPadding: {
 			name: "下端の余白",
 			desc: (min: number, max: number) =>
-				`コンポーザーの下に追加で確保する余白 (${min}–${max}px)。` +
+				`パネルの下端に追加で確保する余白 (${min}–${max}px)。` +
 				"テーマによっては Obsidian のステータスバーが右サイドバーの下端に被って" +
-				"送信ボタンやモデル選択が隠れることがあります。隠れて困るときだけ値を上げてください。",
+				"パネルの下端（入力欄やボタン）が隠れることがあります。隠れて困るときだけ値を上げてください。",
 		},
 		resetToDefault: "デフォルトに戻す",
 		submitWithModEnter: {
@@ -405,7 +437,7 @@ export const ja = {
 			clearSound: "クリア（内蔵チャイムに戻す）",
 		},
 		intro:
-			"Claude Panel は、Claude Code CLI をサイドバーのチャットパネルから使うためのプラグインです。",
+			"Claude Panel は、Claude Code CLI をサイドバーのパネルから使うためのプラグインです。",
 		setup: {
 			title: "セットアップ状況",
 			checking: "確認中…",
@@ -417,7 +449,8 @@ export const ja = {
 			stepNotFound: "Claude CLI が見つかりません",
 			stepLoggedIn: "ログイン済み",
 			stepLoginNeeded: "ログインが必要です",
-			stepLoginNeededDetail: "ターミナルで `claude /login` を実行してください。",
+			stepLoginNeededDetail:
+				"ターミナルで `claude /login` を実行してください。ターミナル UI ではパネル内の `/login` でもログインできます。",
 			recheck: "再チェック",
 			installTitle: "インストール手順",
 			installNote:

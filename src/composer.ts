@@ -1,20 +1,18 @@
-import { App, Notice, TFile, TFolder } from "obsidian";
+import { App, Notice, TFolder } from "obsidian";
 import * as nodePath from "path";
 import type ClaudePanelPlugin from "./main";
 import type { ComposedMessage } from "./chat-runtime";
-import type { CapturedSelection, SelectionCapture } from "./selection-capture";
+import type { SelectionCapture } from "./selection-capture";
 import type { SelectionRef } from "./chat-message";
 import type { EffortLevel, ThinkingMode } from "./settings";
 import {
-	copyFileToVault,
 	extractPastedImages,
+	importAttachments,
 	pastedImageFileName,
 	pickFilesViaDialog,
-	resolveAttachmentDir,
-	savePastedImage,
-	savePastedImageToVault,
+	storePastedImage,
 } from "./attachments";
-import { toVaultRelativeIfInside } from "./notify-sound-source";
+import { NoteContext, formatSelectionBlock, listFolderFiles } from "./note-context";
 import { t } from "./i18n";
 
 /**
@@ -22,8 +20,7 @@ import { t } from "./i18n";
  *
  * 担当範囲:
  *   - 添付パス（Vault 相対 / 絶対）の状態管理と UI チップ描画
- *   - アクティブファイル/フォルダのプレビューと「含める」トグル
- *   - エディタ選択範囲のプレビューと「含める」トグル
+ *   - アクティブファイル/フォルダと選択範囲（NoteContext に委譲）
  *   - 上記すべてを束ねた送信用プロンプトの組み立て (composeMessage)
  *
  * view 側は本クラスの公開メソッドを呼ぶだけで、自前で添付配列を持ったり
@@ -33,7 +30,8 @@ import { t } from "./i18n";
 export class Composer {
 	private app: App;
 	private plugin: ClaudePanelPlugin;
-	private selection: SelectionCapture;
+	/** アクティブファイル/フォルダと選択範囲の状態と表示。 */
+	readonly notes: NoteContext;
 
 	private attachments: string[] = []; // Vault 相対 or OS 絶対パス
 	// 貼り付けた画像のうち、まだディスクに書き出していないもの。送信時に
@@ -41,18 +39,8 @@ export class Composer {
 	// クリップボードから来た File オブジェクトと、保存時に使う確定済み
 	// ファイル名（チップ表示用にも使う）をセットで保持する。
 	private pendingPastes: { file: File; fileName: string }[] = [];
-	// 初期値はプラグイン設定 `includeActiveByDefault` 由来。パネル内の
-	// トグルは一時状態で、設定値は書き換えない。
-	private includeActiveFile: boolean;
-	// 直近にファイルエクスプローラーでクリックされたフォルダ。
-	// 設定されている間はアクティブファイルの自動メンションを置き換える。
-	// ファイル選択（file-open）が発生したら view 側でクリアされる。
-	private activeFolderPath: string | null = null;
-	private includeSelection = true;
 
 	// mount 後に有効。レンダラ側からのみ参照する。
-	private activeFileEl: HTMLElement | null = null;
-	private selectionEl: HTMLElement | null = null;
 	private attachmentsEl: HTMLElement | null = null;
 
 	constructor(
@@ -62,8 +50,12 @@ export class Composer {
 	) {
 		this.app = app;
 		this.plugin = plugin;
-		this.selection = selection;
-		this.includeActiveFile = plugin.settings.includeActiveByDefault;
+		// パネル内のトグルは一時状態で、設定値は書き換えない。
+		this.notes = new NoteContext(
+			app,
+			selection,
+			plugin.settings.includeActiveByDefault
+		);
 	}
 
 	mount(hosts: {
@@ -71,8 +63,7 @@ export class Composer {
 		selectionEl: HTMLElement;
 		attachmentsEl: HTMLElement;
 	}): void {
-		this.activeFileEl = hosts.activeFileEl;
-		this.selectionEl = hosts.selectionEl;
+		this.notes.mount(hosts);
 		this.attachmentsEl = hosts.attachmentsEl;
 	}
 
@@ -81,22 +72,19 @@ export class Composer {
 	// ============================================================
 
 	setActiveFolderPath(path: string | null): void {
-		this.activeFolderPath = path;
-		this.renderActiveFile();
+		this.notes.setActiveFolderPath(path);
 	}
 
 	getActiveFolderPath(): string | null {
-		return this.activeFolderPath;
+		return this.notes.getActiveFolderPath();
 	}
 
 	toggleIncludeActive(): boolean {
-		this.includeActiveFile = !this.includeActiveFile;
-		this.renderActiveFile();
-		return this.includeActiveFile;
+		return this.notes.toggleIncludeActive();
 	}
 
 	getIncludeActive(): boolean {
-		return this.includeActiveFile;
+		return this.notes.getIncludeActive();
 	}
 
 	/** パネルの「Vault に保存」チェックボックスの現在値。プラグインインスタンス
@@ -114,9 +102,7 @@ export class Composer {
 
 	/** トグルコマンドの通知メッセージ用に「対象パス」を返す。 */
 	getActiveTargetLabel(): string | null {
-		if (this.activeFolderPath) return `${this.activeFolderPath}/`;
-		const f = this.getActiveFile();
-		return f ? f.path : null;
+		return this.notes.getActiveTargetLabel();
 	}
 
 	/** 会話クリア時など、添付状態を全部リセットする。未保存のペースト画像は
@@ -136,45 +122,23 @@ export class Composer {
 		// 「Vault に保存」が ON のときは、Vault 外ファイルを Vault 内へ
 		// コピーする。保存先はピッカーを閉じた時点のアクティブファイル基準。
 		const toVault = this.plugin.runtimeSaveAttachmentsToVault;
-		const dir = toVault
-			? resolveAttachmentDir(this.app, this.plugin.settings)
-			: "";
+		const imported = toVault
+			? await importAttachments(this.app, this.plugin.settings, paths, true)
+			: { paths, copied: 0, failed: 0 };
 		let added = 0;
-		let copied = 0;
-		let copyFailed = 0;
-		for (const p of paths) {
-			let attachPath = p;
-			if (toVault) {
-				// 既に Vault 配下のファイルはコピーせず相対パスで参照する。
-				const rel = toVaultRelativeIfInside(p, this.app);
-				if (rel !== p) {
-					attachPath = rel;
-				} else {
-					try {
-						attachPath = await copyFileToVault(this.app, dir, p);
-						copied++;
-					} catch (err) {
-						console.warn(
-							"[claude-panel] copy attachment failed",
-							p,
-							err
-						);
-						copyFailed++;
-						continue;
-					}
-				}
-			}
-			if (!this.attachments.includes(attachPath)) {
-				this.attachments.push(attachPath);
+		for (const p of imported.paths) {
+			if (!this.attachments.includes(p)) {
+				this.attachments.push(p);
 				added++;
 			}
 		}
 		if (added > 0) this.renderAttachments();
+		const { copied, failed } = imported;
 		if (copied > 0) new Notice(t("composer.savedToVault", copied));
-		if (copyFailed > 0) new Notice(t("composer.copyFailed", copyFailed));
+		if (failed > 0) new Notice(t("composer.copyFailed", failed));
 		if (unresolvedCount > 0) {
 			new Notice(t("composer.unresolvedPaths", unresolvedCount));
-		} else if (paths.length > 0 && added === 0 && copyFailed === 0) {
+		} else if (paths.length > 0 && added === 0 && failed === 0) {
 			new Notice(t("composer.alreadyAttached"));
 		}
 	}
@@ -202,22 +166,19 @@ export class Composer {
 	async flushPendingPastes(): Promise<void> {
 		if (this.pendingPastes.length === 0) return;
 		const toVault = this.plugin.runtimeSaveAttachmentsToVault;
-		const dir = toVault
-			? resolveAttachmentDir(this.app, this.plugin.settings)
-			: "";
 		const pending = this.pendingPastes;
 		this.pendingPastes = [];
 		let savedToVault = 0;
 		for (const { file, fileName } of pending) {
 			try {
-				const savedPath = toVault
-					? await savePastedImageToVault(this.app, dir, file, fileName)
-					: await savePastedImage(
-							this.app,
-							this.plugin.getAttachmentFolder(),
-							file,
-							fileName
-						);
+				const savedPath = await storePastedImage(
+					this.app,
+					this.plugin.settings,
+					this.plugin.getAttachmentFolder(),
+					file,
+					fileName,
+					toVault
+				);
 				if (!this.attachments.includes(savedPath)) {
 					this.attachments.push(savedPath);
 				}
@@ -243,119 +204,11 @@ export class Composer {
 	}
 
 	renderActiveFile(): void {
-		const host = this.activeFileEl;
-		if (!host) return;
-		host.empty();
-
-		// アクティブフォルダが設定されているとアクティブファイルより優先
-		// （相互排他）。表示と挙動はファイルと対称。
-		if (this.activeFolderPath) {
-			const folder = this.app.vault.getAbstractFileByPath(
-				this.activeFolderPath
-			);
-			if (!(folder instanceof TFolder)) {
-				// 削除済み等で実体が無い場合は黙ってクリアしてフォールバック
-				this.activeFolderPath = null;
-			} else {
-				const fileCount = this.listFolderFiles(folder.path).length;
-				const label = host.createSpan({
-					cls: "claude-panel-active-file-label",
-					text: t("composer.activeLabel"),
-				});
-				label.title = t("composer.activeFolderTooltip");
-				const pathEl = host.createSpan({
-					cls: "claude-panel-active-file-path",
-					text: `${folder.path}/ ×${fileCount}`,
-				});
-				pathEl.title = t("composer.folderFileCount", folder.path, fileCount);
-				const toggle = host.createEl("button", {
-					cls: "claude-panel-active-file-toggle",
-					text: this.includeActiveFile
-						? t("composer.toggleIncluded")
-						: t("composer.toggleExcluded"),
-				});
-				toggle.onclick = () => {
-					this.includeActiveFile = !this.includeActiveFile;
-					this.renderActiveFile();
-				};
-				return;
-			}
-		}
-
-		const file = this.getActiveFile();
-		if (!file) {
-			host.createSpan({
-				cls: "claude-panel-active-file-empty",
-				text: t("composer.noActiveFile"),
-			});
-			return;
-		}
-		const label = host.createSpan({
-			cls: "claude-panel-active-file-label",
-			text: t("composer.activeLabel"),
-		});
-		label.title = t("composer.activeFileTooltip");
-		const pathEl = host.createSpan({
-			cls: "claude-panel-active-file-path",
-			text: file.path,
-		});
-		pathEl.title = file.path;
-		const toggle = host.createEl("button", {
-			cls: "claude-panel-active-file-toggle",
-			text: this.includeActiveFile
-				? t("composer.toggleIncluded")
-				: t("composer.toggleExcluded"),
-		});
-		toggle.onclick = () => {
-			this.includeActiveFile = !this.includeActiveFile;
-			this.renderActiveFile();
-		};
+		this.notes.renderActiveFile();
 	}
 
 	renderSelection(): void {
-		const host = this.selectionEl;
-		if (!host) return;
-		host.empty();
-		const sel = this.selection?.get() ?? null;
-		if (!sel) {
-			host.addClass("is-empty");
-			return;
-		}
-		host.removeClass("is-empty");
-
-		const charCount = sel.text.length;
-
-		const header = host.createDiv({
-			cls: "claude-panel-selection-header",
-		});
-		header.createSpan({
-			cls: "claude-panel-selection-label",
-			text: t("composer.selectionLabel"),
-		});
-		header.createSpan({
-			cls: "claude-panel-selection-meta",
-			text: t("composer.selectionMeta", sel.lineCount, charCount, sel.startLine),
-		});
-		const toggle = header.createEl("button", {
-			cls: "claude-panel-selection-toggle",
-			text: this.includeSelection
-				? t("composer.toggleIncluded")
-				: t("composer.toggleExcluded"),
-		});
-		toggle.onclick = () => {
-			this.includeSelection = !this.includeSelection;
-			this.renderSelection();
-		};
-
-		const preview = host.createDiv({
-			cls: "claude-panel-selection-preview",
-		});
-		const firstLine = sel.text.split("\n")[0];
-		const truncated =
-			firstLine.length > 100 ? firstLine.slice(0, 100) + "…" : firstLine;
-		const tail = sel.lineCount > 1 ? t("composer.selectionMoreLines", sel.lineCount - 1) : "";
-		preview.setText(truncated + tail);
-		preview.title = sel.text;
+		this.notes.renderSelection();
 	}
 
 	renderAttachments(): void {
@@ -374,7 +227,7 @@ export class Composer {
 			const labelEl = chip.createSpan({ text: labelText });
 			labelEl.title = path;
 			if (isFolder) {
-				const count = this.listFolderFiles(path).length;
+				const count = listFolderFiles(this.app, path).length;
 				chip.createSpan({
 					text: ` ×${count}`,
 					attr: { title: t("composer.fileCount", count) },
@@ -423,18 +276,8 @@ export class Composer {
 			if (!promptPaths.includes(promptPath)) promptPaths.push(promptPath);
 		};
 		if (!isSlash) {
-			// アクティブフォルダがあればフォルダを優先（相互排他）。
-			if (this.includeActiveFile && this.activeFolderPath) {
-				const folder = this.app.vault.getAbstractFileByPath(
-					this.activeFolderPath
-				);
-				if (folder instanceof TFolder) {
-					addMention(folder.path, true);
-				}
-			} else if (this.includeActiveFile) {
-				const activeFile = this.getActiveFile();
-				if (activeFile) addMention(activeFile.path, false);
-			}
+			const target = this.notes.getIncludedTarget();
+			if (target) addMention(target.path, target.isFolder);
 			for (const fp of this.attachments) {
 				addMention(fp, this.isFolderPath(fp));
 			}
@@ -447,11 +290,8 @@ export class Composer {
 				? "ultrathink: "
 				: "";
 
-		const sel =
-			!isSlash && this.includeSelection
-				? this.selection?.get() ?? null
-				: null;
-		const selectionBlock = sel ? formatSelectionBlock(sel) : "";
+		const sel = isSlash ? null : this.notes.getIncludedSelection();
+		const selectionBlock = formatSelectionBlock(sel);
 		const selectionRef: SelectionRef | undefined = sel
 			? {
 					filePath: sel.filePath,
@@ -515,36 +355,7 @@ export class Composer {
 	//   内部ヘルパー
 	// ============================================================
 
-	private getActiveFile(): TFile | null {
-		return this.app.workspace.getActiveFile();
-	}
-
 	private isFolderPath(path: string): boolean {
 		return this.app.vault.getAbstractFileByPath(path) instanceof TFolder;
 	}
-
-	private listFolderFiles(folderPath: string): string[] {
-		const folder = this.app.vault.getAbstractFileByPath(folderPath);
-		if (!(folder instanceof TFolder)) return [];
-		const out: string[] = [];
-		const walk = (f: TFolder): void => {
-			for (const child of f.children) {
-				if (child instanceof TFolder) walk(child);
-				else if (child instanceof TFile) out.push(child.path);
-			}
-		};
-		walk(folder);
-		out.sort();
-		return out;
-	}
-}
-
-function formatSelectionBlock(sel: CapturedSelection | null): string {
-	if (!sel) return "";
-	// プロンプトの構造は言語非依存(英語ラベル)で送る。Claude が読むため、
-	// ユーザの Obsidian 言語設定とは独立。
-	const src = sel.filePath
-		? ` (source: \`${sel.filePath}\` L${sel.startLine})`
-		: "";
-	return `Selection${src}:\n\`\`\`\n${sel.text}\n\`\`\`\n\n`;
 }

@@ -2,6 +2,7 @@ import { type App, normalizePath } from "obsidian";
 import * as nodePath from "path";
 import * as fs from "fs";
 import type { ClaudePanelSettings } from "./settings/types";
+import { toVaultRelativeIfInside } from "./notify-sound-source";
 
 /**
  * 添付ファイル関連のヘルパー群。view の状態には触らず、入出力だけを
@@ -16,37 +17,12 @@ export interface FilePickerResult {
 
 /**
  * Electron のネイティブ OS ファイル選択ダイアログを開き、選ばれた
- * ファイルの絶対パスを返す。File オブジェクトから絶対パスを取り出す
- * には旧 Electron では `File.path`、Electron 32+ では
- * `electron.webUtils.getPathForFile(file)` を使う。両方試して
- * 最初に成功したパスを採用する。
+ * ファイルの絶対パスを返す。
  *
  * キャンセル時は `paths` が空・`unresolvedCount` 0 で resolve する。
  */
 export function pickFilesViaDialog(): Promise<FilePickerResult> {
 	return new Promise((resolve) => {
-		const electron = (
-			window as unknown as {
-				require?: (id: string) => {
-					webUtils?: { getPathForFile?: (f: File) => string };
-				};
-			}
-		).require?.("electron");
-		const getPathForFile = electron?.webUtils?.getPathForFile;
-		const resolvePath = (f: File): string | null => {
-			const fromProp = (f as File & { path?: string }).path;
-			if (fromProp) return fromProp;
-			if (getPathForFile) {
-				try {
-					const p = getPathForFile(f);
-					if (p) return p;
-				} catch {
-					/* fall through */
-				}
-			}
-			return null;
-		};
-
 		const input = activeDocument.createElement("input");
 		input.type = "file";
 		input.multiple = true;
@@ -59,7 +35,7 @@ export function pickFilesViaDialog(): Promise<FilePickerResult> {
 			const paths: string[] = [];
 			let unresolvedCount = 0;
 			for (const f of files) {
-				const p = resolvePath(f);
+				const p = getFilePath(f);
 				if (!p) unresolvedCount++;
 				else paths.push(p);
 			}
@@ -75,6 +51,81 @@ export function pickFilesViaDialog(): Promise<FilePickerResult> {
 		activeDocument.body.appendChild(input);
 		input.click();
 	});
+}
+
+/**
+ * File の絶対パスを返す。取得できなければ null。旧 Electron では `File.path`、
+ * Electron 32+ では `electron.webUtils.getPathForFile(file)` を使う。
+ */
+export function getFilePath(file: File): string | null {
+	const fromProp = (file as File & { path?: string }).path;
+	if (fromProp) return fromProp;
+	const electron = (
+		window as unknown as {
+			require?: (id: string) => {
+				webUtils?: { getPathForFile?: (f: File) => string };
+			};
+		}
+	).require?.("electron");
+	try {
+		return electron?.webUtils?.getPathForFile?.(file) || null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * OS 絶対パスのファイル群を参照用のパスに変える。Vault 内のファイルは Vault 相対、
+ * 外のファイルは絶対パスのまま返す。`saveToVault` なら外のファイルを Vault へ
+ * コピーし、コピー先の Vault 相対パスを返す。
+ */
+export async function importAttachments(
+	app: App,
+	settings: ClaudePanelSettings,
+	absolutePaths: string[],
+	saveToVault: boolean
+): Promise<{ paths: string[]; copied: number; failed: number }> {
+	const dir = saveToVault ? resolveAttachmentDir(app, settings) : "";
+	const paths: string[] = [];
+	let copied = 0;
+	let failed = 0;
+	for (const p of absolutePaths) {
+		const rel = toVaultRelativeIfInside(p, app);
+		if (!saveToVault || rel !== p) {
+			paths.push(rel);
+			continue;
+		}
+		try {
+			paths.push(await copyFileToVault(app, dir, p));
+			copied++;
+		} catch (err) {
+			console.warn("[claude-panel] copy attachment failed", p, err);
+			failed++;
+		}
+	}
+	return { paths, copied, failed };
+}
+
+/**
+ * 貼り付け画像を保存し、Vault 相対パスを返す。`saveToVault` なら設定の保存先へ、
+ * そうでなければ一時フォルダ（unload 時に掃除される）へ置く。
+ */
+export function storePastedImage(
+	app: App,
+	settings: ClaudePanelSettings,
+	tempFolder: string,
+	file: File,
+	fileName: string,
+	saveToVault: boolean
+): Promise<string> {
+	return saveToVault
+		? savePastedImageToVault(
+				app,
+				resolveAttachmentDir(app, settings),
+				file,
+				fileName
+			)
+		: savePastedImage(app, tempFolder, file, fileName);
 }
 
 /** クリップボードイベントから画像ファイル群を抽出する。 */
@@ -112,7 +163,7 @@ export function pastedImageFileName(file: File): string {
  * 掃除される。「Vault に保存」が ON のときは代わりに
  * `savePastedImageToVault` を使う。
  */
-export async function savePastedImage(
+async function savePastedImage(
 	app: App,
 	folder: string,
 	file: File,
@@ -133,7 +184,7 @@ export async function savePastedImage(
  * 解決する。アクティブファイル基準のモードでアクティブファイルが無い場合は
  * Vault ルート（空文字）にフォールバックする。
  */
-export function resolveAttachmentDir(
+function resolveAttachmentDir(
 	app: App,
 	settings: ClaudePanelSettings
 ): string {
@@ -225,7 +276,7 @@ async function writeBinaryToVault(
  * 保存したファイルは Obsidian のファイルツリーに現れ、unload 時にも
  * 削除されない。
  */
-export async function savePastedImageToVault(
+async function savePastedImageToVault(
 	app: App,
 	dir: string,
 	file: File,
@@ -239,7 +290,7 @@ export async function savePastedImageToVault(
  * OS 絶対パスのファイルを Vault 内の dir にコピーし、Vault 相対パスを返す。
  * Vault 外のファイルは DataAdapter では読めないため、Node の fs で読み込む。
  */
-export async function copyFileToVault(
+async function copyFileToVault(
 	app: App,
 	dir: string,
 	absolutePath: string

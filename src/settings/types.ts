@@ -174,9 +174,19 @@ export const ATTACHMENT_SAVE_LOCATIONS: AttachmentSaveLocation[] = [
 	"activeFileSubfolder",
 ];
 
+/**
+ * パネルの UI。`terminal` は Claude Code のターミナル UI をそのまま表示し、
+ * `chat` はプラグイン独自のチャット UI を表示する。
+ */
+export type InterfaceMode = "terminal" | "chat";
+
+export const INTERFACE_MODES: InterfaceMode[] = ["terminal", "chat"];
+
 export interface ClaudePanelSettings {
 	/** 設定スキーマの世代。SETTINGS_SCHEMA_VERSION を参照。 */
 	settingsSchemaVersion: number;
+	/** パネルの UI の種類。 */
+	interfaceMode: InterfaceMode;
 	claudePath: string;
 	model: string;
 	/** ラン中の initialize ハンドシェイクで CLI から収穫したモデル一覧の
@@ -258,6 +268,7 @@ export const COMPOSER_BOTTOM_PADDING_MAX = 80;
 
 export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
+	interfaceMode: "terminal",
 	claudePath: "",
 	model: "sonnet",
 	discoveredModels: null,

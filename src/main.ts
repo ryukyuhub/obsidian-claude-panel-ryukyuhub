@@ -1,15 +1,29 @@
-import { Plugin, WorkspaceLeaf, normalizePath } from "obsidian";
+import {
+	ItemView,
+	Notice,
+	Plugin,
+	View,
+	Workspace,
+	WorkspaceLeaf,
+	normalizePath,
+} from "obsidian";
 import {
 	ClaudePanelSettings,
 	DEFAULT_SETTINGS,
 	ClaudePanelSettingTab,
 	THINKING_MODES,
 	EFFORT_LEVELS,
+	INTERFACE_MODES,
 	SETTINGS_SCHEMA_VERSION,
 	modelLabelFor,
 	type DiscoveredModel,
+	type InterfaceMode,
 } from "./settings";
-import { ClaudePanelView, VIEW_TYPE_CLAUDE_PANEL } from "./view";
+import { VIEW_TYPE_CLAUDE_PANEL } from "./panel-view";
+import { ClaudePanelView } from "./view";
+import { HookServer } from "./terminal/hook-server";
+import { killAllPtys } from "./terminal/pty";
+import { ClaudeTerminalView } from "./terminal/terminal-view";
 import { UsageHistory } from "./usage-history";
 import {
 	fetchAuthStatus,
@@ -21,6 +35,18 @@ import type { MessageUsage } from "./chat-message";
 import { t, setLanguageOverride } from "./i18n";
 import { setRoleNames, setModelLabelResolver } from "./chat-message-render";
 
+type Panel = ClaudePanelView | ClaudeTerminalView;
+
+function isPanel(view: View | null): view is Panel {
+	return view instanceof ClaudePanelView || view instanceof ClaudeTerminalView;
+}
+
+/** 表示する。新しい Obsidian では、遅延読み込みのビューが揃うまで待つ。 */
+async function reveal(workspace: Workspace, leaf: WorkspaceLeaf): Promise<void> {
+	// 型は void だが、1.7.2 以降は Promise を返す。
+	await (workspace.revealLeaf(leaf) as unknown);
+}
+
 export default class ClaudePanelPlugin extends Plugin {
 	settings!: ClaudePanelSettings;
 	// チャットターン終了ごとの usage を vault 設定フォルダ配下に永続化する。
@@ -31,6 +57,12 @@ export default class ClaudePanelPlugin extends Plugin {
 	// 初期値は `settings.saveAttachmentsToVault`。設定タブで変更された場合も
 	// ここを同期する。Obsidian 再起動・プラグイン再有効化でリセットされる。
 	runtimeSaveAttachmentsToVault = false;
+	// ターミナル UI の claude から hook を受けるサーバー。最初の register で待ち受ける。
+	readonly hookServer = new HookServer();
+	// interfaceMode の無い data.json（ターミナル UI 追加より前の版）を読み込んだ。
+	private interfaceModeMigrated = false;
+	// UI の切り替えを 1 つずつ順に行うための待ち行列。
+	private interfaceSwitch: Promise<void> = Promise.resolve();
 
 	// クリップボードからペーストした画像の保存先（Vault 相対パス）。
 	// プラグイン自身のディレクトリ配下に置くことでユーザー側の
@@ -47,6 +79,9 @@ export default class ClaudePanelPlugin extends Plugin {
 		// ribbon / command を登録する前に i18n の override を適用しないと、
 		// ラベルが Obsidian 言語で固定されてしまう。
 		setLanguageOverride(this.settings.language);
+		if (this.interfaceModeMigrated) {
+			new Notice(t("terminal.migratedNotice"), 15000);
+		}
 		setRoleNames(this.settings.userName, this.settings.assistantName);
 		// モデルバッジをドロップダウンと同じバージョン付きラベルにする。
 		// settings を遅延参照するので、途中でモデル一覧が収穫されても
@@ -66,8 +101,13 @@ export default class ClaudePanelPlugin extends Plugin {
 
 		this.registerView(
 			VIEW_TYPE_CLAUDE_PANEL,
-			(leaf: WorkspaceLeaf) => new ClaudePanelView(leaf, this)
+			(leaf: WorkspaceLeaf) => this.createPanelView(leaf)
 		);
+
+		// Obsidian の終了・リロードで claude を残さない。終了は quit、リロードは
+		// beforeunload で届く（Obsidian の版で発火する組み合わせが違う）。
+		this.registerEvent(this.app.workspace.on("quit", () => killAllPtys()));
+		this.registerDomEvent(window, "beforeunload", () => killAllPtys());
 
 		this.addRibbonIcon("bot", t("ribbon.openPanel"), () => {
 			void this.activateView();
@@ -84,8 +124,7 @@ export default class ClaudePanelPlugin extends Plugin {
 			name: t("command.focusInput"),
 			callback: async () => {
 				await this.activateView();
-				const view = this.getView();
-				view?.focusInput();
+				this.getPanel()?.focusInput();
 			},
 		});
 
@@ -100,7 +139,7 @@ export default class ClaudePanelPlugin extends Plugin {
 			// ショートカットは他のホットキーと競合しうる）。「Enter では送信しない」
 			// 設定を使うユーザーは Obsidian のホットキー設定で送信キーを割り当てる。
 			checkCallback: (checking) => {
-				const view = this.getView();
+				const view = this.getChatView();
 				if (!view) return false;
 				if (!checking) view.commandSend();
 				return true;
@@ -111,7 +150,7 @@ export default class ClaudePanelPlugin extends Plugin {
 			id: "cancel-claude-panel-run",
 			name: t("command.cancelAgent"),
 			checkCallback: (checking) => {
-				const view = this.getView();
+				const view = this.getPanel();
 				if (!view) return false;
 				if (!checking) view.commandCancel();
 				return true;
@@ -122,7 +161,7 @@ export default class ClaudePanelPlugin extends Plugin {
 			id: "clear-claude-panel-conversation",
 			name: t("command.clearChat"),
 			checkCallback: (checking) => {
-				const view = this.getView();
+				const view = this.getPanel();
 				if (!view) return false;
 				if (!checking) view.commandClear();
 				return true;
@@ -133,7 +172,7 @@ export default class ClaudePanelPlugin extends Plugin {
 			id: "cycle-claude-panel-model",
 			name: t("command.cycleModel"),
 			checkCallback: (checking) => {
-				const view = this.getView();
+				const view = this.getChatView();
 				if (!view) return false;
 				if (!checking) view.commandCycleModel();
 				return true;
@@ -144,7 +183,7 @@ export default class ClaudePanelPlugin extends Plugin {
 			id: "toggle-claude-panel-include-active",
 			name: t("command.toggleActiveFile"),
 			checkCallback: (checking) => {
-				const view = this.getView();
+				const view = this.getPanel();
 				if (!view) return false;
 				if (!checking) view.commandToggleIncludeActive();
 				return true;
@@ -156,6 +195,8 @@ export default class ClaudePanelPlugin extends Plugin {
 
 	// eslint-disable-next-line @typescript-eslint/no-misused-promises -- onunload も onload 同様 Obsidian の async ライフサイクルは型上 void で誤検知
 	async onunload(): Promise<void> {
+		killAllPtys();
+		this.hookServer.close();
 		// Leaf は Obsidian 側で自動的に切り離されるので明示的な処理は不要。
 		// debounce 中の usage 書き込みを取りこぼさないよう即時 flush。
 		await this.usageHistory?.flushNow();
@@ -248,6 +289,10 @@ export default class ClaudePanelPlugin extends Plugin {
 		let dirty =
 			Boolean(migrated) ||
 			(stored !== null && storedVersion < SETTINGS_SCHEMA_VERSION);
+		if (stored !== null && stored.interfaceMode === undefined) {
+			this.interfaceModeMigrated = true;
+			dirty = true;
+		}
 		if (migrated) {
 			this.settings.model = migrated;
 		}
@@ -271,6 +316,10 @@ export default class ClaudePanelPlugin extends Plugin {
 		}
 		if (!EFFORT_LEVELS.includes(this.settings.effortLevel)) {
 			this.settings.effortLevel = DEFAULT_SETTINGS.effortLevel;
+			dirty = true;
+		}
+		if (!INTERFACE_MODES.includes(this.settings.interfaceMode)) {
+			this.settings.interfaceMode = DEFAULT_SETTINGS.interfaceMode;
 			dirty = true;
 		}
 		// 収穫キャッシュの形が壊れている場合（手編集など）は破棄して
@@ -306,29 +355,79 @@ export default class ClaudePanelPlugin extends Plugin {
 		}
 		this.settings.discoveredModels = next;
 		void this.saveSettings();
-		this.getView()?.refreshControls();
+		this.getChatView()?.refreshControls();
 	}
 
-	getView(): ClaudePanelView | null {
-		const leaves = this.app.workspace.getLeavesOfType(
-			VIEW_TYPE_CLAUDE_PANEL
+	/** 設定中の UI の種類でパネルのビューを作る。 */
+	private createPanelView(leaf: WorkspaceLeaf): Panel {
+		return this.settings.interfaceMode === "chat"
+			? new ClaudePanelView(leaf, this)
+			: new ClaudeTerminalView(leaf, this);
+	}
+
+	/** 開いているパネル。まだ読み込まれていない（遅延読み込みの）ものは含まない。 */
+	getPanels(): Panel[] {
+		return this.app.workspace
+			.getLeavesOfType(VIEW_TYPE_CLAUDE_PANEL)
+			.map((leaf) => leaf.view)
+			.filter(isPanel);
+	}
+
+	/** 操作対象のパネル。アクティブなパネルを優先し、無ければ先頭。 */
+	getPanel(): Panel | null {
+		return this.getActivePanel() ?? this.getPanels()[0] ?? null;
+	}
+
+	/** 操作対象のチャット UI のパネル。ターミナル UI のときは null。 */
+	getChatView(): ClaudePanelView | null {
+		const panel = this.getPanel();
+		return panel instanceof ClaudePanelView ? panel : null;
+	}
+
+	private getActivePanel(): Panel | null {
+		const view = this.app.workspace.getActiveViewOfType(ItemView);
+		return isPanel(view) ? view : null;
+	}
+
+	/** UI の種類を保存し、開いているパネルを作り直す。 */
+	setInterfaceMode(mode: InterfaceMode): Promise<void> {
+		const next = this.interfaceSwitch.then(() =>
+			this.switchInterface(mode)
 		);
-		const v = leaves[0]?.view;
-		return v instanceof ClaudePanelView ? v : null;
+		// 失敗しても次の切り替えは受け付ける。
+		this.interfaceSwitch = next.catch(() => undefined);
+		return next;
+	}
+
+	private async switchInterface(mode: InterfaceMode): Promise<void> {
+		if (this.settings.interfaceMode !== mode) {
+			this.settings.interfaceMode = mode;
+			await this.saveSettings();
+		}
+		for (const panel of this.getPanels()) {
+			if ((panel instanceof ClaudePanelView) === (mode === "chat")) {
+				continue;
+			}
+			// チャット UI の onClose は実行中のランを止めない。
+			if (panel instanceof ClaudePanelView) panel.commandCancel();
+			await panel.leaf.open(this.createPanelView(panel.leaf));
+		}
 	}
 
 	/** パネル内のコンテキスト/セッション ドーナツメーターを再描画する
 	 *  （セッションバジェット等の設定変更後に呼ばれる）。
 	 *  パネルが閉じている場合は何もしない。 */
 	refreshMeters(): void {
-		this.getView()?.refreshMeters();
+		this.getChatView()?.refreshMeters();
 	}
 
 	async activateView(): Promise<void> {
 		const { workspace } = this.app;
-		const existing = workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_PANEL);
-		if (existing.length > 0) {
-			workspace.revealLeaf(existing[0]);
+		const existing =
+			this.getActivePanel()?.leaf ??
+			workspace.getLeavesOfType(VIEW_TYPE_CLAUDE_PANEL)[0];
+		if (existing) {
+			await reveal(workspace, existing);
 			return;
 		}
 
@@ -338,7 +437,7 @@ export default class ClaudePanelPlugin extends Plugin {
 				type: VIEW_TYPE_CLAUDE_PANEL,
 				active: true,
 			});
-			workspace.revealLeaf(leaf);
+			await reveal(workspace, leaf);
 		}
 	}
 }

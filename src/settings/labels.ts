@@ -1,5 +1,6 @@
 import type {
 	ClaudePanelSettings,
+	InterfaceMode,
 	NotifyOnComplete,
 	PermissionMode,
 	ThinkingMode,
@@ -13,6 +14,15 @@ import { t } from "../i18n";
  * 切り離した純粋関数として並べる。`switch` で網羅性を保ち、enum を
  * 増やしたとき型エラーで気付けるようにしている。
  */
+
+export function interfaceModeLabel(mode: InterfaceMode): string {
+	switch (mode) {
+		case "terminal":
+			return t("settings.interfaceMode.option.terminal");
+		case "chat":
+			return t("settings.interfaceMode.option.chat");
+	}
+}
 
 export function notifyOnCompleteLabel(n: NotifyOnComplete): string {
 	switch (n) {

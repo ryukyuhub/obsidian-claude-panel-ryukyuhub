@@ -1,0 +1,2 @@
+# PTY ブリッジは文字列として main.js に埋め込む。CRLF になると sh が動かない。
+src/terminal/bridge/* text eol=lf

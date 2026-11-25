@@ -67,7 +67,12 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: path.join(OUT_DIR, "main.js"),
   minify: prod,
+  // mainFields は変えない（platform: node の既定は main 優先）。module を優先すると
+  // @xterm/xterm 6.0.0 の xterm.mjs が使われ、minify 後に DECRQM（CSI ? … $p）の
+  // 受信で例外になる。
   platform: "node",
+  // PTY ブリッジのスクリプトは文字列として main.js に埋め込む。
+  loader: { ".ps1": "text", ".py": "text", ".sh": "text" },
   plugins: [copyAssetsPlugin],
 });
 

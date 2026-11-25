@@ -13,6 +13,7 @@ import {
 	EFFORT_LEVELS,
 	FONT_SIZE_MAX,
 	FONT_SIZE_MIN,
+	INTERFACE_MODES,
 	NOTIFY_ON_COMPLETE_OPTIONS,
 	NOTIFY_VOLUME_MAX,
 	NOTIFY_VOLUME_MIN,
@@ -21,6 +22,7 @@ import {
 	UI_LANGUAGES,
 	type AttachmentSaveLocation,
 	type EffortLevel,
+	type InterfaceMode,
 	type NotifyOnComplete,
 	type PermissionMode,
 	type ThinkingMode,
@@ -28,6 +30,7 @@ import {
 } from "./types";
 import {
 	formatModelLabel,
+	interfaceModeLabel,
 	modelChoices,
 	notifyOnCompleteLabel,
 	permissionModeLabel,
@@ -60,6 +63,23 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 		});
 
 		this.renderSetupSection(containerEl);
+
+		// チャット UI だけで使う設定は、ターミナル UI のときは出さない。
+		const isChat = this.plugin.settings.interfaceMode === "chat";
+
+		new Setting(containerEl)
+			.setName(t("settings.interfaceMode.name"))
+			.setDesc(t("settings.interfaceMode.desc"))
+			.addDropdown((dropdown) => {
+				for (const mode of INTERFACE_MODES) {
+					dropdown.addOption(mode, interfaceModeLabel(mode));
+				}
+				dropdown.setValue(this.plugin.settings.interfaceMode);
+				dropdown.onChange(async (value) => {
+					await this.plugin.setInterfaceMode(value as InterfaceMode);
+					this.display();
+				});
+			});
 
 		const resolvedEl = containerEl.createDiv({
 			cls: "claude-panel-resolved-path",
@@ -124,73 +144,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
-			.setName(t("settings.permissionMode.name"))
-			.setDesc(t("settings.permissionMode.desc"))
-			.addDropdown((dropdown) => {
-				for (const m of PERMISSION_MODES) {
-					dropdown.addOption(m, permissionModeLabel(m));
-				}
-				dropdown.setValue(this.plugin.settings.permissionMode);
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.permissionMode = value as PermissionMode;
-					await this.plugin.saveSettings();
-					this.plugin.getView()?.refreshControls();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(t("settings.model.name"))
-			.setDesc(t("settings.model.desc"))
-			.addDropdown((dropdown) => {
-				const choices = modelChoices(this.plugin.settings);
-				for (const c of choices) {
-					dropdown.addOption(c.value, c.label);
-				}
-				const current = this.plugin.settings.model;
-				if (current && !choices.some((c) => c.value === current)) {
-					dropdown.addOption(
-						current,
-						`${formatModelLabel(current)} (custom)`
-					);
-				}
-				dropdown.setValue(current);
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.model = value;
-					await this.plugin.saveSettings();
-					this.plugin.getView()?.refreshControls();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(t("settings.thinking.name"))
-			.setDesc(t("settings.thinking.desc"))
-			.addDropdown((dropdown) => {
-				for (const mode of THINKING_MODES) {
-					dropdown.addOption(mode, thinkingModeLabel(mode));
-				}
-				dropdown.setValue(this.plugin.settings.thinkingMode);
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.thinkingMode = value as ThinkingMode;
-					await this.plugin.saveSettings();
-					this.plugin.getView()?.refreshControls();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(t("settings.effort.name"))
-			.setDesc(t("settings.effort.desc"))
-			.addDropdown((dropdown) => {
-				for (const e of EFFORT_LEVELS) {
-					dropdown.addOption(e, e);
-				}
-				dropdown.setValue(this.plugin.settings.effortLevel);
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.effortLevel = value as EffortLevel;
-					await this.plugin.saveSettings();
-					this.plugin.getView()?.refreshControls();
-				});
-			});
+		if (isChat) this.renderModelSection(containerEl);
 
 		new Setting(containerEl)
 			.setName(t("settings.includeActiveDefault.name"))
@@ -224,18 +178,195 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					// 動的更新の API がないため、完全な反映には再読み込みが
 					// 必要 — Notice で案内する。
 					this.display();
-					this.plugin.getView()?.rebuildLocalizedUI();
+					for (const panel of this.plugin.getPanels()) {
+						panel.rebuildLocalizedUI();
+					}
 					new Notice(t("settings.language.restartHint"));
 				});
 			});
 
+		if (isChat) this.renderRoleNameSection(containerEl);
+
+		new Setting(containerEl)
+			.setName(t("settings.fontSize.name"))
+			.setDesc(t("settings.fontSize.desc", FONT_SIZE_MIN, FONT_SIZE_MAX))
+			.addSlider((slider) =>
+				slider
+					.setLimits(FONT_SIZE_MIN, FONT_SIZE_MAX, 1)
+					.setValue(this.plugin.settings.fontSize)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.fontSize = value;
+						await this.plugin.saveSettings();
+						for (const panel of this.plugin.getPanels()) {
+							panel.applyFontSize();
+						}
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
+					.setIcon("rotate-ccw")
+					.setTooltip(t("settings.resetToDefault"))
+					.onClick(async () => {
+						this.plugin.settings.fontSize =
+							DEFAULT_SETTINGS.fontSize;
+						await this.plugin.saveSettings();
+						for (const panel of this.plugin.getPanels()) {
+							panel.applyFontSize();
+						}
+						this.display();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName(t("settings.composerPadding.name"))
+			.setDesc(
+				t(
+					"settings.composerPadding.desc",
+					COMPOSER_BOTTOM_PADDING_MIN,
+					COMPOSER_BOTTOM_PADDING_MAX
+				)
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(
+						COMPOSER_BOTTOM_PADDING_MIN,
+						COMPOSER_BOTTOM_PADDING_MAX,
+						2
+					)
+					.setValue(this.plugin.settings.composerBottomPadding)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.composerBottomPadding = value;
+						await this.plugin.saveSettings();
+						for (const panel of this.plugin.getPanels()) {
+							panel.applyComposerBottomPadding();
+						}
+					})
+			)
+			.addExtraButton((btn) =>
+				btn
+					.setIcon("rotate-ccw")
+					.setTooltip(t("settings.resetToDefault"))
+					.onClick(async () => {
+						this.plugin.settings.composerBottomPadding =
+							DEFAULT_SETTINGS.composerBottomPadding;
+						await this.plugin.saveSettings();
+						for (const panel of this.plugin.getPanels()) {
+							panel.applyComposerBottomPadding();
+						}
+						this.display();
+					})
+			);
+
+		this.renderNotificationSection(containerEl);
+
+		if (isChat) this.renderSubmitSection(containerEl);
+
+		new Setting(containerEl)
+			.setName(t("settings.hotkeys.name"))
+			.setDesc(t("settings.hotkeys.desc"))
+			.addButton((btn) =>
+				btn
+					.setButtonText(t("settings.hotkeys.openBtn"))
+					.setCta()
+					.onClick(() => {
+						// Obsidian の設定モーダルは ID 指定で setting タブを開ける。
+						// `hotkeys` は組み込みタブ。プラグイン ID を渡すと、
+						// 表示されるコマンドを本プラグイン分に事前フィルタできる。
+						const setting = getSettingModal(this.app);
+						setting?.open();
+						setting?.openTabById("hotkeys");
+						const tab = setting?.activeTab;
+						if (tab?.setQuery) {
+							tab.setQuery(this.plugin.manifest.id);
+						}
+					})
+			);
+
+		this.renderAboutSection(containerEl);
+	}
+
+	/** 承認・モデル・思考・Effort（チャット UI のみ）。 */
+	private renderModelSection(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName(t("settings.permissionMode.name"))
+			.setDesc(t("settings.permissionMode.desc"))
+			.addDropdown((dropdown) => {
+				for (const m of PERMISSION_MODES) {
+					dropdown.addOption(m, permissionModeLabel(m));
+				}
+				dropdown.setValue(this.plugin.settings.permissionMode);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.permissionMode = value as PermissionMode;
+					await this.plugin.saveSettings();
+					this.plugin.getChatView()?.refreshControls();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(t("settings.model.name"))
+			.setDesc(t("settings.model.desc"))
+			.addDropdown((dropdown) => {
+				const choices = modelChoices(this.plugin.settings);
+				for (const c of choices) {
+					dropdown.addOption(c.value, c.label);
+				}
+				const current = this.plugin.settings.model;
+				if (current && !choices.some((c) => c.value === current)) {
+					dropdown.addOption(
+						current,
+						`${formatModelLabel(current)} (custom)`
+					);
+				}
+				dropdown.setValue(current);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.model = value;
+					await this.plugin.saveSettings();
+					this.plugin.getChatView()?.refreshControls();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(t("settings.thinking.name"))
+			.setDesc(t("settings.thinking.desc"))
+			.addDropdown((dropdown) => {
+				for (const mode of THINKING_MODES) {
+					dropdown.addOption(mode, thinkingModeLabel(mode));
+				}
+				dropdown.setValue(this.plugin.settings.thinkingMode);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.thinkingMode = value as ThinkingMode;
+					await this.plugin.saveSettings();
+					this.plugin.getChatView()?.refreshControls();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(t("settings.effort.name"))
+			.setDesc(t("settings.effort.desc"))
+			.addDropdown((dropdown) => {
+				for (const e of EFFORT_LEVELS) {
+					dropdown.addOption(e, e);
+				}
+				dropdown.setValue(this.plugin.settings.effortLevel);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.effortLevel = value as EffortLevel;
+					await this.plugin.saveSettings();
+					this.plugin.getChatView()?.refreshControls();
+				});
+			});
+	}
+
+	/** メッセージに表示する名前（チャット UI のみ）。 */
+	private renderRoleNameSection(containerEl: HTMLElement): void {
 		const applyRoleNames = () => {
 			setRoleNames(
 				this.plugin.settings.userName,
 				this.plugin.settings.assistantName
 			);
 			// 既にレンダリング済みのチャットバブルへ即座に反映する。
-			this.plugin.getView()?.rerenderMessages();
+			this.plugin.getChatView()?.rerenderMessages();
 		};
 
 		new Setting(containerEl)
@@ -265,73 +396,10 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 						applyRoleNames();
 					})
 			);
+	}
 
-		new Setting(containerEl)
-			.setName(t("settings.fontSize.name"))
-			.setDesc(t("settings.fontSize.desc", FONT_SIZE_MIN, FONT_SIZE_MAX))
-			.addSlider((slider) =>
-				slider
-					.setLimits(FONT_SIZE_MIN, FONT_SIZE_MAX, 1)
-					.setValue(this.plugin.settings.fontSize)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.fontSize = value;
-						await this.plugin.saveSettings();
-						this.plugin.getView()?.applyFontSize();
-					})
-			)
-			.addExtraButton((btn) =>
-				btn
-					.setIcon("rotate-ccw")
-					.setTooltip(t("settings.resetToDefault"))
-					.onClick(async () => {
-						this.plugin.settings.fontSize =
-							DEFAULT_SETTINGS.fontSize;
-						await this.plugin.saveSettings();
-						this.plugin.getView()?.applyFontSize();
-						this.display();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t("settings.composerPadding.name"))
-			.setDesc(
-				t(
-					"settings.composerPadding.desc",
-					COMPOSER_BOTTOM_PADDING_MIN,
-					COMPOSER_BOTTOM_PADDING_MAX
-				)
-			)
-			.addSlider((slider) =>
-				slider
-					.setLimits(
-						COMPOSER_BOTTOM_PADDING_MIN,
-						COMPOSER_BOTTOM_PADDING_MAX,
-						2
-					)
-					.setValue(this.plugin.settings.composerBottomPadding)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.composerBottomPadding = value;
-						await this.plugin.saveSettings();
-						this.plugin.getView()?.applyComposerBottomPadding();
-					})
-			)
-			.addExtraButton((btn) =>
-				btn
-					.setIcon("rotate-ccw")
-					.setTooltip(t("settings.resetToDefault"))
-					.onClick(async () => {
-						this.plugin.settings.composerBottomPadding =
-							DEFAULT_SETTINGS.composerBottomPadding;
-						await this.plugin.saveSettings();
-						this.plugin.getView()?.applyComposerBottomPadding();
-						this.display();
-					})
-			);
-
-		this.renderNotificationSection(containerEl);
-
+	/** 送信キー（チャット UI のみ）。 */
+	private renderSubmitSection(containerEl: HTMLElement): void {
 		new Setting(containerEl)
 			.setName(t("settings.submitWithModEnter.name"))
 			.setDesc(t("settings.submitWithModEnter.desc"))
@@ -343,29 +411,6 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
-
-		new Setting(containerEl)
-			.setName(t("settings.hotkeys.name"))
-			.setDesc(t("settings.hotkeys.desc"))
-			.addButton((btn) =>
-				btn
-					.setButtonText(t("settings.hotkeys.openBtn"))
-					.setCta()
-					.onClick(() => {
-						// Obsidian の設定モーダルは ID 指定で setting タブを開ける。
-						// `hotkeys` は組み込みタブ。プラグイン ID を渡すと、
-						// 表示されるコマンドを本プラグイン分に事前フィルタできる。
-						const setting = getSettingModal(this.app);
-						setting?.open();
-						setting?.openTabById("hotkeys");
-						const tab = setting?.activeTab;
-						if (tab?.setQuery) {
-							tab.setQuery(this.plugin.manifest.id);
-						}
-					})
-			);
-
-		this.renderAboutSection(containerEl);
 	}
 
 	/** リポジトリ URL とバージョンを表示する。コミュニティプラグイン
@@ -521,7 +566,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 					.setIcon("play")
 					.setTooltip(t("settings.notify.testTooltip"))
 					.onClick(() => {
-						this.plugin.getView()?.testNotificationSound();
+						this.plugin.getPanel()?.testNotificationSound();
 					})
 			)
 			.addExtraButton((btn) =>

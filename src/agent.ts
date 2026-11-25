@@ -99,14 +99,19 @@ interface RunArgs {
 	continueLast?: boolean;
 }
 
+/** Vault 内で動いていることの説明。チャット UI とターミナル UI の両方で使う。
+ *  ターミナル UI では引数として渡すので、改行を入れないこと。 */
+export const VAULT_SYSTEM_PROMPT =
+	"You are an AI collaborator embedded in the user's Obsidian vault. " +
+	"The vault is your working directory. Help the user write, organize, and " +
+	"reason about their notes. Prefer concise edits.";
+
 // Claude Code の組み込みシステムプロンプトに `--append-system-prompt` で
 // 追記する文字列。ユーザー編集不可（ハードコード）にすることで、アシスタント
 // が常に「Obsidian Vault 内で動作している」ことを認識し、MCP ツールを
 // 積極的に呼ばないよう強制している。
 const SYSTEM_PROMPT_APPENDIX =
-	"You are an AI collaborator embedded in the user's Obsidian vault. " +
-	"The vault is your working directory. Help the user write, organize, and " +
-	"reason about their notes. Prefer concise edits." +
+	VAULT_SYSTEM_PROMPT +
 	"\n\n[Tool usage discipline]\n" +
 	"Do NOT proactively invoke MCP tools (mcp__*). " +
 	"Use MCP tools ONLY when the user explicitly asks for the corresponding capability " +
@@ -152,7 +157,7 @@ const SYSTEM_PROMPT_APPENDIX =
 	"rather than using free text.";
 
 let _emptyMcpConfigPath: string | null = null;
-function getEmptyMcpConfigPath(): string {
+export function getEmptyMcpConfigPath(): string {
 	if (_emptyMcpConfigPath && fs.existsSync(_emptyMcpConfigPath)) {
 		return _emptyMcpConfigPath;
 	}
