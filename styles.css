@@ -2406,6 +2406,11 @@
 
 .claude-panel-terminal {
 	position: relative;
+}
+
+/* 下端の余白（設定値と、ステータスバーに覆われる高さの大きい方）。上の
+   `.view-content { padding: 0 }` より詳細度を上げないと効かない。 */
+.workspace-leaf-content[data-type="claude-panel-view"] .view-content.claude-panel-terminal {
 	padding-bottom: var(--claude-panel-composer-bottom-padding, 0px);
 }
 

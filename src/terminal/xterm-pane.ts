@@ -12,7 +12,7 @@ import {
 	openFileUri,
 	URL_REGEX,
 } from "./links";
-import { resolveFontFamily, resolveTheme } from "./theme";
+import { isDarkTheme, resolveFontFamily, resolveTheme } from "./theme";
 
 /** これより小さいときは、非表示か開閉アニメーションの途中とみなす。 */
 const MIN_HOST_WIDTH = 50;
@@ -54,6 +54,8 @@ export class XtermPane {
 	private readonly cleanups: (() => void)[] = [];
 	private observer: ResizeObserver | null = null;
 	private layoutTimer: number | null = null;
+	/** 次のフレームでの配色の反映（ウィンドウごとの requestAnimationFrame）。 */
+	private appearanceFrame: { win: Window; id: number } | null = null;
 	private lastSize: { cols: number; rows: number } | null = null;
 	/** 前回の layout で寸法が取れたか。 */
 	private shown = false;
@@ -69,7 +71,7 @@ export class XtermPane {
 	private pendingBytes = 0;
 
 	constructor(private readonly options: XtermPaneOptions) {
-		this.dark = this.isDark();
+		this.dark = isDarkTheme(options.host);
 		this.term = this.createTerminal();
 		this.registerSequences();
 		this.bindHost();
@@ -199,6 +201,7 @@ export class XtermPane {
 		if (this.disposed) return;
 		this.disposed = true;
 		if (this.layoutTimer !== null) window.clearTimeout(this.layoutTimer);
+		this.cancelAppearanceFrame();
 		this.observer?.disconnect();
 		for (const cleanup of this.cleanups) cleanup();
 		this.setFlow(null);
@@ -211,6 +214,13 @@ export class XtermPane {
 			if (!isLinkClick(event, term)) return;
 			if (/^https?:/i.test(uri)) window.open(uri);
 			else openFileUri(app, uri, event);
+		};
+		// OSC 8 のリンクは表示と行き先が違うことがあるので、行き先をツールチップで見せる。
+		const showUrl = (_event: MouseEvent, uri: string): void => {
+			host.setAttr("title", uri);
+		};
+		const hideUrl = (): void => {
+			host.removeAttribute("title");
 		};
 		const term = new Terminal({
 			// unicode11 の有効化に必要
@@ -226,7 +236,12 @@ export class XtermPane {
 			fontFamily: resolveFontFamily(host),
 			theme: resolveTheme(host),
 			// 設定しないと、OSC 8 のリンクで xterm が confirm() を出す。
-			linkHandler: { activate: openUrl, allowNonHttpProtocols: true },
+			linkHandler: {
+				activate: openUrl,
+				hover: showUrl,
+				leave: hideUrl,
+				allowNonHttpProtocols: true,
+			},
 			...(Platform.isWin
 				? {
 						windowsPty: {
@@ -240,7 +255,13 @@ export class XtermPane {
 		term.loadAddon(new Unicode11Addon());
 		term.unicode.activeVersion = "11";
 		// 先に登録した方が優先される（URL の一部を Vault のパスとみなさない）。
-		term.loadAddon(new WebLinksAddon(openUrl, { urlRegex: URL_REGEX }));
+		term.loadAddon(
+			new WebLinksAddon(openUrl, {
+				urlRegex: URL_REGEX,
+				hover: showUrl,
+				leave: hideUrl,
+			})
+		);
 		term.registerLinkProvider(createVaultLinkProvider(app, term));
 		term.attachCustomKeyEventHandler((event) => this.handleKey(event));
 		term.onData((data) => {
@@ -271,12 +292,34 @@ export class XtermPane {
 		listen("drop", (event) => this.handleDrop(event));
 
 		const cssChange = app.workspace.on("css-change", () =>
-			this.applyAppearance()
+			this.handleCssChange()
 		);
 		this.cleanups.push(() => app.workspace.offref(cssChange));
 		this.cleanups.push(
 			view.containerEl.onWindowMigrated(() => this.handleWindowMigrated())
 		);
+	}
+
+	/**
+	 * ポップアウトでは css-change の時点で body のクラスと CSS 変数がまだ古いので、
+	 * 次のフレームでもう一度反映する（メインウィンドウでは最初の 1 回で正しい）。
+	 */
+	private handleCssChange(): void {
+		this.applyAppearance();
+		this.cancelAppearanceFrame();
+		const { win } = this.options.host;
+		const id = win.requestAnimationFrame(() => {
+			this.appearanceFrame = null;
+			this.applyAppearance();
+		});
+		this.appearanceFrame = { win, id };
+	}
+
+	private cancelAppearanceFrame(): void {
+		if (!this.appearanceFrame) return;
+		const { win, id } = this.appearanceFrame;
+		win.cancelAnimationFrame(id);
+		this.appearanceFrame = null;
 	}
 
 	private observeSize(): void {
@@ -344,13 +387,9 @@ export class XtermPane {
 		});
 	}
 
-	private isDark(): boolean {
-		return this.options.host.doc.body.hasClass("theme-dark");
-	}
-
 	/** 明暗が変わったことを知らせる。受け手が背景色を問い合わせるので、配色の更新後に呼ぶ。 */
 	private notifyColorScheme(): void {
-		const dark = this.isDark();
+		const dark = isDarkTheme(this.options.host);
 		if (dark === this.dark) return;
 		this.dark = dark;
 		if (this.notifiesColorScheme) {

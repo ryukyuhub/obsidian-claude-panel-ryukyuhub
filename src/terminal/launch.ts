@@ -1,6 +1,6 @@
 import { getEmptyMcpConfigPath, VAULT_SYSTEM_PROMPT } from "../agent";
 import { buildEnv } from "../cli-resolver";
-import type { SessionMode } from "./types";
+import { isSessionId, type SessionMode } from "./types";
 
 const isWindows = process.platform === "win32";
 
@@ -36,7 +36,10 @@ const TERMINAL_VAR_PATTERN = /^(KITTY_|ITERM_|VSCODE_|ConEmu)/i;
 
 const LOOPBACK_HOSTS = ["127.0.0.1", "localhost"];
 
-/** 引数に改行を入れないこと（Windows の .cmd 経由では渡せない）。 */
+/**
+ * 引数に改行を入れないこと（Windows の .cmd 経由では渡せない）。
+ * 再開する ID が UUID の形式でなければ例外を投げる（オプションとして解釈させない）。
+ */
 export function buildLaunchArgs(options: {
 	mode: SessionMode;
 	disableMcpServers: boolean;
@@ -45,7 +48,10 @@ export function buildLaunchArgs(options: {
 	const { mode } = options;
 	const args: string[] = [];
 	if (mode.kind === "continue") args.push("--continue");
-	if (mode.kind === "resume") args.push("--resume", mode.sessionId);
+	if (mode.kind === "resume") {
+		if (!isSessionId(mode.sessionId)) throw new Error("invalid session id");
+		args.push("--resume", mode.sessionId);
+	}
 	if (options.disableMcpServers) {
 		args.push("--strict-mcp-config", "--mcp-config", getEmptyMcpConfigPath());
 	}

@@ -44,6 +44,14 @@ export class PtyUnavailableError extends Error {
 	}
 }
 
+/** claude のセッション ID（UUID）。hook の値は claude の子プロセスからも送れるので、これ以外は使わない。 */
+const SESSION_ID_PATTERN =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isSessionId(value: string): boolean {
+	return SESSION_ID_PATTERN.test(value);
+}
+
 export type SessionMode =
 	| { kind: "new" }
 	| { kind: "continue" }
@@ -51,6 +59,7 @@ export type SessionMode =
 
 export interface HookRequest {
 	event: string;
+	/** UUID の形式のものだけ。それ以外は null。 */
 	sessionId: string | null;
 	prompt: string | null;
 }

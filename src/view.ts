@@ -24,7 +24,7 @@ import {
 } from "./settings";
 import { SelectionCapture } from "./selection-capture";
 import { CompletionNotifier } from "./completion-notifier";
-import { loadSoundBuffer } from "./notify-sound-source";
+import { getVaultBasePath, loadSoundBuffer } from "./notify-sound-source";
 import { ContextMeter } from "./context-meter";
 import { PromptHistory } from "./prompt-history";
 import { handleLocalSlashCommand, type SlashContext } from "./slash-commands";
@@ -170,7 +170,7 @@ export class ClaudePanelView extends ItemView implements PanelView {
 		// 読み出し、UI 履歴と `--continue` 予約を一括でセットする。Vault 内
 		// （= Google Drive 等で同期される領域）には何も書かないので、複数端末
 		// 間でセッション ID が衝突したり absolute path 添付が混入したりしない。
-		const cwd = this.getVaultPath();
+		const cwd = getVaultBasePath(this.app);
 		if (cwd) {
 			this.runtime.restoreFromLatestSession(cwd);
 		}
@@ -415,7 +415,7 @@ export class ClaudePanelView extends ItemView implements PanelView {
 		// スキル / ユーザーコマンドを発見してサジェストへ注入する。
 		// ファイル I/O は1回だけ（再スキャンが要るほど頻繁には変わらない）。
 		this.slashSuggest.setExtraCommands(
-			discoverDynamicCommands(this.getVaultPath())
+			discoverDynamicCommands(getVaultBasePath(this.app))
 		);
 		this.history = new PromptHistory(this.inputEl, () =>
 			this.runtime.getInputHistory()
@@ -1067,7 +1067,7 @@ export class ClaudePanelView extends ItemView implements PanelView {
 	private slashContext(): SlashContext {
 		return {
 			plugin: this.plugin,
-			getVaultPath: () => this.getVaultPath(),
+			getVaultPath: () => getVaultBasePath(this.app),
 			clearConversation: () => this.clearConversation(),
 			restoreFromLatestSession: (cwd) =>
 				this.runtime.restoreFromLatestSession(cwd),
@@ -1115,7 +1115,7 @@ export class ClaudePanelView extends ItemView implements PanelView {
 		}
 		const text = answer.trim();
 		if (!text) return;
-		const cwd = this.getVaultPath();
+		const cwd = getVaultBasePath(this.app);
 		if (!cwd) {
 			new Notice(t("view.vaultPathUnavailable"));
 			return;
@@ -1162,7 +1162,7 @@ export class ClaudePanelView extends ItemView implements PanelView {
 			}
 		}
 
-		const cwd = this.getVaultPath();
+		const cwd = getVaultBasePath(this.app);
 		if (!cwd) {
 			new Notice(t("view.vaultPathUnavailable"));
 			return;
@@ -1187,21 +1187,13 @@ export class ClaudePanelView extends ItemView implements PanelView {
 		await this.runtime.send(text, composed, cwd);
 	}
 
-	private getVaultPath(): string | null {
-		const adapter = this.app.vault.adapter as unknown as {
-			getBasePath?: () => string;
-			basePath?: string;
-		};
-		return adapter.getBasePath?.() ?? adapter.basePath ?? null;
-	}
-
 	private openSummaryConfirm(): void {
 		const usage = this.runtime?.getLastUsage() ?? null;
 		const fraction = toUsageFractionStatic(usage);
 		// バッジ側でも閾値チェックしているが、外部コマンドから呼ばれた場合
 		// などに備えてここでも防御的に弾く。
 		if (fraction === null || fraction < 0.6) return;
-		const cwd = this.getVaultPath();
+		const cwd = getVaultBasePath(this.app);
 		if (!cwd) {
 			new Notice(t("view.vaultPathUnavailable"));
 			return;

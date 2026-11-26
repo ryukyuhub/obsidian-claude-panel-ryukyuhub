@@ -1,8 +1,13 @@
 import type { ITheme } from "@xterm/xterm";
 
+/** `el` があるウィンドウの Obsidian がダークテーマか。 */
+export function isDarkTheme(el: HTMLElement): boolean {
+	return el.doc.body.hasClass("theme-dark");
+}
+
 /** Obsidian の CSS 変数から xterm の配色を作る。 */
 export function resolveTheme(host: HTMLElement): ITheme {
-	const dark = host.doc.body.hasClass("theme-dark");
+	const dark = isDarkTheme(host);
 	const probe = createProbe(host);
 	const toHex = createColorConverter(host);
 	const read = (name: string): string => {

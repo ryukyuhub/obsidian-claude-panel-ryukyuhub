@@ -28,7 +28,7 @@ import { VIEW_TYPE_CLAUDE_PANEL, type PanelView } from "../panel-view";
 import { SelectionCapture } from "../selection-capture";
 import { HOOK_TOKEN_ENV, buildClaudeSettings, userPromptReply } from "./hook-settings";
 import { buildLaunchArgs, buildLaunchEnv } from "./launch";
-import { openPty } from "./pty";
+import { onKillAll, openPty } from "./pty";
 import {
 	PtyUnavailableError,
 	type HookEndpoint,
@@ -38,6 +38,7 @@ import {
 	type PtySession,
 	type SessionMode,
 } from "./types";
+import { isDarkTheme } from "./theme";
 import { XtermPane } from "./xterm-pane";
 
 type ErrorReason = "noVault" | "cliMissing" | "ptyUnavailable" | "bridge" | "launch";
@@ -56,6 +57,9 @@ interface Size {
 
 // 寸法が取れないまま起動するとき（非表示中のコマンド実行など）の大きさ。
 const FALLBACK_SIZE: Size = { cols: 80, rows: 24 };
+
+// 起動の完了前に打たれた入力をためておく上限（バイト）。超えた分は捨てる。
+const MAX_PENDING_INPUT_BYTES = 64 * 1024;
 
 const INSTALL_COMMAND = "npm install -g @anthropic-ai/claude-code";
 const LOGIN_COMMAND = "claude /login";
@@ -83,6 +87,14 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 	// hook で知った claude のセッション ID（発話するまで届かず、/clear で変わる）。
 	// 発話の無いセッションは再開できないので、「再開」はこれがあるときだけ出す。
 	private sessionId: string | null = null;
+	// PTY が開くまで（this.pty が null の間）に打たれた入力。開いたら順に送る。
+	private pendingInput: (string | Uint8Array)[] = [];
+	private pendingInputBytes = 0;
+	// Obsidian のステータスバーがこのビューの下端を覆っている高さ（px）。
+	private statusBarInset = 0;
+	private statusBar: HTMLElement | null = null;
+	private statusBarObserver: ResizeObserver | null = null;
+	private insetFrame: { win: Window; id: number } | null = null;
 	private disposed = false;
 
 	constructor(
@@ -179,7 +191,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 			view: this,
 			host: screen,
 			getFontSize: () => this.plugin.settings.fontSize,
-			onInput: (data) => this.pty?.write(data),
+			onInput: (data) => this.sendInput(data),
 			onResize: (cols, rows) => this.applySize({ cols, rows }),
 			onVisible: () => {
 				if (this.status.kind === "idle") {
@@ -198,10 +210,28 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 					items.unresolved
 				),
 		});
+
+		// Obsidian の終了・リロードで claude を一括終了した。終了が取り消されたときに
+		// 「実行中」のまま残らないよう、終了した表示にする。
+		this.register(onKillAll(() => this.handleKilledAll()));
+
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => this.scheduleInsetUpdate())
+		);
+		this.registerEvent(
+			this.app.workspace.on("css-change", () => this.scheduleInsetUpdate())
+		);
+		this.register(
+			this.containerEl.onWindowMigrated(() => this.scheduleInsetUpdate())
+		);
+		this.scheduleInsetUpdate();
 	}
 
 	async onClose(): Promise<void> {
 		this.disposed = true;
+		this.cancelInsetFrame();
+		this.statusBarObserver?.disconnect();
+		this.statusBarObserver = null;
 		this.stopSession();
 		this.pane?.dispose();
 		this.notifier?.dispose();
@@ -209,6 +239,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 
 	onResize(): void {
 		this.pane?.scheduleLayout();
+		this.scheduleInsetUpdate();
 	}
 
 	// ============================================================
@@ -331,7 +362,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 				}),
 				cwd,
 				env: buildLaunchEnv(file, {
-					COLORFGBG: this.isDark() ? "15;0" : "0;15",
+					COLORFGBG: isDarkTheme(this.containerEl) ? "15;0" : "0;15",
 					...(endpoint ? { [HOOK_TOKEN_ENV]: endpoint.token } : {}),
 				}),
 				...size,
@@ -362,10 +393,28 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		if (latest && (latest.cols !== size.cols || latest.rows !== size.rows)) {
 			pty.resize(latest.cols, latest.rows);
 		}
+		const pending = this.pendingInput;
+		this.clearPendingInput();
+		for (const data of pending) pty.write(data);
 	}
 
-	private isDark(): boolean {
-		return this.containerEl.doc.body.hasClass("theme-dark");
+	/** 起動中なら、PTY が開くまでためておく。 */
+	private sendInput(data: string | Uint8Array): void {
+		if (this.pty) {
+			this.pty.write(data);
+			return;
+		}
+		if (this.status.kind !== "starting" && this.status.kind !== "running") return;
+		const bytes =
+			typeof data === "string" ? Buffer.byteLength(data, "utf8") : data.byteLength;
+		if (this.pendingInputBytes + bytes > MAX_PENDING_INPUT_BYTES) return;
+		this.pendingInput.push(data);
+		this.pendingInputBytes += bytes;
+	}
+
+	private clearPendingInput(): void {
+		this.pendingInput = [];
+		this.pendingInputBytes = 0;
 	}
 
 	private applySize(size: Size): void {
@@ -395,7 +444,19 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		this.releaseSession();
 	}
 
+	/** killAllPtys で終了させられた。kill した PTY の onExit は届かない。 */
+	private handleKilledAll(): void {
+		if (this.disposed) return;
+		if (this.status.kind !== "starting" && this.status.kind !== "running") return;
+		// 起動の途中なら、開いた PTY は世代の違いで閉じられる。
+		this.stopSession();
+		this.pane.setInputEnabled(false);
+		this.setStatus({ kind: "exited", code: null });
+	}
+
+	/** 起動を待っている入力も捨てる。 */
 	private releaseSession(): void {
+		this.clearPendingInput();
 		this.pty?.kill();
 		this.pty = null;
 		this.pane?.setFlow(null);
@@ -529,7 +590,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 			new Notice(t("composer.savedToVault", paths.length));
 		}
 		if (generation !== this.generation) return;
-		if (paths.length > 0) this.pane.paste(paths.join(" "));
+		if (paths.length > 0) this.pane.paste(paths.map(quoteImagePath).join(" "));
 	}
 
 	private canInput(): boolean {
@@ -548,10 +609,71 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		const { fontSize, composerBottomPadding } = this.plugin.settings;
 		const { style } = this.contentEl;
 		style.setProperty("--claude-panel-font-size", `${fontSize}px`);
-		style.setProperty(
-			"--claude-panel-composer-bottom-padding",
-			`${composerBottomPadding}px`
+		// 設定の余白はステータスバーを避けるために使われてきたので、足さずに大きい方を使う。
+		const bottom = Math.max(composerBottomPadding, this.statusBarInset);
+		style.setProperty("--claude-panel-composer-bottom-padding", `${bottom}px`);
+	}
+
+	// ---------- ステータスバー ----------
+
+	/** レイアウトが落ち着いた次のフレームで、ステータスバーとの重なりを測り直す。 */
+	private scheduleInsetUpdate(): void {
+		if (this.disposed) return;
+		this.cancelInsetFrame();
+		const { win } = this.containerEl;
+		const id = win.requestAnimationFrame(() => {
+			this.insetFrame = null;
+			this.updateStatusBarInset();
+		});
+		this.insetFrame = { win, id };
+	}
+
+	private cancelInsetFrame(): void {
+		if (!this.insetFrame) return;
+		this.insetFrame.win.cancelAnimationFrame(this.insetFrame.id);
+		this.insetFrame = null;
+	}
+
+	private updateStatusBarInset(): void {
+		if (this.disposed) return;
+		// ポップアウトのウィンドウにはステータスバーが無い。
+		const bar = this.containerEl.doc.body.querySelector<HTMLElement>(".status-bar");
+		if (bar !== this.statusBar) this.observeStatusBar(bar);
+		const inset = bar ? this.measureOverlap(bar) : 0;
+		if (inset === this.statusBarInset) return;
+		this.statusBarInset = inset;
+		this.applyRootStyles();
+		this.pane?.scheduleLayout();
+	}
+
+	/** 項目が増減してステータスバーの幅が変わると、重なり方も変わる。 */
+	private observeStatusBar(bar: HTMLElement | null): void {
+		this.statusBarObserver?.disconnect();
+		this.statusBarObserver = null;
+		this.statusBar = bar;
+		if (!bar) return;
+		const win = bar.win as Window & { ResizeObserver: typeof ResizeObserver };
+		this.statusBarObserver = new win.ResizeObserver(() =>
+			this.scheduleInsetUpdate()
 		);
+		// 余白や枠線で高さが変わることもあるので、枠の外側の大きさで見る。
+		this.statusBarObserver.observe(bar, { box: "border-box" });
+	}
+
+	/**
+	 * ステータスバーがこのビューに重なる高さ。余白は内側に付くので、測る枠は変わらない。
+	 * 非表示・重ならないときは 0。
+	 */
+	private measureOverlap(bar: HTMLElement): number {
+		const barRect = bar.getBoundingClientRect();
+		if (barRect.width === 0 || barRect.height === 0) return 0;
+		if (bar.win.getComputedStyle(bar).visibility === "hidden") return 0;
+		const rect = this.contentEl.getBoundingClientRect();
+		if (rect.width === 0 || rect.height === 0) return 0;
+		const overlapsX = barRect.left < rect.right && barRect.right > rect.left;
+		const overlapY =
+			Math.min(rect.bottom, barRect.bottom) - Math.max(rect.top, barRect.top);
+		return overlapsX && overlapY > 0 ? Math.ceil(overlapY) : 0;
 	}
 
 	private renderHeader(): void {
@@ -725,16 +847,41 @@ function errorMessage(reason: ErrorReason): string {
 	}
 }
 
+/** 引用しなくてよい `@` 参照のパス。 */
+const PLAIN_REFERENCE = /^[\w./][\w./-]*$/;
+/** 引用しなくてよい画像のパス（Windows の絶対パスの `\` と `:` を含む）。 */
+const PLAIN_IMAGE_PATH = /^[\w./\\:-]+$/;
+
 /**
  * claude の `@` 参照。空白や日本語などを含むパスは引用符で囲む。`#` を含むパスは
- * 参照として認識されないので、パスだけにする。
+ * 参照として認識されないので、パスだけにする。引用が要り `"` も含むパスは `'…'` で
+ * 囲む（`@'…'` は参照にならないので `@` は付けない）。`'` も含むならそのまま入れる。
  */
 function formatReference(path: string, isFolder: boolean): string {
 	const unified = nodePath.sep === "\\" ? path.replace(/\\/g, "/") : path;
 	const target = isFolder && !unified.endsWith("/") ? `${unified}/` : unified;
-	const isPlain = /^[\w./][\w./-]*$/.test(target) || target.includes('"');
-	const quoted = isPlain ? target : `"${target}"`;
-	return target.includes("#") ? quoted : `@${quoted}`;
+	if (!target.includes('"')) {
+		if (PLAIN_REFERENCE.test(target)) return `@${target}`;
+		return target.includes("#") ? `"${target}"` : `@"${target}"`;
+	}
+	// `"` のほかに引用の要る文字が無ければ、これまでどおり引用しない。
+	if (PLAIN_REFERENCE.test(target.replace(/"/g, ""))) {
+		return target.includes("#") ? target : `@${target}`;
+	}
+	return target.includes("'") ? target : `'${target}'`;
+}
+
+/**
+ * 貼り付けた画像の絶対パス。claude は `"…"` と `'…'` のどちらで囲んでも画像として
+ * 読み込む。引用の仕方は formatReference に合わせ、`'` と `"` の両方を含み引用が要る
+ * ならそのまま入れる。
+ */
+function quoteImagePath(path: string): string {
+	if (!path.includes('"')) {
+		return PLAIN_IMAGE_PATH.test(path) ? path : `"${path}"`;
+	}
+	if (PLAIN_IMAGE_PATH.test(path.replace(/"/g, ""))) return path;
+	return path.includes("'") ? path : `'${path}'`;
 }
 
 /** 同じ名前が既にあれば拡張子の前に `-2`, `-3` … を付ける。 */

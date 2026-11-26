@@ -1,10 +1,21 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import * as http from "http";
 import type { AddressInfo, Socket } from "net";
-import type { HookEndpoint, HookHandler, HookReply, HookRequest } from "./types";
+import {
+	isSessionId,
+	type HookEndpoint,
+	type HookHandler,
+	type HookReply,
+	type HookRequest,
+} from "./types";
 
 const HOST = "127.0.0.1";
-const MAX_BODY = 1024 * 1024;
+/**
+ * 認証済みの要求で読む本文の上限。UserPromptSubmit の本文はプロンプト全体を含むので、
+ * 大きな貼り付けでも収まるようにする。超えた分は読み捨てて `{}` を返す（claude 側で
+ * エラーにしない）。
+ */
+const MAX_BODY = 32 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 5000;
 
 interface Endpoint {
@@ -94,21 +105,25 @@ export class HookServer {
 
 		const chunks: Buffer[] = [];
 		let received = 0;
-		let rejected = false;
+		// 上限を超えたら、溜めずに最後まで読んでから応答する（読み終える前に応答して
+		// 接続を閉じると、送信中の claude 側で接続エラーになる）。
+		let oversized = Number(req.headers["content-length"] ?? 0) > MAX_BODY;
 		req.on("error", () => {});
 		req.on("data", (chunk: Buffer) => {
-			if (rejected) return;
+			if (oversized) return;
 			received += chunk.length;
 			if (received > MAX_BODY) {
-				rejected = true;
+				oversized = true;
 				chunks.length = 0;
-				reply(req, res, 413);
 				return;
 			}
 			chunks.push(chunk);
 		});
 		req.on("end", () => {
-			if (rejected) return;
+			if (oversized) {
+				reply(req, res, 200, {});
+				return;
+			}
 			const request = parseRequest(Buffer.concat(chunks).toString("utf8"));
 			if (!request) {
 				reply(req, res, 400);
@@ -128,7 +143,6 @@ export class HookServer {
 		if (!endpoint) return 404;
 		const match = /^Bearer (.+)$/.exec(req.headers.authorization ?? "");
 		if (!match || !timingSafeEqual(sha256(match[1]), endpoint.tokenDigest)) return 401;
-		if (Number(req.headers["content-length"] ?? 0) > MAX_BODY) return 413;
 		return null;
 	}
 }
@@ -152,7 +166,9 @@ function parseRequest(body: string): HookRequest | null {
 	const { hook_event_name, session_id, prompt } = parsed as Record<string, unknown>;
 	return {
 		event: typeof hook_event_name === "string" ? hook_event_name : "",
-		sessionId: typeof session_id === "string" ? session_id : null,
+		// 「再開」で claude の引数に渡すので、オプションなどを紛れ込ませられないようにする
+		sessionId:
+			typeof session_id === "string" && isSessionId(session_id) ? session_id : null,
 		prompt: typeof prompt === "string" ? prompt : null,
 	};
 }
