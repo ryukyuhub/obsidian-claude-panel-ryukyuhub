@@ -26,6 +26,7 @@ Switch between them with **Interface** in the plugin settings. If you already us
 - Header buttons for a new session, continuing the last session, attaching files, account & usage, and settings. After Claude Code exits, you can resume the same session or start a new one
 - Turn completion is signaled by a sound chime and a brief panel flash (configurable in settings)
 - Terminal colors and the monospace font follow your Obsidian theme
+- The current model and effort are always shown in Claude Code's status line at the bottom of the screen, like `Sonnet 5.5 · effort: high`. Changing them with `/model` or `/effort` is reflected right away (toggleable; see [Limitations](#limitations))
 
 ### Chat UI
 
@@ -65,6 +66,9 @@ This section explains what the plugin runs, which network connections it makes, 
   - `-ExecutionPolicy Bypass` applies only to that PowerShell process. It does not change your system's execution policy.
   - The script compiles C# source embedded in it at runtime with `Add-Type`, and uses it to call the Windows ConPTY API.
   - The script is written to `%TEMP%\claude-panel-pty-bridge-<hash>.ps1` (see [Files it writes](#files-it-writes)).
+- **Status line (terminal UI): Python on macOS / Linux, Windows PowerShell 5.1 on Windows.** To show the model and effort in the status line, the plugin gives Claude Code a `statusLine` command, and Claude Code runs it each time it updates the display. It only reads the JSON Claude Code passes on standard input and prints one line. It is not used when "Show model and effort in the status line" is off.
+  - macOS / Linux: the same Python found for the terminal (see above), run as `python3 -I -S -X utf8 -c <source>`. If no Python is found, nothing is shown.
+  - Windows: the same PowerShell 5.1 as above, run as `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script>`, with the script written to `%TEMP%\claude-panel-statusline-<hash>.ps1`.
 - **macOS / Linux (terminal UI): `python3`, or `script` if no suitable Python is found.** The plugin passes a bundled Python script on the command line (`python3 -I -S -u -X utf8 -c <source>`) to create the terminal.
   - Python is searched in this order. macOS: `/Library/Developer/CommandLineTools/usr/bin/python3`, `/Applications/Xcode.app/Contents/Developer/usr/bin/python3`, `/opt/homebrew/bin/python3`, `/usr/local/bin/python3`, `/Library/Frameworks/Python.framework/Versions/Current/bin/python3`, and `/usr/bin/python3` only when `xcode-select -p` succeeds (otherwise it would prompt you to install developer tools). Linux: `python3` in each absolute directory on `PATH`, then `/usr/bin` and `/usr/local/bin`.
   - Each candidate is checked by running it once with a short check (Python 3.8 or later with `os.forkpty`).
@@ -87,6 +91,7 @@ Temporary files in the OS temp directory (`os.tmpdir()`, `%TEMP%` on Windows):
 | File | When | Purpose |
 |---|---|---|
 | `claude-panel-pty-bridge-<hash>.ps1` | Windows, terminal UI | The PowerShell script above. Reused while its contents are the same; a new file is written when the plugin updates it. A short-lived `.tmp` file is used while writing |
+| `claude-panel-statusline-<hash>.ps1` | Windows, terminal UI, when the status line setting is on | The PowerShell script for the status line. Reused and updated the same way as the one above |
 | `ptyb.XXXXXX/` (under `$TMPDIR` or `/tmp`) | macOS / Linux, terminal UI, `script` fallback only | Small files for process IDs. Removed when the session ends |
 | `claude-panel-empty-mcp.json` | When "Disable MCP servers" is on | An empty MCP configuration passed to `claude` |
 | `claude-panel-thinking-on.json` / `claude-panel-thinking-off.json` | Chat UI | Settings passed to `claude` to turn thinking on or off |
@@ -243,6 +248,7 @@ These rely on Claude Code's hooks. See [Limitations](#limitations).
 ## Limitations
 
 - **Terminal UI note integration needs Claude Code's hooks.** Passing the active note and selection, the completion notification, and the **Resume** button after exit all depend on Claude Code calling the plugin's local hook server. They do not work when hooks are turned off or restricted, for example with `disableAllHooks`, or when an organization's managed settings limit HTTP hooks with `allowedHttpHookUrls`. The terminal itself still works.
+- **Status line in the terminal UI.** The "Show model and effort in the status line" setting is on by default. Inside the panel, this display is used instead of the `statusLine` in your `settings.json`; your usual terminal is not affected. When the setting is off, your own `statusLine` setting is used. Changes apply from the next session you start. On macOS / Linux, nothing is shown without Python 3.8 or later (when the terminal runs through `script`). Nothing is shown either when `disableAllHooks` is on.
 - **The UI language setting covers only the plugin's own UI.** It does not change Claude Code's screen in the terminal UI.
 - **Theme in the terminal UI.** The plugin starts Claude Code with `theme: auto` so it follows Obsidian's light / dark mode. If you pick a theme with `/theme` in the panel, it goes back to `auto` the next time Claude Code starts in the panel.
 - **Switching light / dark on Windows while Claude Code is running.** Claude Code's text colors do not change until its next start. The terminal background does follow, and the light / dark state at startup is detected correctly. This is because the Windows pseudo console (ConPTY) does not relay Claude Code's background-color query. On macOS / Linux the colors follow while Claude Code is running.
@@ -305,6 +311,7 @@ Files under `src/`:
   - `theme.ts` — Builds the terminal colors and font from Obsidian's CSS variables.
   - `launch.ts` — `claude` arguments and environment.
   - `hook-server.ts` / `hook-settings.ts` — The loopback HTTP server, and the `--settings` JSON and hook replies.
+  - `status-line.ts` — The `statusLine` command that shows the model and effort (Python on macOS / Linux, `bridge/status-line.ps1` on Windows).
   - `pty.ts`, `pty-process.ts`, `pty-windows.ts`, `pty-posix.ts`, `types.ts` — Starting and stopping the terminal process on each OS.
   - `bridge/` — `bridge.ps1` (Windows ConPTY), `bridge.py` (Python), `script-pty.sh` (`script` fallback).
 
@@ -312,7 +319,7 @@ Both interfaces remove `ANTHROPIC_API_KEY` from the child environment so the CLI
 
 The chat UI also suppresses MCP servers that try to open a browser window on startup (e.g. Serena's auto-dashboard): on macOS / Linux, no-op `open` / `xdg-open` shell scripts are placed in a temporary directory and prepended to `PATH`, and `BROWSER=true` is set. The terminal UI does not do this, so `/login` can open your browser.
 
-The terminal UI starts `claude` with `--append-system-prompt` (the same vault description the chat UI uses), `--settings` (the theme and the two HTTP hooks), and `--continue` / `--resume` / `--strict-mcp-config --mcp-config` when needed. It also removes environment variables left over from a terminal or Claude Code session that started Obsidian, and sets `TERM=xterm-256color` and `COLORTERM=truecolor`.
+The terminal UI starts `claude` with `--append-system-prompt` (the same vault description the chat UI uses), `--settings` (the theme, the two HTTP hooks, and the status line), and `--continue` / `--resume` / `--strict-mcp-config --mcp-config` when needed. It also removes environment variables left over from a terminal or Claude Code session that started Obsidian, and sets `TERM=xterm-256color` and `COLORTERM=truecolor`.
 
 The terminal uses [xterm.js](https://github.com/xtermjs/xterm.js) and its fit, web-links, and unicode11 add-ons (MIT License). `styles.css` includes xterm.js's CSS with its license notice, scoped to the panel.
 

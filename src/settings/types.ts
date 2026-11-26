@@ -202,6 +202,9 @@ export interface ClaudePanelSettings {
 	 *  一時的で、この設定値は書き換えない。 */
 	includeActiveByDefault: boolean;
 	disableMcpServers: boolean;
+	/** ターミナル UI の Claude Code の画面下端（statusLine）に、モデルと effort を出すか。
+	 *  オフなら statusLine を渡さず、Claude Code 自身の設定に従う。 */
+	terminalStatusLine: boolean;
 	permissionMode: PermissionMode;
 	/** チャットパネルの基準フォントサイズ（px）。パネルルート要素の
 	 *  `--claude-panel-font-size` CSS 変数を駆動する。 */
@@ -279,6 +282,7 @@ export const DEFAULT_SETTINGS: ClaudePanelSettings = {
 	// 含めた状態でパネルが開く。
 	includeActiveByDefault: true,
 	disableMcpServers: false,
+	terminalStatusLine: true,
 	// 既定は明示的なプロンプト（"default"）。0.1.8 以前は
 	// `bypassPermissions` をハードコードしており、agent が ~/.claude.json
 	// を黙って書き換える挙動になっていた。アップグレード時の既存ユーザーは

@@ -89,7 +89,8 @@ const MAC_PYTHONS = [
 /** 見つかった Python。見つからなかった結果は残さない（後から入れて再試行できる）。 */
 let pythonPath: Promise<string | null> | null = null;
 
-function findPython(env: Env): Promise<string | null> {
+/** PTY のブリッジに使う Python（3.8 以降）の絶対パス。見つからなければ null。 */
+export function findPython(env: Env): Promise<string | null> {
 	pythonPath ??= detectPython(env).then((found) => {
 		if (!found) pythonPath = null;
 		return found;

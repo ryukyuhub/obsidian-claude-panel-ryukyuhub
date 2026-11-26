@@ -287,6 +287,16 @@ export const en: Messages = {
 				"Browser pop-ups that servers like Serena try to open are blocked separately (chat UI only) " +
 				"by overriding the `open`/`xdg-open` commands on PATH.",
 		},
+		terminalStatusLine: {
+			name: "Show model and effort in the status line",
+			desc:
+				"When on, the current model and effort are shown at the bottom of the Claude Code screen, like \"Sonnet 5.5 · effort: high\". " +
+				"Inside the panel, this replaces your Claude Code setting (`statusLine`). Your usual terminal is not affected. " +
+				"When off, your Claude Code setting (`statusLine`) is used. " +
+				"On macOS / Linux, nothing is shown if Python 3.8 or later is not found. " +
+				"Nothing is shown while `disableAllHooks` is enabled in your Claude Code settings. " +
+				"Changes apply from the next session you start.",
+		},
 		permissionMode: {
 			name: "Tool approval mode",
 			desc:

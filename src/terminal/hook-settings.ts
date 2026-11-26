@@ -10,10 +10,19 @@ const HOOK_TIMEOUT_SEC = 2;
 /** claude は 10,000 字を超える additionalContext をファイルに移し、先頭しか読まない。 */
 const MAX_CONTEXT_CHARS = 9000;
 
-/** `--settings` に渡す JSON。`hookUrl` が null なら hooks を含めない。 */
-export function buildClaudeSettings(options: { hookUrl: string | null }): string {
+/**
+ * `--settings` に渡す JSON。`hookUrl` が null なら hooks を、`statusLineCommand` が
+ * null なら statusLine を含めない（statusLine はユーザーの設定より優先される）。
+ */
+export function buildClaudeSettings(options: {
+	hookUrl: string | null;
+	statusLineCommand: string | null;
+}): string {
 	// auto は端末への問い合わせと COLORFGBG から明暗を決める
 	const settings: Record<string, unknown> = { theme: "auto" };
+	if (options.statusLineCommand !== null) {
+		settings.statusLine = { type: "command", command: options.statusLineCommand };
+	}
 	if (options.hookUrl !== null) {
 		const hook = {
 			type: "http",

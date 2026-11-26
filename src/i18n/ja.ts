@@ -288,6 +288,16 @@ export const ja = {
 				"Serena などのサーバーが開こうとするブラウザポップアップは、チャット UI に限り、" +
 				"PATH 上の `open`/`xdg-open` コマンドを上書きすることで別途ブロックされます。",
 		},
+		terminalStatusLine: {
+			name: "ステータスラインにモデルと effort を表示",
+			desc:
+				"オンにすると、Claude Code の画面の下端に、今のモデルと effort を「Sonnet 5.5 · effort: high」のように表示します。" +
+				"パネルの中では、Claude Code の設定（`statusLine`）の代わりにこの表示を使います。普段のターミナルには影響しません。" +
+				"オフにすると、Claude Code の設定（`statusLine`）に従います。" +
+				"macOS / Linux では、Python 3.8 以降が見つからないときは表示しません。" +
+				"Claude Code の設定（`disableAllHooks`）が有効なときは表示されません。" +
+				"変更は次に起動するセッションから反映されます。",
+		},
 		permissionMode: {
 			name: "ツール実行の承認モード",
 			desc:

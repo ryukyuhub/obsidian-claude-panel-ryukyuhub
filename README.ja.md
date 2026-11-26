@@ -24,6 +24,7 @@ Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.
 - ヘッダーのボタンで、新しいセッション・前回の続き・ファイル添付・アカウントと使用状況・設定を操作。Claude Code の終了後は、同じセッションの再開か新しいセッションを選べる
 - ターン完了時にサウンドとパネルのフラッシュで通知(設定で切替可)
 - ターミナルの配色と等幅フォントは Obsidian のテーマに追従
+- Claude Code の画面下端(ステータスライン)に、今のモデルと effort を `Sonnet 5.5 · effort: high` の形で常に表示。`/model` や `/effort` で変えるとすぐ反映されます(オフ切り替え可。[制約](#制約)を参照)
 
 ### チャット UI
 
@@ -63,6 +64,9 @@ Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.
   - `-ExecutionPolicy Bypass` が効くのはその PowerShell プロセスだけです。システムの実行ポリシーは変更しません。
   - スクリプトは、埋め込んだ C# のソースを `Add-Type` で実行時にコンパイルし、Windows の ConPTY API を呼び出します。
   - スクリプトは `%TEMP%\claude-panel-pty-bridge-<ハッシュ>.ps1` に書き出します([書き出すファイル](#書き出すファイル)を参照)。
+- **ステータスライン(ターミナル UI): macOS / Linux では Python、Windows では Windows PowerShell 5.1。** ステータスラインにモデルと effort を表示するため、Claude Code に `statusLine` のコマンドを渡し、Claude Code が表示を更新するたびにそれを実行します。Claude Code が標準入力に渡す JSON を読んで 1 行を出力するだけです。「ステータスラインにモデルと effort を表示」がオフのときは使いません。
+  - macOS / Linux: ターミナル用に見つけた Python(上記)を `python3 -I -S -X utf8 -c <ソース>` の形で実行します。Python が見つからないときは何も表示しません。
+  - Windows: 上記と同じ PowerShell 5.1 を `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <スクリプト>` の形で実行します。スクリプトは `%TEMP%\claude-panel-statusline-<ハッシュ>.ps1` に書き出します。
 - **macOS / Linux(ターミナル UI): `python3`、使える Python が無ければ `script`。** 同梱の Python スクリプトをコマンドラインで渡して(`python3 -I -S -u -X utf8 -c <ソース>`)ターミナルを作ります。
   - Python は次の順に探します。macOS: `/Library/Developer/CommandLineTools/usr/bin/python3`、`/Applications/Xcode.app/Contents/Developer/usr/bin/python3`、`/opt/homebrew/bin/python3`、`/usr/local/bin/python3`、`/Library/Frameworks/Python.framework/Versions/Current/bin/python3`、そして `xcode-select -p` が成功したときだけ `/usr/bin/python3`(そうでないと開発ツールのインストールを促す画面が出るため)。Linux: `PATH` 上の絶対パスの各ディレクトリの `python3`、続いて `/usr/bin`、`/usr/local/bin`。
   - 各候補は、短い確認処理(Python 3.8 以降で `os.forkpty` があるか)で一度実行して確かめます。
@@ -85,6 +89,7 @@ OS の一時フォルダ(`os.tmpdir()`。Windows では `%TEMP%`)の一時ファ
 | ファイル | 書き出す場面 | 用途 |
 |---|---|---|
 | `claude-panel-pty-bridge-<ハッシュ>.ps1` | Windows、ターミナル UI | 上記の PowerShell スクリプト。内容が同じ間は再利用し、プラグインの更新で内容が変わると新しいファイルを書きます。書き込み中だけ一時的な `.tmp` ファイルを使います |
+| `claude-panel-statusline-<ハッシュ>.ps1` | Windows、ターミナル UI、ステータスラインの設定がオンのとき | ステータスライン用の PowerShell スクリプト。上のスクリプトと同じ方法で再利用・更新します |
 | `ptyb.XXXXXX/`(`$TMPDIR` または `/tmp` の下) | macOS / Linux、ターミナル UI、`script` を使うときのみ | プロセス ID を受け渡す小さなファイル。セッションの終了時に削除します |
 | `claude-panel-empty-mcp.json` | 「MCP サーバーを無効化」がオンのとき | `claude` に渡す空の MCP 設定 |
 | `claude-panel-thinking-on.json` / `claude-panel-thinking-off.json` | チャット UI | 思考のオン／オフを `claude` に渡す設定 |
@@ -241,6 +246,7 @@ Node.js が未インストールです。[1. 前提ソフトウェアをイン�
 ## 制約
 
 - **ターミナル UI のノート連携には Claude Code の hooks が必要です。** アクティブなノートと選択範囲の受け渡し、完了通知、終了後の **再開** ボタンは、Claude Code がプラグインのローカル hook サーバーを呼ぶことで動いています。`disableAllHooks` で hooks を無効にしている場合や、組織の管理設定の `allowedHttpHookUrls` で HTTP hook が制限されている場合などは働きません。ターミナル自体は使えます。
+- **ターミナル UI のステータスライン。** 「ステータスラインにモデルと effort を表示」の設定は既定でオンです。パネルの中では、`settings.json` に設定した `statusLine` の代わりにこの表示を使います。普段のターミナルには影響しません。オフにすると、ご自身の `statusLine` の設定に従います。変更は次に起動するセッションから反映されます。macOS / Linux では、Python 3.8 以降が無いと(`script` 方式で動いているとき)表示しません。`disableAllHooks` が有効なときも表示されません。
 - **UI 言語の設定は、プラグイン自身の UI にだけ効きます。** ターミナル UI の Claude Code の画面の言語は変わりません。
 - **ターミナル UI のテーマ。** Obsidian のライト／ダークに合わせるため、`theme: auto` で Claude Code を起動します。パネル内で `/theme` を選んでも、次にパネルで Claude Code を起動したときに `auto` に戻ります。
 - **Windows で Claude Code の実行中にライト／ダークを切り替えたとき。** Claude Code 側の文字色は、次に起動するまで変わりません。ターミナルの背景色は追従し、起動時の明暗は正しく決まります。Windows の疑似コンソール(ConPTY)が、Claude Code の背景色の問い合わせを中継しないためです。macOS / Linux では実行中も追従します。
@@ -303,6 +309,7 @@ OUT_DIR=/path/to/vault/.obsidian/plugins/claude-panel-ryukyuhub npm run dev
   - `theme.ts` — Obsidian の CSS 変数からターミナルの配色とフォントを作る
   - `launch.ts` — `claude` の起動引数と環境変数
   - `hook-server.ts` / `hook-settings.ts` — ループバックの HTTP サーバーと、`--settings` の JSON・hook の応答
+  - `status-line.ts` — モデルと effort を表示する `statusLine` のコマンド(macOS / Linux は Python、Windows は `bridge/status-line.ps1`)
   - `pty.ts`、`pty-process.ts`、`pty-windows.ts`、`pty-posix.ts`、`types.ts` — OS ごとのターミナルのプロセスの起動と終了
   - `bridge/` — `bridge.ps1`(Windows の ConPTY)、`bridge.py`(Python)、`script-pty.sh`(`script` による代替)
 
@@ -310,7 +317,7 @@ OUT_DIR=/path/to/vault/.obsidian/plugins/claude-panel-ryukyuhub npm run dev
 
 チャット UI はさらに、起動時にブラウザを開くタイプの MCP サーバー(Serena の自動ダッシュボード等)の挙動を抑制します。macOS / Linux では一時ディレクトリに no-op の `open` / `xdg-open` シェルスクリプトを置いて PATH の先頭に差し込み、`BROWSER=true` を渡しています。ターミナル UI ではこれを行わないので、`/login` でブラウザを開けます。
 
-ターミナル UI は `claude` を `--append-system-prompt`(チャット UI と同じ Vault の説明)、`--settings`(テーマと 2 つの HTTP hook)、必要に応じて `--continue` / `--resume` / `--strict-mcp-config --mcp-config` を付けて起動します。また、Obsidian を起動したターミナルや Claude Code のセッションから引き継いだ環境変数を取り除き、`TERM=xterm-256color` と `COLORTERM=truecolor` を設定します。
+ターミナル UI は `claude` を `--append-system-prompt`(チャット UI と同じ Vault の説明)、`--settings`(テーマ、2 つの HTTP hook、ステータスライン)、必要に応じて `--continue` / `--resume` / `--strict-mcp-config --mcp-config` を付けて起動します。また、Obsidian を起動したターミナルや Claude Code のセッションから引き継いだ環境変数を取り除き、`TERM=xterm-256color` と `COLORTERM=truecolor` を設定します。
 
 ターミナルには [xterm.js](https://github.com/xtermjs/xterm.js) と、その fit・web-links・unicode11 アドオン(MIT License)を使っています。`styles.css` には、パネル内だけに効くようにした xterm.js の CSS を、ライセンス表記と一緒に含めています。
 

@@ -29,6 +29,7 @@ import { SelectionCapture } from "../selection-capture";
 import { HOOK_TOKEN_ENV, buildClaudeSettings, userPromptReply } from "./hook-settings";
 import { buildLaunchArgs, buildLaunchEnv } from "./launch";
 import { onKillAll, openPty } from "./pty";
+import { buildStatusLineCommand } from "./status-line";
 import {
 	PtyUnavailableError,
 	type HookEndpoint,
@@ -340,6 +341,14 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		const file = nodePath.resolve(configured);
 
 		const endpoint = await this.registerHook(generation);
+		const env = buildLaunchEnv(file, {
+			COLORFGBG: isDarkTheme(this.containerEl) ? "15;0" : "0;15",
+			...(endpoint ? { [HOOK_TOKEN_ENV]: endpoint.token } : {}),
+		});
+		// オフなら statusLine を渡さず、Claude Code 自身の設定に任せる
+		const statusLineCommand = this.plugin.settings.terminalStatusLine
+			? await buildStatusLineCommand(env)
+			: null;
 		if (generation !== this.generation) {
 			endpoint?.dispose();
 			return;
@@ -358,13 +367,11 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 					disableMcpServers: this.plugin.settings.disableMcpServers,
 					settingsJson: buildClaudeSettings({
 						hookUrl: endpoint?.url ?? null,
+						statusLineCommand,
 					}),
 				}),
 				cwd,
-				env: buildLaunchEnv(file, {
-					COLORFGBG: isDarkTheme(this.containerEl) ? "15;0" : "0;15",
-					...(endpoint ? { [HOOK_TOKEN_ENV]: endpoint.token } : {}),
-				}),
+				env,
 				...size,
 			},
 			{

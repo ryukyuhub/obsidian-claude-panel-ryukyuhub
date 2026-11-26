@@ -64,8 +64,10 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 
 		this.renderSetupSection(containerEl);
 
-		// チャット UI だけで使う設定は、ターミナル UI のときは出さない。
+		// チャット UI だけで使う設定はターミナル UI のときは出さず、
+		// ターミナル UI だけで使う設定はチャット UI のときは出さない。
 		const isChat = this.plugin.settings.interfaceMode === "chat";
+		const isTerminal = this.plugin.settings.interfaceMode === "terminal";
 
 		new Setting(containerEl)
 			.setName(t("settings.interfaceMode.name"))
@@ -145,6 +147,7 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			);
 
 		if (isChat) this.renderModelSection(containerEl);
+		if (isTerminal) this.renderTerminalSection(containerEl);
 
 		new Setting(containerEl)
 			.setName(t("settings.includeActiveDefault.name"))
@@ -285,6 +288,21 @@ export class ClaudePanelSettingTab extends PluginSettingTab {
 			);
 
 		this.renderAboutSection(containerEl);
+	}
+
+	/** ステータスライン（ターミナル UI のみ）。 */
+	private renderTerminalSection(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName(t("settings.terminalStatusLine.name"))
+			.setDesc(t("settings.terminalStatusLine.desc"))
+			.addToggle((tg) =>
+				tg
+					.setValue(this.plugin.settings.terminalStatusLine)
+					.onChange(async (v) => {
+						this.plugin.settings.terminalStatusLine = v;
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 
 	/** 承認・モデル・思考・Effort（チャット UI のみ）。 */
