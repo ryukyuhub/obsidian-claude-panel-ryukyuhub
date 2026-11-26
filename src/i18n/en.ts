@@ -54,10 +54,16 @@ export const en: Messages = {
 			`${path} (${n} file${n === 1 ? "" : "s"})`,
 		toggleIncluded: "✓ Include",
 		toggleExcluded: "○ Exclude",
+		includeCheckbox: "Attach",
+		includeNoteAria: "Attach the active note to your next prompt",
+		includeFolderAria: "Attach the active folder to your next prompt",
+		includeSelectionAria: "Attach the selection to your next prompt",
 		noActiveFile: "No active file",
 		selectionLabel: "Selection:",
 		selectionMeta: (lines: number, chars: number, startLine: number) =>
 			`${lines} line${lines === 1 ? "" : "s"} · ${chars} chars · L${startLine}`,
+		selectionMetaNoLine: (lines: number, chars: number) =>
+			`${lines} line${lines === 1 ? "" : "s"} · ${chars} chars`,
 		selectionMoreLines: (n: number) =>
 			` ⋯ +${n} more line${n === 1 ? "" : "s"}`,
 		fileCount: (n: number) => `${n} file${n === 1 ? "" : "s"}`,
@@ -252,6 +258,30 @@ export const en: Messages = {
 		errLaunch: "Could not start Claude Code.",
 		migratedNotice:
 			"Claude Panel now uses the terminal UI by default. You can go back to the chat UI with \"Interface\" in the plugin settings.",
+		lastAttached: (what: string) => `Attached: ${what}`,
+		lastSelection: (where: string) =>
+			where ? `selection ${where}` : "selection",
+		lastNothing: "Nothing attached",
+		lastTooltipAttached: (time: string) =>
+			`Attached to your last prompt (${time})`,
+		lastTooltipNothing: (time: string) =>
+			`Nothing was attached to your last prompt (${time})`,
+		lastTooltipNote: (path: string) => `Note: ${path}`,
+		lastTooltipFolder: (path: string) => `Folder: ${path}`,
+		lastTooltipSelection: (where: string, chars: number) =>
+			`Selection: ${where} (${chars} chars)`,
+		lastTooltipSelectionTruncated: (
+			where: string,
+			chars: number,
+			omitted: number
+		) => `Selection: ${where} (${omitted} of ${chars} chars left out because it was too long)`,
+		lastTooltipClipped: "The end was cut off because it was too long",
+		lastTooltipQueued:
+			"For a prompt sent while Claude was responding, this is the note and time when Claude Code picked it up",
+		lastReasonExcluded: "\"Attach\" is turned off",
+		lastReasonNoTarget: "There is no active note or selection",
+		lastReasonSlash: "Nothing is attached to input that starts with \"/\"",
+		lastReasonSpoken: (reason: string) => ` (${reason})`,
 	},
 	settings: {
 		resolved: {

@@ -5,6 +5,13 @@ export interface CapturedSelection {
 	filePath: string | null;
 	lineCount: number;
 	startLine: number;
+	/**
+	 * 選択の終わりの行（1 始まり）。終わりが行頭（列 0）なら、その行は選んでいない
+	 * ので前の行にする。
+	 */
+	endLine: number;
+	/** 閲覧モードの選択など、行が分からないとき true（startLine / endLine は 1）。 */
+	lineUnknown: boolean;
 }
 
 /**
@@ -79,6 +86,8 @@ export class SelectionCapture {
 	private captureFromView(view: MarkdownView): CapturedSelection | null {
 		let text = "";
 		let startLine = 1;
+		let endLine = 1;
+		let lineUnknown = true;
 		try {
 			if (view.getMode?.() === "preview") {
 				const sel = activeDocument.getSelection();
@@ -96,7 +105,12 @@ export class SelectionCapture {
 			} else if (view.editor) {
 				text = view.editor.getSelection();
 				if (text.trim()) {
-					startLine = view.editor.getCursor("from").line + 1;
+					const from = view.editor.getCursor("from");
+					const to = view.editor.getCursor("to");
+					startLine = from.line + 1;
+					endLine =
+						to.ch === 0 && to.line > from.line ? to.line : to.line + 1;
+					lineUnknown = false;
 				}
 			}
 		} catch {
@@ -108,6 +122,8 @@ export class SelectionCapture {
 			filePath: view.file?.path ?? null,
 			lineCount: text.split(/\r?\n/).length,
 			startLine,
+			endLine,
+			lineUnknown,
 		};
 	}
 
@@ -125,6 +141,8 @@ function sameSelection(
 	return (
 		a.text === b.text &&
 		a.filePath === b.filePath &&
-		a.startLine === b.startLine
+		a.startLine === b.startLine &&
+		a.endLine === b.endLine &&
+		a.lineUnknown === b.lineUnknown
 	);
 }

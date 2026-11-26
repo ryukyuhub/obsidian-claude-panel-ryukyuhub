@@ -2599,14 +2599,17 @@
 	padding: 0 4px 0 8px;
 }
 
+/* 見出しとチェックボックスは潰さず（隣に重ならないように）、パスの幅で調整する。 */
 .claude-panel-terminal-context .claude-panel-active-file {
 	flex: 1 1 0;
+	min-width: auto;
 }
 
 .claude-panel-terminal-context .claude-panel-selection {
 	flex: 0 1 auto;
 	justify-content: center;
 	max-width: 55%;
+	overflow: hidden;
 }
 
 .claude-panel-terminal-context .claude-panel-selection-header {
@@ -2619,16 +2622,24 @@
 	white-space: nowrap;
 }
 
-.claude-panel-terminal-context .claude-panel-active-file-path {
-	min-width: 0;
+/* パスは width: 0 にして最小幅の計算に全文が入らないようにし、少しは見えるよう
+   min-width を付ける。 */
+.claude-panel-terminal-context .claude-panel-active-file-path,
+.claude-panel-terminal-context .claude-panel-active-file-empty {
+	flex: 1 1 0;
+	width: 0;
+	min-width: 4em;
 }
 
 .claude-panel-terminal-context .claude-panel-active-file-empty,
 .claude-panel-terminal-context .claude-panel-selection-meta {
-	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.claude-panel-terminal-context .claude-panel-selection-meta {
+	min-width: 0;
 }
 
 .claude-panel-terminal-context .claude-panel-active-file-toggle,
@@ -2641,6 +2652,102 @@
 
 .claude-panel-terminal-context .claude-panel-selection-preview {
 	display: none;
+}
+
+/* 「添付する」のチェックボックス（今の状態を示す）。 */
+.claude-panel-terminal-context .claude-panel-include-check {
+	position: relative;
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
+	gap: 4px;
+	height: 20px;
+	padding: 0 4px;
+	border-radius: 4px;
+	font-size: 11px;
+	color: var(--text-muted);
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.claude-panel-terminal-context .claude-panel-include-check:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.claude-panel-terminal-context .claude-panel-include-check-input {
+	flex: 0 0 auto;
+	margin: 0;
+	cursor: pointer;
+}
+
+/* 直前の発言に添付したもの。時刻で、いつの発言の結果かが分かるようにする。 */
+/* 対象名の列は minmax(0, …) にして、縮めてもアイコンと時刻は欠けないようにする
+   （最小幅がアイコンと時刻の幅になる）。 */
+.claude-panel-terminal-context .claude-panel-terminal-last {
+	position: relative;
+	display: grid;
+	flex: 0 3 auto;
+	grid-template-columns: auto auto minmax(0, max-content);
+	align-items: center;
+	max-width: 40%;
+	height: 26px;
+	padding: 0 8px;
+	border-radius: 6px;
+	background: var(--background-secondary);
+	font-size: 11px;
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+/* 空のときも live region として DOM に残し、見えなくするだけにする（display: none
+   だと、最初に中身が入ったときに読み上げられないことがある）。 */
+.claude-panel-terminal-context .claude-panel-terminal-last.is-empty,
+.claude-panel-terminal-context .claude-panel-terminal-last-reason {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* 選択範囲も出ているときは、次に送るもの（ノートと選択範囲）の表示を優先する。 */
+.claude-panel-terminal-context:has(> .claude-panel-selection:not(.is-empty))
+	.claude-panel-terminal-last {
+	max-width: 25%;
+}
+
+.claude-panel-terminal-last-icon {
+	display: flex;
+	margin-right: 4px;
+	color: var(--text-faint);
+}
+
+.claude-panel-terminal-last.is-attached .claude-panel-terminal-last-icon {
+	color: var(--text-accent);
+}
+
+.claude-panel-terminal-last-icon svg {
+	width: 13px;
+	height: 13px;
+}
+
+.claude-panel-terminal-last-time {
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+.claude-panel-terminal-last-text {
+	min-width: 0;
+	margin-left: 4px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.claude-panel-terminal-last:not(.is-attached) .claude-panel-terminal-last-text {
+	color: var(--text-faint);
 }
 
 /* 狭いときはラベルを省き、ファイル名と切り替えボタンを残す。 */
@@ -2663,6 +2770,57 @@
 	.claude-panel-terminal-context .claude-panel-active-file-toggle,
 	.claude-panel-terminal-context .claude-panel-selection-toggle {
 		padding: 0 4px;
+	}
+
+	.claude-panel-terminal-context .claude-panel-terminal-last {
+		padding: 0 6px;
+	}
+}
+
+/* 選択範囲も出ていて幅が足りないときは、先に見出し（「アクティブ:」など）を省く。 */
+@container (max-width: 760px) {
+	.claude-panel-terminal-context:has(> .claude-panel-selection:not(.is-empty))
+		.claude-panel-active-file-label,
+	.claude-panel-terminal-context:has(> .claude-panel-selection:not(.is-empty))
+		.claude-panel-selection-label {
+		display: none;
+	}
+}
+
+/* さらに狭いときは、チェックボックスの「添付する」と直前の発言の対象名を見えなく
+   する（スクリーンリーダーには読ませる）。アイコンと時刻は残す。 */
+@container (max-width: 360px) {
+	.claude-panel-terminal-context .claude-panel-include-check-text,
+	.claude-panel-terminal-context .claude-panel-terminal-last-text {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.claude-panel-terminal-context .claude-panel-include-check {
+		padding: 0 2px;
+	}
+}
+
+@container (max-width: 480px) {
+	.claude-panel-terminal-context:has(> .claude-panel-selection:not(.is-empty))
+		.claude-panel-include-check-text,
+	.claude-panel-terminal-context:has(> .claude-panel-selection:not(.is-empty))
+		.claude-panel-terminal-last-text {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.claude-panel-terminal-context:has(> .claude-panel-selection:not(.is-empty))
+		.claude-panel-include-check {
+		padding: 0 2px;
 	}
 }
 

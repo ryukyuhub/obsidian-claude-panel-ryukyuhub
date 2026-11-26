@@ -21,12 +21,18 @@ import {
 import { resolveClaudePath } from "../cli-resolver";
 import { CompletionNotifier } from "../completion-notifier";
 import { t } from "../i18n";
-import { NoteContext, formatNoteContext, trackNoteContext } from "../note-context";
+import { NoteContext, buildNoteContext, trackNoteContext } from "../note-context";
 import { getVaultBasePath, loadSoundBuffer } from "../notify-sound-source";
 import { getSettingModal } from "../obsidian-internals";
 import { VIEW_TYPE_CLAUDE_PANEL, type PanelView } from "../panel-view";
 import { SelectionCapture } from "../selection-capture";
-import { HOOK_TOKEN_ENV, buildClaudeSettings, userPromptReply } from "./hook-settings";
+import {
+	HOOK_TOKEN_ENV,
+	buildClaudeSettings,
+	isContextClipped,
+	userPromptReply,
+} from "./hook-settings";
+import { LastPromptStatus } from "./last-prompt-status";
 import { buildLaunchArgs, buildLaunchEnv } from "./launch";
 import { onKillAll, openPty } from "./pty";
 import { buildStatusLineCommand } from "./status-line";
@@ -76,6 +82,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 	private pane!: XtermPane;
 	private selection!: SelectionCapture;
 	private notes!: NoteContext;
+	private lastPrompt!: LastPromptStatus;
 	private notifier!: CompletionNotifier;
 
 	private status: Status = { kind: "idle" };
@@ -139,6 +146,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		const selectionEl = this.contextEl.createDiv({
 			cls: "claude-panel-selection is-empty",
 		});
+		this.lastPrompt = new LastPromptStatus(this.contextEl.createDiv());
 
 		this.selection = new SelectionCapture(this.app, this.containerEl, () =>
 			this.notes.renderSelection()
@@ -146,7 +154,8 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		this.notes = new NoteContext(
 			this.app,
 			this.selection,
-			this.plugin.settings.includeActiveByDefault
+			this.plugin.settings.includeActiveByDefault,
+			"checkbox"
 		);
 		this.notes.mount({ activeFileEl, selectionEl });
 		trackNoteContext(this, this.notes, this.selection);
@@ -270,6 +279,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		this.renderStatus();
 		this.notes.renderActiveFile();
 		this.notes.renderSelection();
+		this.lastPrompt.render();
 	}
 
 	testNotificationSound(): void {
@@ -312,6 +322,7 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		this.lastMode = mode;
 		// 再開では同じ ID が続く。前回の続きでは、どの会話かは hook が届くまで分からない。
 		this.sessionId = mode.kind === "resume" ? mode.sessionId : null;
+		this.lastPrompt.clear();
 		this.setStatus({ kind: "starting" });
 		this.pane.clear();
 		this.pane.setInputEnabled(true);
@@ -504,14 +515,24 @@ export class ClaudeTerminalView extends ItemView implements PanelView {
 		}
 	}
 
+	/** 返した内容は、ノート欄の「直前の発言」の表示にもそのまま使う。 */
 	private handleUserPrompt(req: HookRequest): HookReply | null {
-		if (req.prompt?.startsWith("/")) return null;
-		return userPromptReply(
-			formatNoteContext(
-				this.notes.getIncludedTarget(),
-				this.notes.getIncludedSelection()
-			)
+		const at = new Date();
+		if (req.prompt?.startsWith("/")) {
+			this.lastPrompt.show({ at, sent: null, reason: "slash" });
+			return null;
+		}
+		const sent = buildNoteContext(
+			this.notes.getIncludedTarget(),
+			this.notes.getIncludedSelection()
 		);
+		if (!sent) {
+			const reason = this.notes.hasExcludedContent() ? "excluded" : "noTarget";
+			this.lastPrompt.show({ at, sent: null, reason });
+			return null;
+		}
+		this.lastPrompt.show({ at, sent, clipped: isContextClipped(sent.text) });
+		return userPromptReply(sent.text);
 	}
 
 	// ============================================================

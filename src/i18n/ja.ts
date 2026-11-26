@@ -55,10 +55,16 @@ export const ja = {
 			`${path} (${n} ファイル)`,
 		toggleIncluded: "✓ 含める",
 		toggleExcluded: "○ 除外",
+		includeCheckbox: "添付する",
+		includeNoteAria: "アクティブなノートを次の発言に添付する",
+		includeFolderAria: "アクティブなフォルダを次の発言に添付する",
+		includeSelectionAria: "選択範囲を次の発言に添付する",
 		noActiveFile: "アクティブファイルなし",
 		selectionLabel: "選択範囲:",
 		selectionMeta: (lines: number, chars: number, startLine: number) =>
 			`${lines} 行 · ${chars} 文字 · L${startLine}`,
+		selectionMetaNoLine: (lines: number, chars: number) =>
+			`${lines} 行 · ${chars} 文字`,
 		selectionMoreLines: (n: number) => ` ⋯ 他 ${n} 行`,
 		fileCount: (n: number) => `${n} ファイル`,
 		savedToVault: (n: number) =>
@@ -253,6 +259,29 @@ export const ja = {
 		errLaunch: "Claude Code を起動できませんでした。",
 		migratedNotice:
 			"Claude Panel の標準がターミナル UI になりました。プラグイン設定の「UI の種類」でチャット UI に戻せます。",
+		lastAttached: (what: string) => `添付: ${what}`,
+		lastSelection: (where: string) => (where ? `選択 ${where}` : "選択"),
+		lastNothing: "添付なし",
+		lastTooltipAttached: (time: string) =>
+			`直前の発言（${time}）に添付したもの`,
+		lastTooltipNothing: (time: string) =>
+			`直前の発言（${time}）には何も添付していません`,
+		lastTooltipNote: (path: string) => `ノート: ${path}`,
+		lastTooltipFolder: (path: string) => `フォルダ: ${path}`,
+		lastTooltipSelection: (where: string, chars: number) =>
+			`選択範囲: ${where}（${chars} 文字）`,
+		lastTooltipSelectionTruncated: (
+			where: string,
+			chars: number,
+			omitted: number
+		) => `選択範囲: ${where}（${chars} 文字のうち、長すぎる ${omitted} 文字を省略）`,
+		lastTooltipClipped: "長すぎるため、末尾を切り詰めて渡しました",
+		lastTooltipQueued:
+			"応答中に送った発言は、Claude Code が取り込んだ時点のノートと時刻です",
+		lastReasonExcluded: "「添付する」がオフです",
+		lastReasonNoTarget: "アクティブなノートも選択範囲もありません",
+		lastReasonSlash: "「/」で始まる入力には添付しません",
+		lastReasonSpoken: (reason: string) => `（${reason}）`,
 	},
 	settings: {
 		resolved: {

@@ -50,8 +50,13 @@ export function userPromptReply(context: string | null): HookReply | null {
 	};
 }
 
+/** userPromptReply が `context` の末尾を切るか。 */
+export function isContextClipped(context: string): boolean {
+	return context.length > MAX_CONTEXT_CHARS;
+}
+
 function truncate(text: string): string {
-	if (text.length <= MAX_CONTEXT_CHARS) return text;
+	if (!isContextClipped(text)) return text;
 	// 末尾で割れたサロゲートペアは落とす
 	return text.slice(0, MAX_CONTEXT_CHARS).replace(/[\uD800-\uDBFF]$/, "");
 }
