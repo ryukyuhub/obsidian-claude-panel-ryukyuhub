@@ -305,7 +305,7 @@ export const ja = {
 			name: "claude CLI のパス",
 			desc:
 				"任意。`claude` 実行ファイルへの絶対パスです。" +
-				"空欄の場合は次の場所を順に自動検出します: PATH、~/.local/bin、~/.claude/local、/usr/local/bin、/opt/homebrew/bin。" +
+				"空欄の場合は次の場所を順に自動検出します: ~/.local/bin、~/.claude/local、/usr/local/bin、/opt/homebrew/bin、/usr/bin。" +
 				"既存の Claude Code サブスクリプションログインを利用するため、API キーは不要です。",
 			placeholder: "/Users/you/.local/bin/claude",
 		},

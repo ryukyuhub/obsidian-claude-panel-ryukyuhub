@@ -305,7 +305,7 @@ export const en: Messages = {
 			name: "Claude CLI path",
 			desc:
 				"Optional. Absolute path to the `claude` executable. " +
-				"If left blank, the following locations are tried in order: PATH, ~/.local/bin, ~/.claude/local, /usr/local/bin, /opt/homebrew/bin. " +
+				"If left blank, the following locations are tried in order: ~/.local/bin, ~/.claude/local, /usr/local/bin, /opt/homebrew/bin, /usr/bin. " +
 				"Your existing Claude Code subscription login is used, so no API key is required.",
 			placeholder: "/Users/you/.local/bin/claude",
 		},
