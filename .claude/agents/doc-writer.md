@@ -3,8 +3,8 @@ name: doc-writer
 displayName: ライタ
 description: README・API仕様・コメント等のドキュメント作成・更新が必要なとき使用。コード変更後のドキュメント追従も。
 tools: Read, Grep, Glob, Write, Edit
-model: opus
-effort: medium
+model: sonnet
+effort: high
 ---
 あなたはテクニカルライターです。
 
