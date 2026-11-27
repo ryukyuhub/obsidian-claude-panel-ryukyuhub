@@ -52,7 +52,7 @@ Switch between them with **Interface** in the plugin settings. If you already us
 - For the terminal UI:
   - **Windows**: Windows 10 version 1809 or later (the terminal uses the Windows pseudo console, ConPTY), and the built-in Windows PowerShell 5.1
   - **macOS / Linux**: Python 3.8 or later (`python3`), or the `script` command
-- The terminal UI has not been tested on macOS yet. If it does not work for you, switch to the chat UI with **Interface** in the plugin settings
+- The terminal UI has not been tested on Linux yet. If it does not work for you, switch to the chat UI with **Interface** in the plugin settings
 
 ## External programs, network, and files
 
@@ -83,6 +83,7 @@ This section explains what the plugin runs, which network connections it makes, 
   - `127.0.0.1` and `localhost` are added to `NO_PROXY` for `claude` so the hook calls do not go through a proxy.
 - **Anthropic usage endpoint.** The account & usage panel sends your OAuth token to `https://api.anthropic.com/api/oauth/usage` to read rate-limit consumption.
 - Everything else (chat, tools, MCP servers) is done by the `claude` CLI itself.
+- **What is sent to Anthropic.** Your prompts, the path of the attached note or folder, the selected text, and the contents of any vault files Claude Code reads are sent to Anthropic through the `claude` CLI. The plugin itself passes only the path of the note or folder and the selected text (as hook context); it does not send the note body. Claude Code reads a file's contents only when it needs to.
 
 ### Files it writes
 
@@ -90,8 +91,8 @@ Temporary files in the OS temp directory (`os.tmpdir()`, `%TEMP%` on Windows):
 
 | File | When | Purpose |
 |---|---|---|
-| `claude-panel-pty-bridge-<hash>.ps1` | Windows, terminal UI | The PowerShell script above. Reused while its contents are the same; a new file is written when the plugin updates it. A short-lived `.tmp` file is used while writing |
-| `claude-panel-statusline-<hash>.ps1` | Windows, terminal UI, when the status line setting is on | The PowerShell script for the status line. Reused and updated the same way as the one above |
+| `claude-panel-pty-bridge-<hash>.ps1` | Windows, terminal UI | The PowerShell script above. Reused while its contents are the same; a new file with a different hash is written when the plugin updates it. The old file is not deleted and stays in `%TEMP%`; you can delete it by hand if you do not need it. A short-lived `.tmp` file is used while writing |
+| `claude-panel-statusline-<hash>.ps1` | Windows, terminal UI, when the status line setting is on | The PowerShell script for the status line. Reused and updated the same way as the one above (old files also stay in `%TEMP%` and can be deleted by hand) |
 | `ptyb.XXXXXX/` (under `$TMPDIR` or `/tmp`) | macOS / Linux, terminal UI, `script` fallback only | Small files for process IDs. Removed when the session ends |
 | `claude-panel-empty-mcp.json` | When "Disable MCP servers" is on | An empty MCP configuration passed to `claude` |
 | `claude-panel-thinking-on.json` / `claude-panel-thinking-off.json` | Chat UI | Settings passed to `claude` to turn thinking on or off |
@@ -330,7 +331,7 @@ The terminal uses [xterm.js](https://github.com/xtermjs/xterm.js) and its fit, w
 
 ## Release
 
-Pushing a semver tag triggers a release. [.github/workflows/release.yml](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/.github/workflows/release.yml) builds the plugin, attaches a zip, and emits GitHub artifact attestations for the release assets.
+Pushing a semver tag triggers a release. [.github/workflows/release.yml](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/.github/workflows/release.yml) builds the plugin, attaches `main.js`, `manifest.json`, and `styles.css` (no zip), and emits GitHub artifact attestations for the release assets.
 
 ```bash
 npm version 0.1.8 -m "Release %s"

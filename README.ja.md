@@ -50,7 +50,7 @@ Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.
 - ターミナル UI を使う場合:
   - **Windows**: Windows 10 バージョン 1809 以降(ターミナルに Windows の疑似コンソール ConPTY を使うため)と、標準搭載の Windows PowerShell 5.1
   - **macOS / Linux**: Python 3.8 以降(`python3`)、または `script` コマンド
-- ターミナル UI は macOS ではまだ動作を確認していません。うまく動かない場合は、プラグイン設定の「**UI の種類**」でチャット UI に切り替えてください
+- ターミナル UI は Linux ではまだ動作を確認していません。うまく動かない場合は、プラグイン設定の「**UI の種類**」でチャット UI に切り替えてください
 
 ## 外部プログラム・ネットワーク・ファイルの利用
 
@@ -81,6 +81,7 @@ Claude Panel は、Obsidian の右サイドバーに [Claude Code](https://docs.
   - hook の通信がプロキシを通らないよう、`claude` の `NO_PROXY` に `127.0.0.1` と `localhost` を追加します。
 - **Anthropic の使用状況エンドポイント。** アカウント＆使用状況パネルは、レートリミット消費を読むために OAuth トークンを付けて `https://api.anthropic.com/api/oauth/usage` に問い合わせます。
 - それ以外(チャット、ツール、MCP サーバー)の通信はすべて `claude` CLI 自身が行います。
+- **Anthropic に送られる内容。** プロンプト、添付したノート(またはフォルダ)のパス、選択したテキスト、Claude Code が読んだ Vault 内ファイルの内容は、`claude` CLI を通じて Anthropic に送られます。プラグイン自身が渡すのはノートまたはフォルダのパスと選択テキスト(hook の文脈として)だけで、ノートの本文は送りません。Claude Code は、必要なときにだけファイルの中身を読みます。
 
 ### 書き出すファイル
 
@@ -88,8 +89,8 @@ OS の一時フォルダ(`os.tmpdir()`。Windows では `%TEMP%`)の一時ファ
 
 | ファイル | 書き出す場面 | 用途 |
 |---|---|---|
-| `claude-panel-pty-bridge-<ハッシュ>.ps1` | Windows、ターミナル UI | 上記の PowerShell スクリプト。内容が同じ間は再利用し、プラグインの更新で内容が変わると新しいファイルを書きます。書き込み中だけ一時的な `.tmp` ファイルを使います |
-| `claude-panel-statusline-<ハッシュ>.ps1` | Windows、ターミナル UI、ステータスラインの設定がオンのとき | ステータスライン用の PowerShell スクリプト。上のスクリプトと同じ方法で再利用・更新します |
+| `claude-panel-pty-bridge-<ハッシュ>.ps1` | Windows、ターミナル UI | 上記の PowerShell スクリプト。内容が同じ間は再利用し、プラグインの更新で内容が変わると、別のハッシュ名で新しいファイルを書きます。古いファイルは削除されず `%TEMP%` に残るので、不要なら手で削除して構いません。書き込み中だけ一時的な `.tmp` ファイルを使います |
+| `claude-panel-statusline-<ハッシュ>.ps1` | Windows、ターミナル UI、ステータスラインの設定がオンのとき | ステータスライン用の PowerShell スクリプト。上のスクリプトと同じ方法で再利用・更新します(古いファイルも `%TEMP%` に残り、手で削除して構いません) |
 | `ptyb.XXXXXX/`(`$TMPDIR` または `/tmp` の下) | macOS / Linux、ターミナル UI、`script` を使うときのみ | プロセス ID を受け渡す小さなファイル。セッションの終了時に削除します |
 | `claude-panel-empty-mcp.json` | 「MCP サーバーを無効化」がオンのとき | `claude` に渡す空の MCP 設定 |
 | `claude-panel-thinking-on.json` / `claude-panel-thinking-off.json` | チャット UI | 思考のオン／オフを `claude` に渡す設定 |
@@ -328,7 +329,7 @@ OUT_DIR=/path/to/vault/.obsidian/plugins/claude-panel-ryukyuhub npm run dev
 
 ## リリース
 
-semver タグを push するとリリースが作成されます。[.github/workflows/release.yml](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/.github/workflows/release.yml) がビルドと zip 添付を自動化し、リリースアセットの GitHub artifact attestation も発行します。
+semver タグを push するとリリースが作成されます。[.github/workflows/release.yml](https://github.com/ryukyuhub/obsidian-claude-panel-ryukyuhub/blob/main/.github/workflows/release.yml) がビルドと、`main.js`・`manifest.json`・`styles.css` の 3 ファイルの添付(zip は付けません)を自動化し、リリースアセットの GitHub artifact attestation も発行します。
 
 ```bash
 npm version 0.1.8 -m "Release %s"
