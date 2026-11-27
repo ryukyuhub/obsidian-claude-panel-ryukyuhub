@@ -887,7 +887,7 @@ export class ClaudePanelView extends ItemView implements PanelView {
 			// 会話が空（clear 等）。固定対象とスペーサーを解除する。
 			this.activePromptId = null;
 			this.markActivePromptHost(null);
-			if (this.bottomSpacer) this.bottomSpacer.setCssStyles({ height: "0px" });
+			if (this.bottomSpacer) this.bottomSpacer.setCssStyles({ height: "" });
 			return;
 		}
 		if (this.runtime.isBusy() && lastUserId !== this.activePromptId) {
@@ -976,7 +976,7 @@ export class ClaudePanelView extends ItemView implements PanelView {
 			`[data-msg-id="${msgId}"]`
 		);
 		if (!host) {
-			this.bottomSpacer.setCssStyles({ height: "0px" });
+			this.bottomSpacer.setCssStyles({ height: "" });
 			return;
 		}
 		const current = parseFloat(this.bottomSpacer.style.height) || 0;

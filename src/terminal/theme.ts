@@ -61,7 +61,7 @@ export function resolveTheme(host: HTMLElement): ITheme {
 /** Obsidian の等幅フォントを font-family の値として返す。 */
 export function resolveFontFamily(host: HTMLElement): string {
 	const probe = createProbe(host);
-	probe.setCssStyles({ fontFamily: "var(--font-monospace)" });
+	probe.addClass("claude-panel-terminal-probe-mono");
 	const family = host.win.getComputedStyle(probe).fontFamily;
 	probe.remove();
 	return family || "monospace";

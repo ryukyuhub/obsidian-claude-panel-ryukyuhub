@@ -26,7 +26,7 @@ export function pickFilesViaDialog(): Promise<FilePickerResult> {
 		const input = activeDocument.createElement("input");
 		input.type = "file";
 		input.multiple = true;
-		input.setCssStyles({ display: "none" });
+		input.hide();
 		const cleanup = (): void => {
 			input.remove();
 		};

@@ -831,9 +831,11 @@
 }
 
 /* スクロール領域末尾の可変余白。送信したプロンプトを常に最上部まで
-   引き上げられるよう、JS で高さを調整する（応答が伸びると縮む）。 */
+   引き上げられるよう、JS で高さを調整する（応答が伸びると縮む）。
+   高さ 0 は静的な既定値としてここで持ち、JS はインライン高さを外して戻す。 */
 .claude-panel-bottom-spacer {
 	flex: 0 0 auto;
+	height: 0;
 	pointer-events: none;
 }
 
@@ -2488,6 +2490,11 @@
 	position: absolute;
 	visibility: hidden;
 	transition: none;
+}
+
+/* 等幅フォントの解決用。基底クラスと重ねて詳細度を上げ、他の規則に負けないようにする。 */
+.claude-panel-terminal-probe.claude-panel-terminal-probe-mono {
+	font-family: var(--font-monospace);
 }
 
 .claude-panel-terminal-overlay {
